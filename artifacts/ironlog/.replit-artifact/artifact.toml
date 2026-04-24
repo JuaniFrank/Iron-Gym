@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "IronLog"
+version = "1.0.0"
+id = "artifacts/ironlog"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 18673
+
+[services.development]
+run = "pnpm --filter @workspace/ironlog run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/ironlog", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/ironlog", "run", "serve" ]
+
+[services.env]
+PORT = "18673"
+BASE_PATH = "/"
