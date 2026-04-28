@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -14,6 +14,7 @@ import { IconButton } from "@/components/ui/IconButton";
 import { Screen } from "@/components/ui/Screen";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
+import { ExerciseActionSheet } from "@/components/workout/ExerciseActionSheet";
 import { RestTimer } from "@/components/workout/RestTimer";
 import { SetRow } from "@/components/workout/SetRow";
 import { TermHint } from "@/components/workout/TermHint";
@@ -38,7 +39,13 @@ export default function ActiveWorkoutScreen() {
     getLastSetsForExercise,
     getMaxWeightForExercise,
     defaultRestSeconds,
+    reorderSessionExercises,
+    setSessionExerciseSkipped,
+    removeSessionExercise,
   } = useIronLog();
+
+  // Which exercise card has its action sheet open (null = closed).
+  const [actionForExId, setActionForExId] = useState<string | null>(null);
 
   const startedRef = useRef(false);
   useEffect(() => {
@@ -60,6 +67,12 @@ export default function ActiveWorkoutScreen() {
 
   const [restingFor, setRestingFor] = useState<number | null>(null);
 
+  // Hook must run unconditionally — keep it before the early return below.
+  const skippedSet = useMemo(
+    () => new Set(session?.skippedExerciseIds ?? []),
+    [session?.skippedExerciseIds],
+  );
+
   if (!session) {
     return (
       <Screen>
@@ -77,13 +90,16 @@ export default function ActiveWorkoutScreen() {
 
   const elapsed = now - session.startedAt;
   const completedSets = session.sets;
-  const completedSetsCount = completedSets.filter((s) => !s.isWarmup).length;
+  const completedSetsCount = completedSets.filter(
+    (s) => !s.isWarmup && !skippedSet.has(s.exerciseId),
+  ).length;
   const totalVolume = completedSets
-    .filter((s) => !s.isWarmup)
+    .filter((s) => !s.isWarmup && !skippedSet.has(s.exerciseId))
     .reduce((sum, s) => sum + s.weight * s.reps, 0);
 
-  // Total target work-set count across exercises in this session.
+  // Total target work-set count across exercises in this session, excluding skipped.
   const targetTotal = session.exerciseOrder.reduce((sum, exId) => {
+    if (skippedSet.has(exId)) return sum;
     const re = day?.exercises.find((x) => x.exerciseId === exId);
     return sum + (re?.targetSets ?? 3);
   }, 0);
@@ -208,9 +224,71 @@ export default function ActiveWorkoutScreen() {
         ) : null}
 
         <Col gap={12}>
-          {session.exerciseOrder.map((exId) => {
+          {session.exerciseOrder.map((exId, idx) => {
             const ex = getExerciseById(exId);
             if (!ex) return null;
+            const isSkipped = skippedSet.has(exId);
+
+            // Compact "skipped" card — no inputs, just a CTA to undo.
+            if (isSkipped) {
+              return (
+                <Card
+                  key={exId}
+                  variant="ghost"
+                  style={{ borderStyle: "dashed", opacity: 0.85 }}
+                >
+                  <Row jc="space-between" ai="center">
+                    <Row gap={10} flex={1}>
+                      <View
+                        style={{
+                          width: 36,
+                          height: 36,
+                          borderRadius: 10,
+                          backgroundColor: colors.surfaceAlt,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Feather name="skip-forward" size={14} color={colors.muted} />
+                      </View>
+                      <Col flex={1} gap={2}>
+                        <Text variant="title" color={colors.muted} numberOfLines={1}>
+                          {ex.name}
+                        </Text>
+                        <Text variant="tiny" color={colors.muted}>
+                          SALTADO EN ESTA SESIÓN
+                        </Text>
+                      </Col>
+                    </Row>
+                    <Pressable
+                      onPress={() => {
+                        setSessionExerciseSkipped(session.id, exId, false);
+                        if (Platform.OS !== "web") {
+                          Haptics.selectionAsync();
+                        }
+                      }}
+                      hitSlop={8}
+                      style={({ pressed }) => ({
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 4,
+                        paddingHorizontal: 10,
+                        paddingVertical: 6,
+                        borderRadius: 999,
+                        backgroundColor: colors.accentSoft,
+                        opacity: pressed ? 0.6 : 1,
+                      })}
+                    >
+                      <Feather name="rotate-ccw" size={11} color={colors.accentEdge} />
+                      <Text variant="label" color={colors.accentEdge}>
+                        Volver a hacer
+                      </Text>
+                    </Pressable>
+                  </Row>
+                </Card>
+              );
+            }
+
             const re = day?.exercises.find((x) => x.exerciseId === exId);
             const targetSets = re?.targetSets ?? 3;
             const targetReps = re?.targetReps ?? 10;
@@ -266,7 +344,26 @@ export default function ActiveWorkoutScreen() {
                       </Text>
                     </Col>
                   </Row>
-                  <Feather name="more-horizontal" size={16} color={colors.muted} />
+                  <Pressable
+                    onPress={() => {
+                      if (Platform.OS !== "web") {
+                        Haptics.selectionAsync();
+                      }
+                      setActionForExId(exId);
+                    }}
+                    hitSlop={10}
+                    style={({ pressed }) => ({
+                      width: 32,
+                      height: 32,
+                      borderRadius: 16,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: pressed ? colors.surfaceAlt : "transparent",
+                      opacity: pressed ? 0.8 : 1,
+                    })}
+                  >
+                    <Feather name="more-horizontal" size={16} color={colors.muted} />
+                  </Pressable>
                 </Row>
 
                 {/* Header row */}
@@ -400,6 +497,57 @@ export default function ActiveWorkoutScreen() {
           onPress={handleFinish}
         />
       </View>
+
+      {(() => {
+        if (!actionForExId) return null;
+        const idx = session.exerciseOrder.indexOf(actionForExId);
+        if (idx === -1) return null;
+        const ex = getExerciseById(actionForExId);
+        if (!ex) return null;
+        const hasLoggedSets = session.sets.some((s) => s.exerciseId === actionForExId);
+        const isSkipped = skippedSet.has(actionForExId);
+        return (
+          <ExerciseActionSheet
+            visible
+            onClose={() => setActionForExId(null)}
+            exerciseName={ex.name}
+            index={idx}
+            total={session.exerciseOrder.length}
+            isSkipped={isSkipped}
+            hasLoggedSets={hasLoggedSets}
+            onMoveUp={() => reorderSessionExercises(session.id, idx, idx - 1)}
+            onMoveDown={() => reorderSessionExercises(session.id, idx, idx + 1)}
+            onReplace={() => {
+              router.push(
+                `/exercises?replaceSessionId=${session.id}&replaceExerciseId=${actionForExId}` as never,
+              );
+            }}
+            onToggleSkip={() => {
+              setSessionExerciseSkipped(session.id, actionForExId, !isSkipped);
+            }}
+            onRemove={() => {
+              const exName = ex.name;
+              const setsCount = session.sets.filter(
+                (s) => s.exerciseId === actionForExId,
+              ).length;
+              Alert.alert(
+                `Quitar ${exName}`,
+                setsCount > 0
+                  ? `Tiene ${setsCount} ${setsCount === 1 ? "set logueado" : "sets logueados"} que se van a borrar. La rutina original no cambia.`
+                  : "Sale de esta sesión. La rutina original no cambia.",
+                [
+                  { text: "Cancelar", style: "cancel" },
+                  {
+                    text: "Quitar",
+                    style: "destructive",
+                    onPress: () => removeSessionExercise(session.id, actionForExId),
+                  },
+                ],
+              );
+            }}
+          />
+        );
+      })()}
     </Screen>
   );
 }

@@ -71,6 +71,10 @@ export interface WorkoutSession {
   endedAt?: number;
   sets: CompletedSet[];
   exerciseOrder: string[];
+  /** Subset of exerciseOrder marked as "saltado" in this session.
+   *  The exercise stays in the order (so it can be un-skipped) but its sets
+   *  don't count for volume / completion. */
+  skippedExerciseIds?: string[];
   totalVolumeKg: number;
   prsAchieved: PRRecord[];
   notes?: string;
@@ -135,6 +139,15 @@ export interface FoodEntry {
   grams: number;
 }
 
+export interface VolumeTarget {
+  /** Minimum effective volume — sets/week below this don't drive growth. */
+  mev: number;
+  /** Maximum adaptive volume — typical productive range upper bound. */
+  mav: number;
+  /** Maximum recoverable volume — exceeding it tends to break recovery. */
+  mrv: number;
+}
+
 export interface UserProfile {
   name: string;
   age: number;
@@ -149,6 +162,9 @@ export interface UserProfile {
   proteinGoalG?: number;
   carbsGoalG?: number;
   fatGoalG?: number;
+  /** Per-muscle weekly volume targets (sets/week). When undefined, defaults
+   *  from `constants/volumeTargets.ts` are used. */
+  volumeTargets?: Partial<Record<MuscleGroup, VolumeTarget>>;
 }
 
 export interface FitnessGoal {

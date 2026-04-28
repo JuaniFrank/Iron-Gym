@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, ScrollView, View } from "react-native";
 
 import { Card } from "@/components/ui/Card";
@@ -23,19 +23,40 @@ export default function ExercisesScreen() {
     routineId?: string;
     dayId?: string;
     sessionId?: string;
+    replaceSessionId?: string;
+    replaceExerciseId?: string;
   }>();
   const {
     allExercises,
     addExerciseToDay,
     addExerciseToActiveWorkout,
+    replaceSessionExercise,
+    getExerciseById,
     createCustomExercise,
   } = useIronLog();
 
+  const isReplaceMode = !!(params.replaceSessionId && params.replaceExerciseId);
+  const sourceExercise = isReplaceMode
+    ? getExerciseById(params.replaceExerciseId!)
+    : undefined;
+
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<MuscleGroup | "all">("all");
+  const [filter, setFilter] = useState<MuscleGroup | "all">(
+    sourceExercise ? sourceExercise.primaryMuscle : "all",
+  );
   const [showCustom, setShowCustom] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newGroup, setNewGroup] = useState<MuscleGroup>("chest");
+  const [newGroup, setNewGroup] = useState<MuscleGroup>(
+    sourceExercise?.primaryMuscle ?? "chest",
+  );
+
+  // If the source exercise resolves later (e.g. custom exercise loaded after mount),
+  // re-snap the filter to its muscle.
+  useEffect(() => {
+    if (sourceExercise) {
+      setFilter(sourceExercise.primaryMuscle);
+    }
+  }, [sourceExercise?.id, sourceExercise?.primaryMuscle]);
 
   const filtered = useMemo(() => {
     return allExercises.filter((e) => {
@@ -47,6 +68,16 @@ export default function ExercisesScreen() {
   }, [allExercises, search, filter]);
 
   const handlePick = (exId: string) => {
+    if (isReplaceMode && params.replaceSessionId && params.replaceExerciseId) {
+      if (exId === params.replaceExerciseId) {
+        // No-op — same exercise picked.
+        router.back();
+        return;
+      }
+      replaceSessionExercise(params.replaceSessionId, params.replaceExerciseId, exId);
+      router.back();
+      return;
+    }
     if (params.routineId && params.dayId) {
       addExerciseToDay(params.routineId, params.dayId, exId);
       router.back();
@@ -81,9 +112,36 @@ export default function ExercisesScreen() {
         }}
       >
         <IconButton icon="chevron-down" onPress={() => router.back()} />
-        <Text variant="title">Ejercicios</Text>
+        <Text variant="title">{isReplaceMode ? "Reemplazar" : "Ejercicios"}</Text>
         <IconButton icon="plus" variant="primary" onPress={() => setShowCustom(true)} />
       </View>
+
+      {isReplaceMode && sourceExercise ? (
+        <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>
+          <View
+            style={{
+              backgroundColor: colors.accentSoft,
+              borderRadius: 14,
+              paddingVertical: 12,
+              paddingHorizontal: 14,
+              flexDirection: "row",
+              gap: 10,
+              alignItems: "center",
+            }}
+          >
+            <Feather name="repeat" size={16} color={colors.accentEdge} />
+            <Col flex={1} gap={2}>
+              <Text variant="label" weight="semibold" color={colors.accentEdge}>
+                Reemplazando {sourceExercise.name}
+              </Text>
+              <Text variant="caption" muted numberOfLines={2}>
+                Filtrado por {MUSCLE_GROUP_LABELS[sourceExercise.primaryMuscle].toLowerCase()}.
+                Los sets logueados se migran al nuevo ejercicio.
+              </Text>
+            </Col>
+          </View>
+        </View>
+      ) : null}
 
       <View style={{ paddingHorizontal: 20 }}>
         {/* Search */}

@@ -114,6 +114,10 @@ interface IronLogContextValue extends PersistedState {
   finishWorkout: (sessionId: string, notes?: string) => { session: WorkoutSession; prs: PRRecord[]; newAchievements: string[] };
   cancelWorkout: (sessionId: string) => void;
   addExerciseToActiveWorkout: (sessionId: string, exerciseId: string) => void;
+  reorderSessionExercises: (sessionId: string, fromIndex: number, toIndex: number) => void;
+  replaceSessionExercise: (sessionId: string, fromExerciseId: string, toExerciseId: string) => void;
+  setSessionExerciseSkipped: (sessionId: string, exerciseId: string, skipped: boolean) => void;
+  removeSessionExercise: (sessionId: string, exerciseId: string) => void;
   setDefaultRest: (seconds: number) => void;
   // Body
   logBodyWeight: (weightKg: number, date?: number) => void;
@@ -555,6 +559,102 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
     [update],
   );
 
+  const reorderSessionExercises = useCallback(
+    (sessionId: string, fromIndex: number, toIndex: number) => {
+      update((prev) => ({
+        ...prev,
+        sessions: prev.sessions.map((s) => {
+          if (s.id !== sessionId) return s;
+          if (fromIndex < 0 || fromIndex >= s.exerciseOrder.length) return s;
+          if (toIndex < 0 || toIndex >= s.exerciseOrder.length) return s;
+          if (fromIndex === toIndex) return s;
+          const newOrder = [...s.exerciseOrder];
+          const [moved] = newOrder.splice(fromIndex, 1);
+          newOrder.splice(toIndex, 0, moved);
+          return { ...s, exerciseOrder: newOrder };
+        }),
+      }));
+    },
+    [update],
+  );
+
+  /**
+   * Replace one exercise with another inside an active session, preserving
+   * its position. Sets logged for the old id are *migrated* to the new id so
+   * the user keeps weight/reps for the substitute movement (most common case
+   * is "machine occupied, swap for an analogue"). Skipped flag is preserved.
+   */
+  const replaceSessionExercise = useCallback(
+    (sessionId: string, fromExerciseId: string, toExerciseId: string) => {
+      if (fromExerciseId === toExerciseId) return;
+      update((prev) => ({
+        ...prev,
+        sessions: prev.sessions.map((s) => {
+          if (s.id !== sessionId) return s;
+          // If the new exercise is already in the order somewhere else, keep
+          // the substitute at the original position and drop the duplicate.
+          const fromIdx = s.exerciseOrder.indexOf(fromExerciseId);
+          if (fromIdx === -1) return s;
+          const newOrder = s.exerciseOrder
+            .filter((x, i) => !(x === toExerciseId && i !== fromIdx))
+            .map((x) => (x === fromExerciseId ? toExerciseId : x));
+          const newSets = s.sets.map((set) =>
+            set.exerciseId === fromExerciseId
+              ? { ...set, exerciseId: toExerciseId }
+              : set,
+          );
+          const skipped = s.skippedExerciseIds ?? [];
+          const newSkipped = skipped.map((x) =>
+            x === fromExerciseId ? toExerciseId : x,
+          );
+          return {
+            ...s,
+            exerciseOrder: newOrder,
+            sets: newSets,
+            skippedExerciseIds: newSkipped,
+          };
+        }),
+      }));
+    },
+    [update],
+  );
+
+  const setSessionExerciseSkipped = useCallback(
+    (sessionId: string, exerciseId: string, skipped: boolean) => {
+      update((prev) => ({
+        ...prev,
+        sessions: prev.sessions.map((s) => {
+          if (s.id !== sessionId) return s;
+          const current = new Set(s.skippedExerciseIds ?? []);
+          if (skipped) current.add(exerciseId);
+          else current.delete(exerciseId);
+          return { ...s, skippedExerciseIds: Array.from(current) };
+        }),
+      }));
+    },
+    [update],
+  );
+
+  const removeSessionExercise = useCallback(
+    (sessionId: string, exerciseId: string) => {
+      update((prev) => ({
+        ...prev,
+        sessions: prev.sessions.map((s) => {
+          if (s.id !== sessionId) return s;
+          return {
+            ...s,
+            exerciseOrder: s.exerciseOrder.filter((x) => x !== exerciseId),
+            sets: s.sets.filter((set) => set.exerciseId !== exerciseId),
+            skippedExerciseIds: (s.skippedExerciseIds ?? []).filter(
+              (x) => x !== exerciseId,
+            ),
+          };
+        }),
+      }));
+    },
+    [update],
+  );
+
   const finishWorkout = useCallback(
     (sessionId: string, notes?: string) => {
       let resultSession: WorkoutSession | null = null;
@@ -563,9 +663,11 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
       update((prev) => {
         const session = prev.sessions.find((s) => s.id === sessionId);
         if (!session) return prev;
+        const skipped = new Set(session.skippedExerciseIds ?? []);
         // PR detection
         const detectedPrs: PRRecord[] = [];
         for (const exId of session.exerciseOrder) {
+          if (skipped.has(exId)) continue;
           const exercise = getExerciseFromConstants(exId, prev.customExercises);
           if (!exercise) continue;
           const allSetsForEx = prev.sessions
@@ -587,7 +689,7 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
           }
         }
         const totalVolumeKg = session.sets
-          .filter((s) => !s.isWarmup)
+          .filter((s) => !s.isWarmup && !skipped.has(s.exerciseId))
           .reduce((sum, s) => sum + s.weight * s.reps, 0);
         const finishedSession: WorkoutSession = {
           ...session,
@@ -924,6 +1026,10 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
       finishWorkout,
       cancelWorkout,
       addExerciseToActiveWorkout,
+      reorderSessionExercises,
+      replaceSessionExercise,
+      setSessionExerciseSkipped,
+      removeSessionExercise,
       setDefaultRest,
       logBodyWeight,
       deleteBodyWeight,
@@ -978,6 +1084,10 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
       finishWorkout,
       cancelWorkout,
       addExerciseToActiveWorkout,
+      reorderSessionExercises,
+      replaceSessionExercise,
+      setSessionExerciseSkipped,
+      removeSessionExercise,
       setDefaultRest,
       logBodyWeight,
       deleteBodyWeight,

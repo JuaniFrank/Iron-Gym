@@ -1,9 +1,10 @@
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useMemo, useState } from "react";
-import { Dimensions, Pressable, View } from "react-native";
+import { Dimensions, Modal, Pressable, View } from "react-native";
 
 import { LineChart } from "@/components/charts/LineChart";
+import { MuscleVolumeBar } from "@/components/charts/MuscleVolumeBar";
 import { Card } from "@/components/ui/Card";
 import { Divider } from "@/components/ui/Divider";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -13,18 +14,47 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Col, Row } from "@/components/ui/Stack";
 import { Stat } from "@/components/ui/Stat";
 import { Text } from "@/components/ui/Text";
+import { MUSCLE_GROUPS } from "@/constants/exercises";
+import { resolveVolumeTarget } from "@/constants/volumeTargets";
 import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import type { MuscleGroup } from "@/types";
 import { bmiCategory, calculateBMI, formatWeight } from "@/utils/calculations";
 import { formatRelativeDate } from "@/utils/date";
+import { currentWeekRange, volumeByMuscle, volumeZone } from "@/utils/volume";
 
 export default function ProgressScreen() {
   const colors = useThemeColors();
   const { sessions, bodyWeights, profile, allExercises } = useIronLog();
   const [tab, setTab] = useState<"overview" | "exercises" | "body">("overview");
+  const [volumeInfoOpen, setVolumeInfoOpen] = useState(false);
 
   const finished = sessions.filter((s) => s.endedAt);
   const screenWidth = Dimensions.get("window").width - 76;
+
+  // Volume by muscle (this week — includes in-flight session if any)
+  const [weekStart, weekEnd] = useMemo(() => currentWeekRange(), []);
+  const muscleVolume = useMemo(
+    () => volumeByMuscle(sessions, allExercises, weekStart, weekEnd),
+    [sessions, allExercises, weekStart, weekEnd],
+  );
+  const muscleVolumeRows = useMemo(
+    () =>
+      MUSCLE_GROUPS.map((m) => {
+        const target = resolveVolumeTarget(m as MuscleGroup, profile.volumeTargets);
+        const sets = muscleVolume[m as MuscleGroup];
+        const zone = volumeZone(sets, target);
+        return { muscle: m as MuscleGroup, sets, target, zone };
+      }),
+    [muscleVolume, profile.volumeTargets],
+  );
+  const totalEffectiveSetsThisWeek = muscleVolumeRows.reduce(
+    (sum, r) => sum + r.sets,
+    0,
+  );
+  const musclesInEffective = muscleVolumeRows.filter(
+    (r) => r.zone === "effective" || r.zone === "overload",
+  ).length;
 
   const weekVolumes = useMemo(() => {
     const weeks: { volume: number }[] = [];
@@ -95,7 +125,66 @@ export default function ProgressScreen() {
 
         {tab === "overview" && (
           <Col gap={14}>
-            {/* Volume chart */}
+            {/* Volume per muscle (this week) */}
+            <Card>
+              <Row jc="space-between" ai="flex-start" style={{ marginBottom: 6 }}>
+                <Col gap={4} flex={1}>
+                  <Text variant="h3">Volumen por músculo</Text>
+                  <Text variant="caption" muted>
+                    Esta semana ·{" "}
+                    {totalEffectiveSetsThisWeek === 0
+                      ? "sin sets aún"
+                      : `${musclesInEffective}/${MUSCLE_GROUPS.length} músculos en zona efectiva`}
+                  </Text>
+                </Col>
+                <Pressable
+                  onPress={() => setVolumeInfoOpen(true)}
+                  hitSlop={10}
+                  style={({ pressed }) => ({
+                    width: 28,
+                    height: 28,
+                    borderRadius: 14,
+                    backgroundColor: colors.surfaceAlt,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    opacity: pressed ? 0.6 : 1,
+                  })}
+                >
+                  <Feather name="help-circle" size={14} color={colors.muted} />
+                </Pressable>
+              </Row>
+
+              {totalEffectiveSetsThisWeek === 0 ? (
+                <View
+                  style={{
+                    paddingVertical: 24,
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <Feather name="activity" size={22} color={colors.muted} />
+                  <Text variant="body" muted style={{ textAlign: "center" }}>
+                    Logueá sets esta semana para ver{"\n"}tu volumen por grupo muscular.
+                  </Text>
+                </View>
+              ) : (
+                <Col gap={2} style={{ marginTop: 4 }}>
+                  {muscleVolumeRows
+                    // Hide muscles with 0 sets and 0 MEV to avoid noise (e.g. forearms/abs).
+                    .filter((r) => r.sets > 0 || r.target.mev > 0)
+                    .map((r) => (
+                      <MuscleVolumeBar
+                        key={r.muscle}
+                        muscle={r.muscle}
+                        sets={r.sets}
+                        target={r.target}
+                      />
+                    ))}
+                </Col>
+              )}
+            </Card>
+
+            {/* Weekly volume trend */}
             <Card>
               <Row jc="space-between" style={{ marginBottom: 8 }}>
                 <Col gap={4}>
@@ -459,6 +548,146 @@ export default function ProgressScreen() {
           </Col>
         )}
       </View>
+
+      <VolumeInfoModal
+        visible={volumeInfoOpen}
+        onClose={() => setVolumeInfoOpen(false)}
+      />
     </Screen>
+  );
+}
+
+function VolumeInfoModal({
+  visible,
+  onClose,
+}: {
+  visible: boolean;
+  onClose: () => void;
+}) {
+  const colors = useThemeColors();
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      statusBarTranslucent
+    >
+      <Pressable
+        onPress={onClose}
+        style={{
+          flex: 1,
+          backgroundColor: "rgba(0,0,0,0.55)",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 28,
+        }}
+      >
+        <Pressable onPress={() => undefined}>
+          <View
+            style={{
+              backgroundColor: colors.card,
+              borderRadius: 22,
+              padding: 22,
+              width: 320,
+              borderWidth: 1,
+              borderColor: colors.border,
+            }}
+          >
+            <Row gap={8} ai="center" style={{ marginBottom: 12 }}>
+              <View
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 14,
+                  backgroundColor: colors.accentSoft,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Feather name="activity" size={14} color={colors.accentEdge} />
+              </View>
+              <Text variant="h3">Cómo se mide</Text>
+            </Row>
+            <Text variant="body" muted style={{ marginBottom: 14 }}>
+              Cada set efectivo (sin warmup, sin saltado) suma 1 al músculo
+              principal y 0,5 a cada secundario.
+            </Text>
+
+            <Col gap={10} style={{ marginBottom: 16 }}>
+              <ZoneRow
+                label="MEV"
+                description="Mínimo efectivo. Por debajo cuesta crecer."
+                color={colors.muted}
+              />
+              <ZoneRow
+                label="MAV"
+                description="Volumen productivo típico. La meta semanal."
+                color={colors.ok}
+              />
+              <ZoneRow
+                label="MRV"
+                description="Tope recuperable. Pasarte acumula fatiga."
+                color={colors.danger}
+              />
+            </Col>
+
+            <Text variant="caption" muted>
+              Los valores son orientativos (Renaissance Periodization). Ajustá
+              según cómo te recuperás.
+            </Text>
+
+            <Pressable
+              onPress={onClose}
+              style={({ pressed }) => ({
+                marginTop: 16,
+                height: 44,
+                borderRadius: 12,
+                backgroundColor: colors.ink,
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: pressed ? 0.85 : 1,
+              })}
+            >
+              <Text variant="label" weight="semibold" color={colors.bg}>
+                Entendido
+              </Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function ZoneRow({
+  label,
+  description,
+  color,
+}: {
+  label: string;
+  description: string;
+  color: string;
+}) {
+  return (
+    <Row gap={10} ai="flex-start">
+      <View
+        style={{
+          width: 4,
+          height: 18,
+          borderRadius: 2,
+          backgroundColor: color,
+          marginTop: 2,
+        }}
+      />
+      <Col flex={1} gap={1}>
+        <Text variant="label" weight="semibold">
+          {label}
+        </Text>
+        <Text variant="caption" muted>
+          {description}
+        </Text>
+      </Col>
+    </Row>
   );
 }
