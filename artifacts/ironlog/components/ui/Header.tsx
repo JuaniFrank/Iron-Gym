@@ -16,7 +16,8 @@ interface HeaderProps {
   /** When true, render the title as a large h1 below a thin nav row. */
   large?: boolean;
   style?: ViewStyle;
-  /** Hide the back button slot when neither back nor right is needed. */
+  /** Skip the title block (useful when the screen renders its own H1).
+   *  Note: `back` and `right` always render regardless of this flag. */
   compact?: boolean;
 }
 
@@ -39,26 +40,31 @@ export function Header({
     if (router.canGoBack()) router.back();
   };
 
+  // Nav row appears whenever there's a back or right action, OR when in
+  // expanded mode (so big-title headers keep their breathing room).
+  const showNavRow = !!back || !!right || !compact;
+  const showTitleBlock = !!title && !compact;
+
   return (
     <View
       style={[
         {
           paddingHorizontal: 20,
           paddingTop: topInset + 8,
-          paddingBottom: large ? 4 : 8,
+          paddingBottom: showTitleBlock ? (large ? 4 : 8) : 8,
           backgroundColor: colors.bg,
         },
         style,
       ]}
     >
-      {!compact && (
+      {showNavRow && (
         <View
           style={{
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "space-between",
             minHeight: 36,
-            marginBottom: large ? 14 : 6,
+            marginBottom: showTitleBlock ? (large ? 14 : 6) : 0,
           }}
         >
           {back ? (
@@ -89,24 +95,26 @@ export function Header({
         </View>
       )}
 
-      {large ? (
-        <View>
-          {title ? <Text variant="h1">{title}</Text> : null}
-          {subtitle ? (
-            <Text variant="body" muted style={{ marginTop: 4 }}>
-              {subtitle}
-            </Text>
-          ) : null}
-        </View>
-      ) : title ? (
-        <View style={{ alignItems: "center" }}>
-          <Text variant="title">{title}</Text>
-          {subtitle ? (
-            <Text variant="caption" muted>
-              {subtitle}
-            </Text>
-          ) : null}
-        </View>
+      {showTitleBlock ? (
+        large ? (
+          <View>
+            <Text variant="h1">{title}</Text>
+            {subtitle ? (
+              <Text variant="body" muted style={{ marginTop: 4 }}>
+                {subtitle}
+              </Text>
+            ) : null}
+          </View>
+        ) : (
+          <View style={{ alignItems: "center" }}>
+            <Text variant="title">{title}</Text>
+            {subtitle ? (
+              <Text variant="caption" muted>
+                {subtitle}
+              </Text>
+            ) : null}
+          </View>
+        )
       ) : null}
     </View>
   );

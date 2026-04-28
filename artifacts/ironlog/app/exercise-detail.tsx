@@ -37,9 +37,11 @@ export default function ExerciseDetailScreen() {
 
   if (!ex) {
     return (
-      <Screen>
+      <Screen noPadding>
         <Header title="Ejercicio" back />
-        <EmptyState icon="alert-circle" title="No encontrado" />
+        <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>
+          <EmptyState icon="alert-circle" title="No encontrado" />
+        </View>
       </Screen>
     );
   }

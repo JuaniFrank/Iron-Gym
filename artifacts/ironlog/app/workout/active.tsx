@@ -89,15 +89,17 @@ export default function ActiveWorkoutScreen() {
 
   if (!session) {
     return (
-      <Screen>
+      <Screen noPadding>
         <Header title="Sesión" back />
-        <EmptyState
-          icon="zap"
-          title="Sin sesión activa"
-          description="Inicia una rutina para empezar a registrar."
-          actionLabel="Ver rutinas"
-          onAction={() => router.replace("/workout")}
-        />
+        <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>
+          <EmptyState
+            icon="zap"
+            title="Sin sesión activa"
+            description="Inicia una rutina para empezar a registrar."
+            actionLabel="Ver rutinas"
+            onAction={() => router.replace("/workout")}
+          />
+        </View>
       </Screen>
     );
   }

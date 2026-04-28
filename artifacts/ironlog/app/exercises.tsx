@@ -2,6 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import { Alert, Pressable, ScrollView, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Card } from "@/components/ui/Card";
 import { Chip } from "@/components/ui/Chip";
@@ -19,6 +20,7 @@ import type { Exercise, MuscleGroup } from "@/types";
 
 export default function ExercisesScreen() {
   const colors = useThemeColors();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
     routineId?: string;
     dayId?: string;
@@ -103,7 +105,7 @@ export default function ExercisesScreen() {
     <Screen noPadding>
       <View
         style={{
-          paddingTop: 8,
+          paddingTop: insets.top + 8,
           paddingHorizontal: 20,
           paddingBottom: 14,
           flexDirection: "row",

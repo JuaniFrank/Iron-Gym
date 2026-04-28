@@ -2,6 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -19,6 +20,7 @@ import type { FoodItem, MealType } from "@/types";
 
 export default function FoodAddScreen() {
   const colors = useThemeColors();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ date?: string; meal?: MealType }>();
   const { allFoods, logFood } = useIronLog();
   const [search, setSearch] = useState("");
@@ -176,7 +178,7 @@ export default function FoodAddScreen() {
     <Screen noPadding>
       <View
         style={{
-          paddingTop: 8,
+          paddingTop: insets.top + 8,
           paddingHorizontal: 20,
           paddingBottom: 14,
           flexDirection: "row",

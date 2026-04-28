@@ -30,7 +30,13 @@ export function Screen({
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
 
-  const topInset = edges.top ? (isWeb ? Math.max(insets.top, 16) : insets.top) : 0;
+  // When `noPadding` is set, the caller is responsible for ALL spacing
+  // (horizontal, vertical, AND top safe area). Typical case: a `<Header>` or a
+  // custom in-screen header is rendered as the first child and handles the
+  // notch. Doing it here too would double the inset.
+  const topInset = edges.top && !noPadding
+    ? (isWeb ? Math.max(insets.top, 16) : insets.top)
+    : 0;
   const baseBottom = edges.bottom ? (isWeb ? Math.max(insets.bottom, 16) : insets.bottom) : 0;
   const bottomInset = baseBottom + (tabBarSpacing ? 110 : 16);
 
