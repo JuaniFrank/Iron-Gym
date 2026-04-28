@@ -1,9 +1,11 @@
 import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import React, { useMemo } from "react";
-import { Pressable, View } from "react-native";
+import React, { useMemo, useState } from "react";
+import { Platform, Pressable, View } from "react-native";
 
 import { Heatmap } from "@/components/charts/Heatmap";
+import { DaySwapSheet } from "@/components/home/DaySwapSheet";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Divider } from "@/components/ui/Divider";
@@ -13,7 +15,7 @@ import { Text } from "@/components/ui/Text";
 import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
 import { calorieGoalForGoal, calculateTDEE } from "@/utils/calculations";
-import { dateKey, getDayOfWeek } from "@/utils/date";
+import { dateKey, startOfDay } from "@/utils/date";
 
 export default function HomeScreen() {
   const colors = useThemeColors();
@@ -21,23 +23,29 @@ export default function HomeScreen() {
     profile,
     sessions,
     foodEntries,
-    schedule,
-    allRoutines,
     activeWorkoutId,
     getStreak,
     allFoods,
+    allRoutines,
+    getPlanForDate,
   } = useIronLog();
+
+  const [swapOpen, setSwapOpen] = useState(false);
 
   const streak = getStreak();
   const todayKey = dateKey(Date.now());
   const today = useMemo(() => new Date(), []);
-  const dow = getDayOfWeek(today.getTime());
+  const todayTs = useMemo(() => startOfDay(Date.now()), []);
+  const todayPlan = getPlanForDate(todayTs);
 
-  const todayScheduled = schedule.find((s) => s.dayOfWeek === dow);
-  const todayRoutine = todayScheduled
-    ? allRoutines.find((r) => r.id === todayScheduled.routineId)
-    : null;
-  const todayDay = todayRoutine?.days.find((d) => d.id === todayScheduled?.routineDayId) ?? null;
+  const todayRoutine =
+    todayPlan.kind === "training"
+      ? allRoutines.find((r) => r.id === todayPlan.routineId)
+      : null;
+  const todayDay =
+    todayRoutine && todayPlan.kind === "training"
+      ? todayRoutine.days.find((d) => d.id === todayPlan.routineDayId) ?? null
+      : null;
 
   const finishedSessions = sessions.filter((s) => s.endedAt);
   const todaySessions = finishedSessions.filter((s) => dateKey(s.endedAt!) === todayKey);
@@ -72,27 +80,55 @@ export default function HomeScreen() {
   const recent = finishedSessions.slice(-3).reverse();
   const initials = profile.name.trim().slice(0, 1).toUpperCase() || "A";
 
-  const heroPress = activeWorkoutId
-    ? () => router.push("/workout/active")
-    : todayRoutine && todayDay
-      ? () => router.push(`/workout/active?routineId=${todayRoutine.id}&dayId=${todayDay.id}`)
-      : undefined;
+  const isRest = todayPlan.kind === "rest";
+  const showStartIcon = !!activeWorkoutId || (!isRest && !!todayRoutine && !!todayDay);
 
   const heroTitle = activeWorkoutId
     ? "Continuar"
-    : todayRoutine && todayDay
+    : !isRest && todayRoutine && todayDay
       ? todayDay.name
       : "Día de";
   const heroItalic = activeWorkoutId
     ? "ahora"
-    : todayRoutine && todayDay
+    : !isRest && todayRoutine && todayDay
       ? "hoy"
       : "descanso";
   const heroMeta = activeWorkoutId
     ? "Tienes una sesión activa"
-    : todayRoutine && todayDay
+    : !isRest && todayRoutine && todayDay
       ? `${todayRoutine.name} · ${todayDay.exercises.length} ejercicios`
-      : "Sin entrenamiento programado";
+      : "Tocá para entrenar igual";
+
+  const triggerHaptic = (style: "light" | "medium" = "light") => {
+    if (Platform.OS === "web") return;
+    Haptics.impactAsync(
+      style === "medium"
+        ? Haptics.ImpactFeedbackStyle.Medium
+        : Haptics.ImpactFeedbackStyle.Light,
+    );
+  };
+
+  const handleHeroPress = () => {
+    if (activeWorkoutId) {
+      router.push("/workout/active");
+      return;
+    }
+    if (!isRest && todayRoutine && todayDay) {
+      triggerHaptic();
+      router.push(
+        `/workout/active?routineId=${todayRoutine.id}&dayId=${todayDay.id}`,
+      );
+      return;
+    }
+    // Rest day: open the swap sheet so the user can train anyway.
+    triggerHaptic();
+    setSwapOpen(true);
+  };
+
+  const handleHeroLongPress = () => {
+    triggerHaptic("medium");
+    setSwapOpen(true);
+  };
 
   return (
     <Screen scroll tabBarSpacing>
@@ -125,8 +161,9 @@ export default function HomeScreen() {
 
       {/* Hero card */}
       <Pressable
-        onPress={heroPress}
-        disabled={!heroPress}
+        onPress={handleHeroPress}
+        onLongPress={handleHeroLongPress}
+        delayLongPress={350}
         style={({ pressed }) => ({ opacity: pressed ? 0.92 : 1 })}
       >
         <View
@@ -147,30 +184,68 @@ export default function HomeScreen() {
               width: 200,
               height: 200,
               borderRadius: 999,
-              backgroundColor: colors.accent,
-              opacity: 0.18,
+              backgroundColor: isRest ? "rgba(242,240,232,0.06)" : colors.accent,
+              opacity: isRest ? 1 : 0.18,
             }}
           />
           <Row jc="space-between" ai="flex-start" style={{ marginBottom: 28 }}>
-            <Text variant="tiny" color={colors.accent}>
-              {activeWorkoutId ? "EN CURSO" : `HOY · ${dayName}`}
-            </Text>
-            <View
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 20,
-                backgroundColor: colors.accent,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Feather
-                name={activeWorkoutId ? "play-circle" : "play"}
-                size={16}
-                color={colors.accentInk}
-              />
-            </View>
+            <Row gap={6} ai="center">
+              <Text
+                variant="tiny"
+                color={isRest && !activeWorkoutId ? "rgba(242,240,232,0.55)" : colors.accent}
+              >
+                {activeWorkoutId ? "EN CURSO" : `HOY · ${dayName}`}
+              </Text>
+              {todayPlan.isOverride && !activeWorkoutId ? (
+                <View
+                  style={{
+                    paddingHorizontal: 6,
+                    paddingVertical: 2,
+                    borderRadius: 4,
+                    backgroundColor: "rgba(201,242,77,0.18)",
+                  }}
+                >
+                  <Text variant="tiny" color={colors.accent}>
+                    AJUSTADO
+                  </Text>
+                </View>
+              ) : null}
+            </Row>
+
+            {showStartIcon ? (
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  backgroundColor: colors.accent,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Feather
+                  name={activeWorkoutId ? "play-circle" : "play"}
+                  size={16}
+                  color={colors.accentInk}
+                />
+              </View>
+            ) : (
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Feather
+                  name="moon"
+                  size={18}
+                  color="rgba(242,240,232,0.55)"
+                />
+              </View>
+            )}
           </Row>
           <Text variant="hero" color={colors.bg}>
             {heroTitle}{" "}
@@ -183,6 +258,13 @@ export default function HomeScreen() {
               {heroMeta}
             </Text>
           </Row>
+          <Text
+            variant="tiny"
+            color="rgba(242,240,232,0.35)"
+            style={{ marginTop: 10 }}
+          >
+            MANTENER PARA CAMBIAR DE DÍA
+          </Text>
         </View>
       </Pressable>
 
@@ -281,6 +363,8 @@ export default function HomeScreen() {
           </Col>
         </>
       ) : null}
+
+      <DaySwapSheet visible={swapOpen} onClose={() => setSwapOpen(false)} />
     </Screen>
   );
 }

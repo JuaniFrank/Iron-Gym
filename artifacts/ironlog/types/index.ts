@@ -168,6 +168,30 @@ export interface ScheduledRoutine {
   routineDayId: string;
 }
 
+/**
+ * Per-date plan override — wins over the weekly `ScheduledRoutine` for that
+ * single calendar date. `routineId == null` is an explicit rest override
+ * (e.g. user converted a planned training day into rest for one date).
+ *
+ * Keyed by `dateKey` (YYYY-MM-DD) so it maps cleanly to a future DB table:
+ * `schedule_overrides(date_key TEXT PK, routine_id, routine_day_id, created_at)`.
+ */
+export interface ScheduleOverride {
+  dateKey: string;
+  routineId: string | null;
+  routineDayId: string | null;
+  createdAt: number;
+}
+
+export type ResolvedPlan =
+  | {
+      kind: "training";
+      routineId: string;
+      routineDayId: string;
+      isOverride: boolean;
+    }
+  | { kind: "rest"; isOverride: boolean };
+
 export interface AchievementUnlock {
   id: string;
   unlockedAt: number;

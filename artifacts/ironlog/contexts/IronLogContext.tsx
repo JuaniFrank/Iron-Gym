@@ -16,14 +16,16 @@ import type {
   FoodItem,
   PRRecord,
   ProgressPhoto,
+  ResolvedPlan,
   Routine,
   RoutineDay,
   RoutineExercise,
   ScheduledRoutine,
+  ScheduleOverride,
   UserProfile,
   WorkoutSession,
 } from "@/types";
-import { dateKey, startOfDay } from "@/utils/date";
+import { dateKey, getDayOfWeek, startOfDay } from "@/utils/date";
 import { uid } from "@/utils/id";
 
 const STORAGE_KEY = "ironlog:v1";
@@ -39,6 +41,7 @@ interface PersistedState {
   foodEntries: FoodEntry[];
   goals: FitnessGoal[];
   schedule: ScheduledRoutine[];
+  scheduleOverrides: ScheduleOverride[];
   achievements: AchievementUnlock[];
   profile: UserProfile;
   activeWorkoutId: string | null;
@@ -72,6 +75,7 @@ const DEFAULT_STATE: PersistedState = {
   foodEntries: [],
   goals: [],
   schedule: [],
+  scheduleOverrides: [],
   achievements: [],
   profile: DEFAULT_PROFILE,
   activeWorkoutId: null,
@@ -129,6 +133,14 @@ interface IronLogContextValue extends PersistedState {
   // Schedule
   scheduleRoutine: (entry: ScheduledRoutine) => void;
   unscheduleDay: (dayOfWeek: number) => void;
+  // Per-date overrides (additive on top of weekly schedule)
+  getPlanForDate: (timestamp: number) => ResolvedPlan;
+  setOverrideForDate: (
+    timestamp: number,
+    plan: { routineId: string; routineDayId: string } | null,
+  ) => void;
+  clearOverrideForDate: (timestamp: number) => void;
+  swapDates: (timestampA: number, timestampB: number) => void;
   // Profile
   updateProfile: (patch: Partial<UserProfile>) => void;
   // Helpers
@@ -745,6 +757,137 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
     }));
   }, [update]);
 
+  // Per-date overrides (additive layer over weekly schedule).
+  // Resolution: override (if present, even if rest) > weekly schedule[dow] > rest.
+  const getPlanForDate = useCallback(
+    (timestamp: number): ResolvedPlan => {
+      const k = dateKey(timestamp);
+      const override = state.scheduleOverrides.find((o) => o.dateKey === k);
+      if (override) {
+        if (override.routineId && override.routineDayId) {
+          return {
+            kind: "training",
+            routineId: override.routineId,
+            routineDayId: override.routineDayId,
+            isOverride: true,
+          };
+        }
+        return { kind: "rest", isOverride: true };
+      }
+      const dow = getDayOfWeek(timestamp);
+      const sched = state.schedule.find((s) => s.dayOfWeek === dow);
+      if (sched) {
+        return {
+          kind: "training",
+          routineId: sched.routineId,
+          routineDayId: sched.routineDayId,
+          isOverride: false,
+        };
+      }
+      return { kind: "rest", isOverride: false };
+    },
+    [state.schedule, state.scheduleOverrides],
+  );
+
+  const setOverrideForDate = useCallback(
+    (
+      timestamp: number,
+      plan: { routineId: string; routineDayId: string } | null,
+    ) => {
+      const k = dateKey(timestamp);
+      update((prev) => ({
+        ...prev,
+        scheduleOverrides: [
+          ...prev.scheduleOverrides.filter((o) => o.dateKey !== k),
+          {
+            dateKey: k,
+            routineId: plan?.routineId ?? null,
+            routineDayId: plan?.routineDayId ?? null,
+            createdAt: Date.now(),
+          },
+        ],
+      }));
+    },
+    [update],
+  );
+
+  const clearOverrideForDate = useCallback(
+    (timestamp: number) => {
+      const k = dateKey(timestamp);
+      update((prev) => ({
+        ...prev,
+        scheduleOverrides: prev.scheduleOverrides.filter((o) => o.dateKey !== k),
+      }));
+    },
+    [update],
+  );
+
+  // Swap two dates' resolved plans by writing overrides on both.
+  // Resolves each side against the *current* schedule + overrides snapshot inside
+  // the updater so the two writes are consistent (no stale read between them).
+  const swapDates = useCallback(
+    (timestampA: number, timestampB: number) => {
+      if (dateKey(timestampA) === dateKey(timestampB)) return;
+      update((prev) => {
+        const resolve = (ts: number): ResolvedPlan => {
+          const k = dateKey(ts);
+          const ov = prev.scheduleOverrides.find((o) => o.dateKey === k);
+          if (ov) {
+            if (ov.routineId && ov.routineDayId) {
+              return {
+                kind: "training",
+                routineId: ov.routineId,
+                routineDayId: ov.routineDayId,
+                isOverride: true,
+              };
+            }
+            return { kind: "rest", isOverride: true };
+          }
+          const dow = getDayOfWeek(ts);
+          const sched = prev.schedule.find((s) => s.dayOfWeek === dow);
+          if (sched) {
+            return {
+              kind: "training",
+              routineId: sched.routineId,
+              routineDayId: sched.routineDayId,
+              isOverride: false,
+            };
+          }
+          return { kind: "rest", isOverride: false };
+        };
+
+        const planA = resolve(timestampA);
+        const planB = resolve(timestampB);
+        const kA = dateKey(timestampA);
+        const kB = dateKey(timestampB);
+
+        const toOverride = (
+          k: string,
+          p: ResolvedPlan,
+        ): ScheduleOverride => ({
+          dateKey: k,
+          routineId: p.kind === "training" ? p.routineId : null,
+          routineDayId: p.kind === "training" ? p.routineDayId : null,
+          createdAt: Date.now(),
+        });
+
+        const filtered = prev.scheduleOverrides.filter(
+          (o) => o.dateKey !== kA && o.dateKey !== kB,
+        );
+
+        return {
+          ...prev,
+          scheduleOverrides: [
+            ...filtered,
+            toOverride(kA, planB),
+            toOverride(kB, planA),
+          ],
+        };
+      });
+    },
+    [update],
+  );
+
   // Profile
   const updateProfile = useCallback((patch: Partial<UserProfile>) => {
     update((prev) => ({ ...prev, profile: { ...prev.profile, ...patch } }));
@@ -796,6 +939,10 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
       deleteGoal,
       scheduleRoutine,
       unscheduleDay,
+      getPlanForDate,
+      setOverrideForDate,
+      clearOverrideForDate,
+      swapDates,
       updateProfile,
       getExerciseById,
       getFoodById,
@@ -846,6 +993,10 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
       deleteGoal,
       scheduleRoutine,
       unscheduleDay,
+      getPlanForDate,
+      setOverrideForDate,
+      clearOverrideForDate,
+      swapDates,
       updateProfile,
       getExerciseById,
       getFoodById,
