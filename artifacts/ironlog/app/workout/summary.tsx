@@ -1,14 +1,18 @@
 import { Feather } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useState } from "react";
 import { ScrollView, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CelebrationOverlay } from "@/components/celebration/CelebrationOverlay";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Divider } from "@/components/ui/Divider";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { IconButton } from "@/components/ui/IconButton";
 import { Screen } from "@/components/ui/Screen";
+import { Col, Row } from "@/components/ui/Stack";
+import { BigStat } from "@/components/ui/Stat";
 import { Text } from "@/components/ui/Text";
 import { ACHIEVEMENTS } from "@/constants/achievements";
 import { useIronLog } from "@/contexts/IronLogContext";
@@ -17,17 +21,25 @@ import { formatDuration } from "@/utils/date";
 
 export default function WorkoutSummaryScreen() {
   const colors = useThemeColors();
-  const params = useLocalSearchParams<{ sessionId: string; prs?: string; achievements?: string }>();
+  const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{
+    sessionId: string;
+    prs?: string;
+    achievements?: string;
+  }>();
   const { sessions, getExerciseById } = useIronLog();
   const session = sessions.find((s) => s.id === params.sessionId);
 
-  const [celebrate, setCelebrate] = useState<{ title: string; subtitle?: string; icon: any } | null>(null);
+  const [celebrate, setCelebrate] = useState<{
+    title: string;
+    subtitle?: string;
+    icon: any;
+  } | null>(null);
   const [shownIds, setShownIds] = useState<string[]>([]);
 
   const newAchievements = (params.achievements ?? "").split(",").filter(Boolean);
   const newPrs = parseInt(params.prs ?? "0", 10);
 
-  // Show celebrations sequentially
   useEffect(() => {
     if (newPrs > 0 && !shownIds.includes("__pr")) {
       setCelebrate({
@@ -60,116 +72,196 @@ export default function WorkoutSummaryScreen() {
   const workSets = session.sets.filter((s) => !s.isWarmup);
   const totalReps = workSets.reduce((s, x) => s + x.reps, 0);
   const exercisesCount = new Set(session.sets.map((s) => s.exerciseId)).size;
+  const startDate = new Date(session.startedAt);
+  const dayName = startDate
+    .toLocaleDateString("es-ES", { weekday: "long" })
+    .toUpperCase();
+  const time = startDate.toLocaleTimeString("es-ES", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  const exerciseIds = Array.from(new Set(session.sets.map((s) => s.exerciseId)));
 
   return (
-    <Screen scroll>
-      <View style={{ paddingTop: 16 }}>
-        <LinearGradient
-          colors={["#FF6B35", "#E64A1A"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+    <Screen scroll noPadding>
+      <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 20, paddingBottom: 8 }}>
+        <IconButton icon="x" onPress={() => router.replace("/")} />
+      </View>
+
+      <ScrollView
+        contentContainerStyle={{
+          paddingHorizontal: 20,
+          paddingBottom: 120 + insets.bottom,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Hero */}
+        <View
           style={{
-            borderRadius: colors.radius,
+            backgroundColor: colors.ink,
+            borderRadius: 24,
             padding: 24,
-            alignItems: "center",
-            marginBottom: 20,
+            position: "relative",
+            overflow: "hidden",
+            marginBottom: 14,
           }}
         >
           <View
             style={{
-              width: 64,
-              height: 64,
-              borderRadius: 32,
-              backgroundColor: "rgba(255,255,255,0.25)",
-              alignItems: "center",
-              justifyContent: "center",
-              marginBottom: 12,
+              position: "absolute",
+              right: -60,
+              top: -60,
+              width: 240,
+              height: 240,
+              borderRadius: 999,
+              backgroundColor: colors.accent,
+              opacity: 0.18,
             }}
-          >
-            <Feather name="check" size={32} color="#FFFFFF" />
-          </View>
-          <Text variant="h2" color="#FFFFFF">
-            ¡Sesión completada!
-          </Text>
-          <Text variant="body" color="rgba(255,255,255,0.9)" style={{ marginTop: 4 }}>
-            {session.dayName}
-          </Text>
-        </LinearGradient>
-
-        <View style={{ flexDirection: "row", gap: 8, marginBottom: 12 }}>
-          <BigStat label="Duración" value={formatDuration(duration)} icon="clock" />
-          <BigStat label="Volumen" value={`${Math.round(session.totalVolumeKg)}kg`} icon="bar-chart-2" />
-        </View>
-        <View style={{ flexDirection: "row", gap: 8, marginBottom: 20 }}>
-          <BigStat label="Sets" value={String(session.sets.length)} icon="layers" />
-          <BigStat label="Reps" value={String(totalReps)} icon="repeat" />
-          <BigStat label="Ejercicios" value={String(exercisesCount)} icon="activity" />
-        </View>
-
-        {session.prsAchieved.length > 0 ? (
-          <Card style={{ marginBottom: 16, backgroundColor: colors.accent, borderColor: colors.primary }}>
-            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
-              <Feather name="trending-up" size={20} color={colors.primary} />
-              <Text variant="title" color={colors.primary} style={{ marginLeft: 8 }}>
-                Récords personales
-              </Text>
+          />
+          <Row gap={10} style={{ marginBottom: 18 }}>
+            <View
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                backgroundColor: colors.accent,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Feather name="check" size={14} color={colors.accentInk} />
             </View>
-            <View style={{ gap: 8 }}>
-              {session.prsAchieved.map((pr) => (
-                <View
-                  key={pr.exerciseId}
-                  style={{
-                    flexDirection: "row",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
-                >
-                  <Text variant="label" color={colors.accentForeground} style={{ flex: 1 }}>
+            <Text variant="tiny" color={colors.accent}>
+              SESIÓN COMPLETADA
+            </Text>
+          </Row>
+          <Text variant="hero" color={colors.bg}>
+            <Text variant="hero" color={colors.bg} italic style={{ fontWeight: "300" }}>
+              {session.dayName}
+            </Text>
+            {"\n"}terminado.
+          </Text>
+          <Text variant="tiny" color="rgba(242,240,232,0.5)" style={{ marginTop: 16 }}>
+            {time} · {formatDuration(duration).toUpperCase()} · {dayName}
+          </Text>
+        </View>
+
+        {/* Stat grids */}
+        <Row gap={8} style={{ marginBottom: 8 }}>
+          <View style={{ flex: 1 }}>
+            <BigStat icon="clock" label="DURACIÓN" value={formatDuration(duration)} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <BigStat
+              icon="bar-chart-2"
+              label="VOLUMEN"
+              value={Math.round(session.totalVolumeKg).toLocaleString()}
+              sub="kg"
+            />
+          </View>
+        </Row>
+        <Row gap={8} style={{ marginBottom: 14 }}>
+          <View style={{ flex: 1 }}>
+            <BigStat icon="layers" label="SETS" value={String(session.sets.length)} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <BigStat icon="repeat" label="REPS" value={String(totalReps)} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <BigStat icon="activity" label="EJERC." value={String(exercisesCount)} />
+          </View>
+        </Row>
+
+        {/* PRs */}
+        {session.prsAchieved.length > 0 ? (
+          <Card variant="accent" style={{ marginBottom: 14 }}>
+            <Row gap={10} style={{ marginBottom: 12 }}>
+              <Feather name="trending-up" size={16} color={colors.accentEdge} />
+              <Text variant="h3" color={colors.accentEdge}>
+                {session.prsAchieved.length} récord
+                {session.prsAchieved.length === 1 ? "" : "s"} personal
+                {session.prsAchieved.length === 1 ? "" : "es"}
+              </Text>
+            </Row>
+            {session.prsAchieved.map((pr, i) => (
+              <React.Fragment key={pr.exerciseId}>
+                {i > 0 ? (
+                  <Divider color={colors.accentEdge} style={{ opacity: 0.3 }} />
+                ) : null}
+                <Row jc="space-between" style={{ paddingVertical: 10 }}>
+                  <Text variant="label" weight="semibold">
                     {pr.exerciseName}
                   </Text>
-                  <Text variant="title" color={colors.primary}>
-                    {pr.value} kg
-                  </Text>
-                </View>
-              ))}
-            </View>
+                  <Row gap={8}>
+                    <Text variant="mono" color={colors.ink} style={{ fontWeight: "600" }}>
+                      {pr.value}
+                      <Text variant="mono" color={colors.muted} style={{ fontSize: 11 }}>
+                        kg
+                      </Text>
+                    </Text>
+                    {pr.previousValue ? (
+                      <Text variant="tiny" color={colors.accentEdge}>
+                        +{(pr.value - pr.previousValue).toFixed(1)}kg
+                      </Text>
+                    ) : null}
+                  </Row>
+                </Row>
+              </React.Fragment>
+            ))}
           </Card>
         ) : null}
 
-        <Text variant="title" style={{ marginBottom: 8 }}>
-          Resumen por ejercicio
+        <Text
+          variant="tiny"
+          color={colors.muted}
+          style={{ paddingHorizontal: 4, paddingVertical: 10 }}
+        >
+          RESUMEN POR EJERCICIO
         </Text>
-        <View style={{ gap: 8, marginBottom: 16 }}>
-          {Array.from(new Set(session.sets.map((s) => s.exerciseId))).map((exId) => {
+        <Col gap={6}>
+          {exerciseIds.map((exId) => {
             const ex = getExerciseById(exId);
             const sets = session.sets.filter((s) => s.exerciseId === exId && !s.isWarmup);
             const maxW = sets.reduce((m, s) => Math.max(m, s.weight), 0);
             const totalR = sets.reduce((s, x) => s + x.reps, 0);
             return (
-              <Card key={exId}>
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <View style={{ flex: 1 }}>
+              <Card key={exId} padding={0}>
+                <Row jc="space-between" style={{ paddingHorizontal: 14, paddingVertical: 12 }}>
+                  <Col gap={2}>
                     <Text variant="label" weight="semibold">
                       {ex?.name ?? "Ejercicio"}
                     </Text>
                     <Text variant="caption" muted>
                       {sets.length} sets · {totalR} reps
                     </Text>
-                  </View>
-                  <Text variant="title" color={colors.primary}>
-                    {maxW.toFixed(1)} kg
+                  </Col>
+                  <Text variant="mono" color={colors.ink} style={{ fontSize: 14, fontWeight: "600" }}>
+                    {maxW.toFixed(1)}
+                    <Text variant="mono" color={colors.muted} style={{ fontSize: 10 }}>
+                      kg
+                    </Text>
                   </Text>
-                </View>
+                </Row>
               </Card>
             );
           })}
-        </View>
+        </Col>
+      </ScrollView>
 
+      <View
+        style={{
+          position: "absolute",
+          bottom: Math.max(insets.bottom, 16) + 6,
+          left: 16,
+          right: 16,
+        }}
+      >
         <Button
           label="Volver al inicio"
           icon="home"
-          fullWidth
           size="lg"
+          fullWidth
           onPress={() => router.replace("/")}
         />
       </View>
@@ -182,38 +274,5 @@ export default function WorkoutSummaryScreen() {
         onClose={() => setCelebrate(null)}
       />
     </Screen>
-  );
-}
-
-function BigStat({
-  label,
-  value,
-  icon,
-}: {
-  label: string;
-  value: string;
-  icon: any;
-}) {
-  const colors = useThemeColors();
-  return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: colors.card,
-        borderColor: colors.border,
-        borderWidth: 1,
-        padding: 12,
-        borderRadius: colors.radius,
-        alignItems: "center",
-      }}
-    >
-      <Feather name={icon} size={16} color={colors.mutedForeground} />
-      <Text variant="h3" style={{ marginTop: 6, fontVariant: ["tabular-nums"] }}>
-        {value}
-      </Text>
-      <Text variant="tiny" muted>
-        {label.toUpperCase()}
-      </Text>
-    </View>
   );
 }

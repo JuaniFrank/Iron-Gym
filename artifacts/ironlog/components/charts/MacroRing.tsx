@@ -1,6 +1,8 @@
 import React from "react";
-import Svg, { Circle, G, Text as SvgText } from "react-native-svg";
+import { View } from "react-native";
+import Svg, { Circle, G } from "react-native-svg";
 
+import { Text } from "@/components/ui/Text";
 import { useThemeColors } from "@/contexts/ThemeContext";
 
 interface MacroRingProps {
@@ -12,11 +14,11 @@ interface MacroRingProps {
 }
 
 export function MacroRing({
-  size = 180,
+  size = 140,
   consumed,
   goal,
-  thickness = 14,
-  label = "kcal",
+  thickness = 13,
+  label = "kcal restantes",
 }: MacroRingProps) {
   const colors = useThemeColors();
   const radius = (size - thickness) / 2;
@@ -26,48 +28,49 @@ export function MacroRing({
   const remaining = Math.max(0, goal - consumed);
 
   return (
-    <Svg width={size} height={size}>
-      <G rotation={-90} originX={size / 2} originY={size / 2}>
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={colors.secondary}
-          strokeWidth={thickness}
-          fill="none"
-        />
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={colors.primary}
-          strokeWidth={thickness}
-          fill="none"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-        />
-      </G>
-      <SvgText
-        x={size / 2}
-        y={size / 2 - 4}
-        fontSize={36}
-        fontFamily="Inter_700Bold"
-        fill={colors.foreground}
-        textAnchor="middle"
+    <View style={{ width: size, height: size }}>
+      <Svg width={size} height={size}>
+        <G rotation={-90} originX={size / 2} originY={size / 2}>
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={colors.surfaceAlt}
+            strokeWidth={thickness}
+            fill="none"
+          />
+          <Circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={colors.accent}
+            strokeWidth={thickness}
+            fill="none"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+          />
+        </G>
+      </Svg>
+      <View
+        pointerEvents="none"
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
       >
-        {Math.round(remaining)}
-      </SvgText>
-      <SvgText
-        x={size / 2}
-        y={size / 2 + 18}
-        fontSize={11}
-        fontFamily="Inter_500Medium"
-        fill={colors.mutedForeground}
-        textAnchor="middle"
-      >
-        {label} restantes
-      </SvgText>
-    </Svg>
+        <Text variant="monoLg" color={colors.ink}>
+          {Math.round(remaining)}
+        </Text>
+        <Text variant="tiny" color={colors.muted} style={{ marginTop: 2 }}>
+          {label}
+        </Text>
+      </View>
+    </View>
   );
 }

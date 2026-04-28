@@ -1,13 +1,16 @@
+import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useState } from "react";
-import { ScrollView, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Divider } from "@/components/ui/Divider";
 import { Header } from "@/components/ui/Header";
 import { Input } from "@/components/ui/Input";
 import { Screen } from "@/components/ui/Screen";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
@@ -27,43 +30,50 @@ export default function ProfileScreen() {
 
   return (
     <Screen noPadding>
-      <Header title="Perfil" back />
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
-        <Card>
-          <Text variant="title" style={{ marginBottom: 12 }}>
-            Datos personales
+      <Header title="" back compact />
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}>
+        <Text variant="h1" style={{ marginBottom: 18, paddingHorizontal: 4 }}>
+          Perfil
+        </Text>
+
+        <Card style={{ marginBottom: 12 }}>
+          <Text variant="tiny" color={colors.muted} style={{ marginBottom: 14 }}>
+            DATOS PERSONALES
           </Text>
-          <View style={{ gap: 10 }}>
-            <Input label="Nombre" value={draft.name} onChangeText={(v) => set("name", v)} />
-            <View style={{ flexDirection: "row", gap: 8 }}>
+          <Col gap={10}>
+            <Input fieldLabel="NOMBRE" value={draft.name} onChangeText={(v) => set("name", v)} />
+            <Row gap={8}>
               <View style={{ flex: 1 }}>
                 <Input
-                  label="Edad"
+                  fieldLabel="EDAD"
                   value={String(draft.age)}
                   onChangeText={(v) => set("age", parseInt(v, 10) || 0)}
                   keyboardType="number-pad"
+                  suffix="años"
                 />
               </View>
               <View style={{ flex: 1 }}>
                 <Input
-                  label="Altura (cm)"
+                  fieldLabel="ALTURA"
                   value={String(draft.heightCm)}
                   onChangeText={(v) => set("heightCm", parseFloat(v) || 0)}
                   keyboardType="decimal-pad"
+                  suffix="cm"
                 />
               </View>
               <View style={{ flex: 1 }}>
                 <Input
-                  label="Peso (kg)"
+                  fieldLabel="PESO"
                   value={String(draft.weightKg)}
                   onChangeText={(v) => set("weightKg", parseFloat(v) || 0)}
                   keyboardType="decimal-pad"
+                  suffix="kg"
                 />
               </View>
-            </View>
+            </Row>
             <View>
-              <Text variant="label" muted style={{ marginBottom: 6 }}>
-                Sexo
+              <Text variant="tiny" color={colors.muted} style={{ marginBottom: 6 }}>
+                SEXO
               </Text>
               <SegmentedControl
                 options={[
@@ -74,51 +84,61 @@ export default function ProfileScreen() {
                 onChange={(v) => set("sex", v)}
               />
             </View>
-          </View>
+          </Col>
         </Card>
 
-        <Card>
-          <Text variant="title" style={{ marginBottom: 12 }}>
-            Actividad
+        <Card style={{ marginBottom: 12 }}>
+          <Text variant="tiny" color={colors.muted} style={{ marginBottom: 14 }}>
+            NIVEL DE ACTIVIDAD
           </Text>
-          <View style={{ gap: 8 }}>
+          <Col gap={6}>
             {(
               [
-                { v: "sedentary", l: "Sedentario", d: "Poco o nada de ejercicio" },
-                { v: "light", l: "Ligero", d: "Ejercicio 1-3 días/semana" },
-                { v: "moderate", l: "Moderado", d: "Ejercicio 3-5 días/semana" },
-                { v: "active", l: "Activo", d: "Ejercicio 6-7 días/semana" },
-                { v: "veryActive", l: "Muy activo", d: "Ejercicio intenso diario" },
+                { v: "sedentary", l: "Sedentario", d: "Poco o nada" },
+                { v: "light", l: "Ligero", d: "1-3 días / semana" },
+                { v: "moderate", l: "Moderado", d: "3-5 días / semana" },
+                { v: "active", l: "Activo", d: "6-7 días / semana" },
+                { v: "veryActive", l: "Muy activo", d: "Trabajo físico + entreno" },
               ] as const
             ).map((opt) => {
               const active = draft.activityLevel === opt.v;
               return (
-                <View
+                <Pressable
                   key={opt.v}
-                  onTouchEnd={() => set("activityLevel", opt.v)}
+                  onPress={() => set("activityLevel", opt.v)}
                   style={{
-                    padding: 12,
-                    borderRadius: 10,
-                    backgroundColor: active ? colors.accent : colors.secondary,
+                    paddingVertical: 10,
+                    paddingHorizontal: 14,
+                    borderRadius: 12,
+                    backgroundColor: active ? colors.accentSoft : colors.surfaceAlt,
                     borderWidth: 1,
-                    borderColor: active ? colors.primary : "transparent",
+                    borderColor: active ? colors.accentEdge : "transparent",
                   }}
                 >
-                  <Text variant="label" weight="semibold" color={active ? colors.primary : colors.foreground}>
-                    {opt.l}
-                  </Text>
-                  <Text variant="caption" muted>
-                    {opt.d}
-                  </Text>
-                </View>
+                  <Row jc="space-between">
+                    <Col gap={2}>
+                      <Text
+                        variant="label"
+                        weight="semibold"
+                        color={active ? colors.accentEdge : colors.ink}
+                      >
+                        {opt.l}
+                      </Text>
+                      <Text variant="caption" muted>
+                        {opt.d}
+                      </Text>
+                    </Col>
+                    {active ? <Feather name="check" size={14} color={colors.accentEdge} /> : null}
+                  </Row>
+                </Pressable>
               );
             })}
-          </View>
+          </Col>
         </Card>
 
-        <Card>
-          <Text variant="title" style={{ marginBottom: 12 }}>
-            Objetivo
+        <Card style={{ marginBottom: 12 }}>
+          <Text variant="tiny" color={colors.muted} style={{ marginBottom: 10 }}>
+            OBJETIVO
           </Text>
           <SegmentedControl
             options={[
@@ -132,29 +152,40 @@ export default function ProfileScreen() {
           />
         </Card>
 
-        <Card style={{ backgroundColor: colors.accent, borderColor: colors.primary }}>
-          <Text variant="tiny" color={colors.primary} weight="bold">
-            CALCULADO
+        <Card variant="accent" style={{ marginBottom: 18 }}>
+          <Text variant="tiny" color={colors.accentEdge} style={{ marginBottom: 12 }}>
+            CALCULADO AUTOMÁTICAMENTE
           </Text>
-          <View style={{ flexDirection: "row", marginTop: 8, gap: 16 }}>
-            <View style={{ flex: 1 }}>
-              <Text variant="caption" color={colors.accentForeground}>BMR (descanso)</Text>
-              <Text variant="h3" color={colors.primary}>
-                {Math.round(bmr)} kcal
+          <Row gap={20}>
+            <Col gap={4} flex={1}>
+              <Text variant="tiny" color={colors.muted}>
+                BMR
               </Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text variant="caption" color={colors.accentForeground}>TDEE (gasto diario)</Text>
-              <Text variant="h3" color={colors.primary}>
-                {tdee} kcal
+              <Text variant="h2" color={colors.accentEdge}>
+                {Math.round(bmr).toLocaleString()}
               </Text>
-            </View>
-          </View>
+              <Text variant="caption" muted>
+                kcal en descanso
+              </Text>
+            </Col>
+            <Divider vertical />
+            <Col gap={4} flex={1}>
+              <Text variant="tiny" color={colors.muted}>
+                TDEE
+              </Text>
+              <Text variant="h2" color={colors.accentEdge}>
+                {tdee.toLocaleString()}
+              </Text>
+              <Text variant="caption" muted>
+                kcal gasto diario
+              </Text>
+            </Col>
+          </Row>
         </Card>
 
         <Button
           label="Guardar cambios"
-          icon="check"
+          variant="dark"
           fullWidth
           size="lg"
           onPress={() => {

@@ -5,6 +5,7 @@ import { ScrollView, View } from "react-native";
 import { Card } from "@/components/ui/Card";
 import { Header } from "@/components/ui/Header";
 import { Screen } from "@/components/ui/Screen";
+import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { ACHIEVEMENTS } from "@/constants/achievements";
 import { useIronLog } from "@/contexts/IronLogContext";
@@ -20,72 +21,101 @@ export default function AchievementsScreen() {
 
   return (
     <Screen noPadding>
-      <Header title="Logros" back />
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-        <Card style={{ backgroundColor: colors.accent, borderColor: colors.primary }}>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
+      <Header title="" back compact />
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}>
+        <Text variant="h1" style={{ marginBottom: 18, paddingHorizontal: 4 }}>
+          Logros
+        </Text>
+
+        <View
+          style={{
+            backgroundColor: colors.ink,
+            borderRadius: 24,
+            padding: 22,
+            marginBottom: 18,
+            position: "relative",
+            overflow: "hidden",
+          }}
+        >
+          <View
+            style={{
+              position: "absolute",
+              right: -40,
+              bottom: -40,
+              width: 180,
+              height: 180,
+              borderRadius: 999,
+              backgroundColor: colors.accent,
+              opacity: 0.15,
+            }}
+          />
+          <Row gap={16} ai="center">
             <View
               style={{
-                width: 56,
-                height: 56,
-                borderRadius: 28,
-                backgroundColor: colors.primary,
+                width: 64,
+                height: 64,
+                borderRadius: 32,
+                backgroundColor: colors.accent,
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <Feather name="award" size={28} color="#FFFFFF" />
+              <Feather name="award" size={28} color={colors.accentInk} />
             </View>
-            <View style={{ marginLeft: 16, flex: 1 }}>
-              <Text variant="h2" color={colors.primary}>
-                {unlockedCount} / {total}
-              </Text>
-              <Text variant="caption" color={colors.accentForeground}>
+            <Col gap={4}>
+              <Row gap={4} ai="baseline">
+                <Text variant="hero" color={colors.accent}>
+                  {unlockedCount}
+                </Text>
+                <Text variant="h3" color="rgba(242,240,232,0.5)">
+                  / {total}
+                </Text>
+              </Row>
+              <Text variant="caption" color="rgba(242,240,232,0.65)">
                 Logros desbloqueados
               </Text>
-            </View>
-          </View>
-        </Card>
+            </Col>
+          </Row>
+        </View>
 
-        <View style={{ gap: 8 }}>
+        <Col gap={8}>
           {ACHIEVEMENTS.map((a) => {
             const unlocked = unlockedSet.has(a.id);
             return (
-              <Card key={a.id} style={{ opacity: unlocked ? 1 : 0.6 }}>
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Card key={a.id} padding={0} style={{ opacity: unlocked ? 1 : 0.55 }}>
+                <Row gap={14} style={{ paddingVertical: 14, paddingHorizontal: 16 }}>
                   <View
                     style={{
                       width: 44,
                       height: 44,
-                      borderRadius: 22,
-                      backgroundColor: unlocked ? colors.primary : colors.secondary,
+                      borderRadius: 12,
+                      backgroundColor: unlocked ? colors.accent : colors.surfaceAlt,
                       alignItems: "center",
                       justifyContent: "center",
-                      marginRight: 12,
                     }}
                   >
                     <Feather
-                      name={a.icon as any}
+                      name={a.icon as keyof typeof Feather.glyphMap}
                       size={20}
-                      color={unlocked ? "#FFFFFF" : colors.mutedForeground}
+                      color={unlocked ? colors.accentInk : colors.muted}
                     />
                   </View>
-                  <View style={{ flex: 1 }}>
+                  <Col gap={2} flex={1}>
                     <Text variant="title">{a.title}</Text>
                     <Text variant="caption" muted>
                       {a.description}
                     </Text>
-                  </View>
-                  {unlocked ? (
-                    <Feather name="check-circle" size={20} color={colors.primary} />
-                  ) : (
-                    <Feather name="lock" size={18} color={colors.mutedForeground} />
-                  )}
-                </View>
+                  </Col>
+                  <Feather
+                    name={unlocked ? "check-circle" : "lock"}
+                    size={18}
+                    color={unlocked ? colors.accentEdge : colors.muted}
+                  />
+                </Row>
               </Card>
             );
           })}
-        </View>
+        </Col>
       </ScrollView>
     </Screen>
   );

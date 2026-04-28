@@ -1,14 +1,14 @@
 import React, { createContext, useContext, useMemo } from "react";
 import { useColorScheme } from "react-native";
 
-import colors from "@/constants/colors";
+import colors, { type ThemePalette } from "@/constants/colors";
 import { useIronLog } from "@/contexts/IronLogContext";
 
 type ColorScheme = "light" | "dark";
 
 interface ThemeContextValue {
   scheme: ColorScheme;
-  colors: typeof colors.light & { radius: number };
+  colors: ThemePalette & { radius: number };
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -34,7 +34,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 export function useTheme(): ThemeContextValue {
   const ctx = useContext(ThemeContext);
   if (!ctx) {
-    // Fallback to light if used outside provider (shouldn't happen)
     return { scheme: "light", colors: { ...colors.light, radius: colors.radius } };
   }
   return ctx;

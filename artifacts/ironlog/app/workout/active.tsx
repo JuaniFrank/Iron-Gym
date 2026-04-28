@@ -1,24 +1,28 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Alert, Platform, Pressable, ScrollView, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { RestTimer } from "@/components/workout/RestTimer";
-import { SetRow } from "@/components/workout/SetRow";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Divider } from "@/components/ui/Divider";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Header } from "@/components/ui/Header";
+import { IconButton } from "@/components/ui/IconButton";
 import { Screen } from "@/components/ui/Screen";
+import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
+import { RestTimer } from "@/components/workout/RestTimer";
+import { SetRow } from "@/components/workout/SetRow";
 import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
-import type { CompletedSet } from "@/types";
 import { formatDuration } from "@/utils/date";
 
 export default function ActiveWorkoutScreen() {
   const colors = useThemeColors();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ routineId?: string; dayId?: string }>();
   const {
     sessions,
@@ -31,12 +35,11 @@ export default function ActiveWorkoutScreen() {
     getExerciseById,
     getRoutineById,
     getLastSetsForExercise,
-    addExerciseToActiveWorkout,
+    getMaxWeightForExercise,
     defaultRestSeconds,
   } = useIronLog();
 
   const startedRef = useRef(false);
-  // Auto-start if params provided
   useEffect(() => {
     if (!activeWorkoutId && params.routineId && params.dayId && !startedRef.current) {
       startedRef.current = true;
@@ -55,7 +58,6 @@ export default function ActiveWorkoutScreen() {
   }, []);
 
   const [restingFor, setRestingFor] = useState<number | null>(null);
-  const [showFinishConfirm, setShowFinishConfirm] = useState(false);
 
   if (!session) {
     return (
@@ -73,10 +75,17 @@ export default function ActiveWorkoutScreen() {
   }
 
   const elapsed = now - session.startedAt;
-  const completedSetsCount = session.sets.length;
-  const totalVolume = session.sets
+  const completedSets = session.sets;
+  const completedSetsCount = completedSets.filter((s) => !s.isWarmup).length;
+  const totalVolume = completedSets
     .filter((s) => !s.isWarmup)
     .reduce((sum, s) => sum + s.weight * s.reps, 0);
+
+  // Total target work-set count across exercises in this session.
+  const targetTotal = session.exerciseOrder.reduce((sum, exId) => {
+    const re = day?.exercises.find((x) => x.exerciseId === exId);
+    return sum + (re?.targetSets ?? 3);
+  }, 0);
 
   const handleAddExercise = () => {
     router.push(`/exercises?sessionId=${session.id}` as never);
@@ -105,215 +114,323 @@ export default function ActiveWorkoutScreen() {
   };
 
   const handleCancel = () => {
-    Alert.alert("Descartar sesión", "¿Descartar este entrenamiento? Se perderán los sets registrados.", [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Descartar",
-        style: "destructive",
-        onPress: () => {
-          cancelWorkout(session.id);
-          router.replace("/workout");
+    Alert.alert(
+      "Descartar sesión",
+      "¿Descartar este entrenamiento? Se perderán los sets registrados.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Descartar",
+          style: "destructive",
+          onPress: () => {
+            cancelWorkout(session.id);
+            router.replace("/workout");
+          },
         },
-      },
-    ]);
+      ],
+    );
   };
 
   return (
     <Screen noPadding>
-      <Header
-        title={session.dayName}
-        subtitle={formatDuration(elapsed)}
-        back
-        onBack={() => {}}
-        right={
-          <Pressable onPress={handleCancel} hitSlop={8}>
-            <Feather name="x" size={22} color={colors.destructive} />
-          </Pressable>
-        }
-      />
+      {/* Header strip: down chevron · "EN SESIÓN · Day" · close */}
+      <View
+        style={{
+          paddingTop: insets.top + 8,
+          paddingHorizontal: 20,
+          paddingBottom: 14,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <IconButton icon="chevron-down" onPress={() => router.back()} />
+        <Col gap={2} ai="center">
+          <Text variant="tiny" color={colors.muted}>
+            EN SESIÓN
+          </Text>
+          <Text variant="label" weight="semibold">
+            {session.dayName}
+          </Text>
+        </Col>
+        <IconButton icon="x" onPress={handleCancel} color={colors.danger} />
+      </View>
 
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 200, gap: 12 }}>
-        {/* Stats summary */}
-        <Card>
-          <View style={{ flexDirection: "row", gap: 16 }}>
+      <ScrollView
+        contentContainerStyle={{
+          paddingHorizontal: 20,
+          paddingBottom: 120 + insets.bottom,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Summary tiles */}
+        <Card padding={0} style={{ marginBottom: 12 }}>
+          <Row jc="space-between" style={{ paddingVertical: 14 }}>
             <SummaryCol label="DURACIÓN" value={formatDuration(elapsed)} />
-            <View style={{ width: 1, backgroundColor: colors.border }} />
-            <SummaryCol label="SETS" value={String(completedSetsCount)} />
-            <View style={{ width: 1, backgroundColor: colors.border }} />
-            <SummaryCol label="VOLUMEN" value={`${Math.round(totalVolume)}kg`} />
-          </View>
+            <Divider vertical />
+            <SummaryCol
+              label="SETS"
+              value={
+                <Text variant="mono" color={colors.ink} style={{ fontSize: 18, fontWeight: "600" }}>
+                  {completedSetsCount}
+                  {targetTotal > 0 ? (
+                    <Text variant="mono" color={colors.muted} style={{ fontSize: 18 }}>
+                      /{targetTotal}
+                    </Text>
+                  ) : null}
+                </Text>
+              }
+            />
+            <Divider vertical />
+            <SummaryCol
+              label="VOLUMEN"
+              value={
+                <Text variant="mono" color={colors.ink} style={{ fontSize: 18, fontWeight: "600" }}>
+                  {Math.round(totalVolume).toLocaleString()}
+                  <Text variant="mono" color={colors.muted} style={{ fontSize: 11 }}>
+                    kg
+                  </Text>
+                </Text>
+              }
+            />
+          </Row>
         </Card>
 
-        {/* Rest timer */}
         {restingFor != null ? (
-          <RestTimer
-            durationSeconds={restingFor}
-            onClose={() => setRestingFor(null)}
-            onComplete={() => setRestingFor(null)}
-          />
+          <View style={{ marginBottom: 12 }}>
+            <RestTimer
+              durationSeconds={restingFor}
+              onClose={() => setRestingFor(null)}
+              onComplete={() => setRestingFor(null)}
+            />
+          </View>
         ) : null}
 
-        {/* Exercises */}
-        {session.exerciseOrder.map((exId) => {
-          const ex = getExerciseById(exId);
-          if (!ex) return null;
-          const re = day?.exercises.find((x) => x.exerciseId === exId);
-          const targetSets = re?.targetSets ?? 3;
-          const targetReps = re?.targetReps ?? 10;
-          const warmupSets = re?.warmupSets ?? 0;
-          const restSeconds = re?.restSeconds ?? defaultRestSeconds;
+        <Col gap={12}>
+          {session.exerciseOrder.map((exId) => {
+            const ex = getExerciseById(exId);
+            if (!ex) return null;
+            const re = day?.exercises.find((x) => x.exerciseId === exId);
+            const targetSets = re?.targetSets ?? 3;
+            const targetReps = re?.targetReps ?? 10;
+            const warmupSets = re?.warmupSets ?? 0;
+            const restSeconds = re?.restSeconds ?? defaultRestSeconds;
 
-          const completedForExercise = session.sets.filter((s) => s.exerciseId === exId);
-          const lastSets = getLastSetsForExercise(exId, session.id);
+            const completedForExercise = session.sets.filter((s) => s.exerciseId === exId);
+            const lastSets = getLastSetsForExercise(exId, session.id);
+            const exerciseMax = getMaxWeightForExercise(exId);
 
-          // Build set rows: warmup count + work set count, but allow extras
-          const totalRows = Math.max(warmupSets + targetSets, completedForExercise.length + 1);
-          const rows: { isWarmup: boolean; index: number }[] = [];
-          for (let i = 0; i < warmupSets; i++) rows.push({ isWarmup: true, index: i + 1 });
-          let workIndex = 0;
-          for (let i = warmupSets; i < totalRows; i++) {
-            workIndex++;
-            rows.push({ isWarmup: false, index: workIndex });
-          }
+            const totalRows = Math.max(
+              warmupSets + targetSets,
+              completedForExercise.length + 1,
+            );
+            const rows: { isWarmup: boolean; index: number }[] = [];
+            for (let i = 0; i < warmupSets; i++) rows.push({ isWarmup: true, index: i + 1 });
+            let workIndex = 0;
+            for (let i = warmupSets; i < totalRows; i++) {
+              workIndex++;
+              rows.push({ isWarmup: false, index: workIndex });
+            }
 
-          return (
-            <Card key={exId} padding={12}>
-              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
+            // First incomplete row → active.
+            const firstIncomplete = rows.findIndex((row) => {
+              const c = completedForExercise.filter((s) => s.isWarmup === row.isWarmup)[
+                row.index - 1
+              ];
+              return !c;
+            });
+
+            return (
+              <Card key={exId}>
+                <Row jc="space-between" style={{ marginBottom: 14 }}>
+                  <Row gap={10} flex={1}>
+                    <View
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 10,
+                        backgroundColor: colors.accentSoft,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Feather name="activity" size={16} color={colors.accentEdge} />
+                    </View>
+                    <Col gap={2} flex={1}>
+                      <Text variant="title" numberOfLines={1}>
+                        {ex.name}
+                      </Text>
+                      <Text variant="caption" muted>
+                        {targetSets} × {targetReps} · {restSeconds}s
+                      </Text>
+                    </Col>
+                  </Row>
+                  <Feather name="more-horizontal" size={16} color={colors.muted} />
+                </Row>
+
+                {/* Header row */}
                 <View
                   style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 10,
-                    backgroundColor: colors.accent,
+                    flexDirection: "row",
                     alignItems: "center",
-                    justifyContent: "center",
-                    marginRight: 10,
+                    gap: 6,
+                    paddingBottom: 8,
                   }}
                 >
-                  <Feather name="activity" size={16} color={colors.primary} />
+                  <View style={{ width: 28 }}>
+                    <Text variant="tiny" color={colors.muted} style={{ textAlign: "center" }}>
+                      SET
+                    </Text>
+                  </View>
+                  <View style={{ width: 56 }}>
+                    <Text variant="tiny" color={colors.muted} style={{ textAlign: "center" }}>
+                      PREVIO
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1, flexDirection: "row", gap: 6 }}>
+                    <Text variant="tiny" color={colors.muted} style={{ flex: 1, textAlign: "center" }}>
+                      KG
+                    </Text>
+                    <Text variant="tiny" color={colors.muted} style={{ flex: 1, textAlign: "center" }}>
+                      REPS
+                    </Text>
+                    <Text variant="tiny" color={colors.muted} style={{ flex: 1, textAlign: "center" }}>
+                      RPE
+                    </Text>
+                  </View>
+                  <View style={{ width: 28 }} />
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text variant="title" numberOfLines={1}>
-                    {ex.name}
-                  </Text>
-                  <Text variant="caption" muted>
-                    {targetSets} × {targetReps} · {restSeconds}s
-                  </Text>
-                </View>
-              </View>
 
-              {/* Header row */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  paddingHorizontal: 8,
-                  marginBottom: 6,
-                  gap: 8,
-                }}
-              >
-                <View style={{ width: 32 }}>
-                  <Text variant="tiny" muted>
-                    SET
-                  </Text>
-                </View>
-                <View style={{ width: 64 }}>
-                  <Text variant="tiny" muted style={{ textAlign: "center" }}>
-                    PREVIO
-                  </Text>
-                </View>
-                <View style={{ flex: 1, flexDirection: "row", gap: 6 }}>
-                  <Text variant="tiny" muted style={{ flex: 1, textAlign: "center" }}>
-                    KG
-                  </Text>
-                  <Text variant="tiny" muted style={{ flex: 1, textAlign: "center" }}>
-                    REPS
-                  </Text>
-                  <Text variant="tiny" muted style={{ flex: 1, textAlign: "center" }}>
-                    RPE
-                  </Text>
-                </View>
-                <View style={{ width: 36 }} />
-              </View>
+                <Col gap={6}>
+                  {rows.map((row, i) => {
+                    const completedSet = completedForExercise.filter(
+                      (s) => s.isWarmup === row.isWarmup,
+                    )[row.index - 1];
+                    const previous = row.isWarmup ? undefined : lastSets[row.index - 1];
+                    const isPr =
+                      !!completedSet &&
+                      !completedSet.isWarmup &&
+                      exerciseMax > 0 &&
+                      completedSet.weight >= exerciseMax;
+                    return (
+                      <SetRow
+                        key={`${exId}-${i}`}
+                        index={row.index}
+                        isWarmup={row.isWarmup}
+                        initialWeight={completedSet?.weight}
+                        initialReps={completedSet?.reps}
+                        previousWeight={previous?.weight}
+                        previousReps={previous?.reps}
+                        completed={!!completedSet}
+                        isPr={isPr}
+                        isActive={!completedSet && i === firstIncomplete}
+                        onComplete={(w, r, rpe) => {
+                          logSet(session.id, {
+                            exerciseId: exId,
+                            weight: w,
+                            reps: r,
+                            rpe,
+                            isWarmup: row.isWarmup,
+                            setIndex: row.index,
+                          });
+                          if (!row.isWarmup) {
+                            setRestingFor(restSeconds);
+                          }
+                        }}
+                        onUncomplete={() => {
+                          if (completedSet) removeSet(session.id, completedSet.id);
+                        }}
+                        onRemove={() => {
+                          if (completedSet) {
+                            Alert.alert("Eliminar set", "¿Borrar este set?", [
+                              { text: "Cancelar", style: "cancel" },
+                              {
+                                text: "Eliminar",
+                                style: "destructive",
+                                onPress: () => removeSet(session.id, completedSet.id),
+                              },
+                            ]);
+                          }
+                        }}
+                      />
+                    );
+                  })}
+                </Col>
 
-              <View style={{ gap: 6 }}>
-                {rows.map((row, i) => {
-                  const completedSet = completedForExercise.filter(
-                    (s) => s.isWarmup === row.isWarmup,
-                  )[row.index - 1];
-                  const previous = row.isWarmup ? undefined : lastSets[row.index - 1];
-                  return (
-                    <SetRow
-                      key={`${exId}-${i}`}
-                      index={row.index}
-                      isWarmup={row.isWarmup}
-                      initialWeight={completedSet?.weight}
-                      initialReps={completedSet?.reps}
-                      previousWeight={previous?.weight}
-                      previousReps={previous?.reps}
-                      completed={!!completedSet}
-                      onComplete={(w, r, rpe) => {
-                        logSet(session.id, {
-                          exerciseId: exId,
-                          weight: w,
-                          reps: r,
-                          rpe,
-                          isWarmup: row.isWarmup,
-                          setIndex: row.index,
-                        });
-                        if (!row.isWarmup) {
-                          setRestingFor(restSeconds);
-                        }
-                      }}
-                      onUncomplete={() => {
-                        if (completedSet) removeSet(session.id, completedSet.id);
-                      }}
-                      onRemove={() => {
-                        if (completedSet) {
-                          Alert.alert("Eliminar set", "¿Borrar este set?", [
-                            { text: "Cancelar", style: "cancel" },
-                            {
-                              text: "Eliminar",
-                              style: "destructive",
-                              onPress: () => removeSet(session.id, completedSet.id),
-                            },
-                          ]);
-                        }
-                      }}
-                    />
-                  );
-                })}
-              </View>
-            </Card>
-          );
-        })}
+                <Pressable
+                  style={({ pressed }) => ({
+                    marginTop: 10,
+                    height: 38,
+                    borderRadius: 10,
+                    borderStyle: "dashed",
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    opacity: pressed ? 0.6 : 1,
+                  })}
+                  onPress={() => {
+                    // Adding a set is just allowing the existing extra row to be filled —
+                    // nothing to do here unless we want to scroll/focus the next input.
+                  }}
+                >
+                  <Feather name="plus" size={12} color={colors.muted} />
+                  <Text variant="label" color={colors.muted}>
+                    Añadir set
+                  </Text>
+                </Pressable>
+              </Card>
+            );
+          })}
+        </Col>
 
-        <Button label="Añadir ejercicio" variant="outline" icon="plus" onPress={handleAddExercise} fullWidth />
+        <Button
+          label="Añadir ejercicio"
+          variant="outline"
+          icon="plus"
+          fullWidth
+          onPress={handleAddExercise}
+          style={{ marginTop: 14 }}
+        />
       </ScrollView>
 
       <View
         style={{
           position: "absolute",
-          bottom: 16,
+          bottom: Math.max(insets.bottom, 16) + 6,
           left: 16,
           right: 16,
         }}
       >
-        <Button label="Terminar sesión" icon="check" size="lg" fullWidth onPress={handleFinish} />
+        <Button
+          label="Terminar sesión"
+          icon="check"
+          size="lg"
+          variant="dark"
+          fullWidth
+          onPress={handleFinish}
+        />
       </View>
     </Screen>
   );
 }
 
-function SummaryCol({ label, value }: { label: string; value: string }) {
+function SummaryCol({ label, value }: { label: string; value: React.ReactNode }) {
+  const colors = useThemeColors();
   return (
-    <View style={{ flex: 1, alignItems: "center" }}>
-      <Text variant="tiny" muted>
+    <Col gap={4} ai="center" flex={1}>
+      <Text variant="tiny" color={colors.muted}>
         {label}
       </Text>
-      <Text variant="h3" style={{ marginTop: 4, fontVariant: ["tabular-nums"] }}>
-        {value}
-      </Text>
-    </View>
+      {typeof value === "string" ? (
+        <Text variant="mono" color={colors.ink} style={{ fontSize: 18, fontWeight: "600" }}>
+          {value}
+        </Text>
+      ) : (
+        value
+      )}
+    </Col>
   );
 }

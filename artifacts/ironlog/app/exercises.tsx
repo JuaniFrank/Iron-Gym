@@ -3,17 +3,19 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { Alert, Pressable, ScrollView, View } from "react-native";
 
-import { MuscleGroupChip } from "@/components/MuscleGroupChip";
 import { Card } from "@/components/ui/Card";
+import { Chip } from "@/components/ui/Chip";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Header } from "@/components/ui/Header";
+import { IconButton } from "@/components/ui/IconButton";
 import { Input } from "@/components/ui/Input";
 import { Screen } from "@/components/ui/Screen";
+import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { EXERCISE_TYPE_LABELS, MUSCLE_GROUPS, MUSCLE_GROUP_LABELS } from "@/constants/exercises";
 import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
-import type { MuscleGroup } from "@/types";
+import type { Exercise, MuscleGroup } from "@/types";
 
 export default function ExercisesScreen() {
   const colors = useThemeColors();
@@ -37,7 +39,8 @@ export default function ExercisesScreen() {
 
   const filtered = useMemo(() => {
     return allExercises.filter((e) => {
-      const matchesSearch = search.trim() === "" || e.name.toLowerCase().includes(search.toLowerCase());
+      const matchesSearch =
+        search.trim() === "" || e.name.toLowerCase().includes(search.toLowerCase());
       const matchesFilter = filter === "all" || e.primaryMuscle === filter;
       return matchesSearch && matchesFilter;
     });
@@ -67,39 +70,62 @@ export default function ExercisesScreen() {
 
   return (
     <Screen noPadding>
-      <Header
-        title="Ejercicios"
-        back
-        right={
-          <Pressable onPress={() => setShowCustom(true)} hitSlop={8}>
-            <Feather name="plus" size={22} color={colors.primary} />
-          </Pressable>
-        }
-      />
+      <View
+        style={{
+          paddingTop: 8,
+          paddingHorizontal: 20,
+          paddingBottom: 14,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <IconButton icon="chevron-down" onPress={() => router.back()} />
+        <Text variant="title">Ejercicios</Text>
+        <IconButton icon="plus" variant="primary" onPress={() => setShowCustom(true)} />
+      </View>
 
-      <View style={{ paddingHorizontal: 16, paddingTop: 8, gap: 10 }}>
-        <Input
-          placeholder="Buscar ejercicio..."
-          value={search}
-          onChangeText={setSearch}
-          rightAdornment={search ? (
-            <Pressable onPress={() => setSearch("")} hitSlop={8}>
-              <Feather name="x-circle" size={16} color={colors.mutedForeground} />
-            </Pressable>
-          ) : (
-            <Feather name="search" size={16} color={colors.mutedForeground} />
-          )}
-        />
+      <View style={{ paddingHorizontal: 20 }}>
+        {/* Search */}
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderWidth: 1,
+            borderColor: colors.border,
+            borderRadius: 14,
+            height: 48,
+            flexDirection: "row",
+            alignItems: "center",
+            paddingHorizontal: 14,
+            gap: 10,
+            marginBottom: 14,
+          }}
+        >
+          <Feather name="search" size={16} color={colors.muted} />
+          <Input
+            placeholder="Buscar ejercicio…"
+            value={search}
+            onChangeText={setSearch}
+            containerStyle={{ flex: 1 }}
+            style={{ paddingVertical: 0 }}
+          />
+        </View>
+
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 6, paddingVertical: 4 }}
+          contentContainerStyle={{ gap: 6, paddingBottom: 14 }}
+          style={{ marginHorizontal: -2 }}
         >
-          <MuscleGroupChip group="all" active={filter === "all"} onPress={() => setFilter("all")} />
+          <Chip
+            label="Todo"
+            active={filter === "all"}
+            onPress={() => setFilter("all")}
+          />
           {MUSCLE_GROUPS.map((g) => (
-            <MuscleGroupChip
+            <Chip
               key={g}
-              group={g}
+              label={MUSCLE_GROUP_LABELS[g]}
               active={filter === g}
               onPress={() => setFilter(g as MuscleGroup)}
             />
@@ -108,10 +134,10 @@ export default function ExercisesScreen() {
       </View>
 
       <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: 100, gap: 16 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 80 }}
         keyboardShouldPersistTaps="handled"
       >
-        {filtered.length === 0 ? (
+        {filtered.length === 0 && !showCustom ? (
           <EmptyState
             icon="search"
             title="Sin resultados"
@@ -122,52 +148,56 @@ export default function ExercisesScreen() {
         ) : showCustom ? null : filter === "all" ? (
           MUSCLE_GROUPS.map((g) =>
             grouped[g] && grouped[g].length > 0 ? (
-              <View key={g}>
-                <Text variant="tiny" muted style={{ marginBottom: 8 }}>
+              <Col key={g} gap={6} style={{ marginBottom: 18 }}>
+                <Text
+                  variant="tiny"
+                  color={colors.muted}
+                  style={{ paddingHorizontal: 4, paddingVertical: 4 }}
+                >
                   {MUSCLE_GROUP_LABELS[g].toUpperCase()}
                 </Text>
-                <View style={{ gap: 6 }}>
-                  {grouped[g].map((e) => (
-                    <ExerciseRow key={e.id} ex={e} onPress={() => handlePick(e.id)} />
-                  ))}
-                </View>
-              </View>
+                {grouped[g].map((e) => (
+                  <ExerciseRow key={e.id} ex={e} onPress={() => handlePick(e.id)} />
+                ))}
+              </Col>
             ) : null,
           )
         ) : (
-          <View style={{ gap: 6 }}>
+          <Col gap={6}>
             {filtered.map((e) => (
               <ExerciseRow key={e.id} ex={e} onPress={() => handlePick(e.id)} />
             ))}
-          </View>
+          </Col>
         )}
 
         {showCustom ? (
           <Card>
-            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
-              <Feather name="plus-circle" size={18} color={colors.primary} />
-              <Text variant="title" style={{ marginLeft: 8 }}>
-                Nuevo ejercicio
-              </Text>
-            </View>
-            <View style={{ gap: 10 }}>
-              <Input label="Nombre" value={newName} onChangeText={setNewName} autoFocus />
+            <Row gap={8} style={{ marginBottom: 12 }}>
+              <Feather name="plus-circle" size={18} color={colors.accentEdge} />
+              <Text variant="title">Nuevo ejercicio</Text>
+            </Row>
+            <Col gap={10}>
+              <Input fieldLabel="NOMBRE" value={newName} onChangeText={setNewName} autoFocus />
               <View>
-                <Text variant="label" muted style={{ marginBottom: 6 }}>
-                  Grupo muscular
+                <Text variant="tiny" color={colors.muted} style={{ marginBottom: 6 }}>
+                  GRUPO MUSCULAR
                 </Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 6 }}
+                >
                   {MUSCLE_GROUPS.map((g) => (
-                    <MuscleGroupChip
+                    <Chip
                       key={g}
-                      group={g}
+                      label={MUSCLE_GROUP_LABELS[g]}
                       active={newGroup === g}
                       onPress={() => setNewGroup(g as MuscleGroup)}
                     />
                   ))}
                 </ScrollView>
               </View>
-              <View style={{ flexDirection: "row", gap: 8 }}>
+              <Row gap={8}>
                 <Pressable
                   onPress={() => {
                     setShowCustom(false);
@@ -175,9 +205,9 @@ export default function ExercisesScreen() {
                   }}
                   style={({ pressed }) => ({
                     flex: 1,
-                    backgroundColor: colors.secondary,
+                    backgroundColor: colors.surfaceAlt,
                     padding: 14,
-                    borderRadius: colors.radius,
+                    borderRadius: 14,
                     alignItems: "center",
                     opacity: pressed ? 0.7 : 1,
                   })}
@@ -205,19 +235,19 @@ export default function ExercisesScreen() {
                   }}
                   style={({ pressed }) => ({
                     flex: 1,
-                    backgroundColor: colors.primary,
+                    backgroundColor: colors.accent,
                     padding: 14,
-                    borderRadius: colors.radius,
+                    borderRadius: 14,
                     alignItems: "center",
                     opacity: pressed ? 0.85 : 1,
                   })}
                 >
-                  <Text variant="label" weight="semibold" color={colors.primaryForeground}>
+                  <Text variant="label" weight="semibold" color={colors.accentInk}>
                     Crear
                   </Text>
                 </Pressable>
-              </View>
-            </View>
+              </Row>
+            </Col>
           </Card>
         ) : null}
       </ScrollView>
@@ -225,32 +255,35 @@ export default function ExercisesScreen() {
   );
 }
 
-function ExerciseRow({ ex, onPress }: { ex: any; onPress: () => void }) {
+function ExerciseRow({ ex, onPress }: { ex: Exercise; onPress: () => void }) {
   const colors = useThemeColors();
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => ({
-        backgroundColor: colors.card,
-        borderRadius: 10,
-        padding: 12,
-        borderWidth: 1,
-        borderColor: colors.border,
-        opacity: pressed ? 0.85 : 1,
-        flexDirection: "row",
-        alignItems: "center",
-      })}
-    >
-      <View style={{ flex: 1 }}>
-        <Text variant="label" weight="semibold" numberOfLines={1}>
-          {ex.name}
-        </Text>
-        <Text variant="caption" muted numberOfLines={1}>
-          {EXERCISE_TYPE_LABELS[ex.type]} · {MUSCLE_GROUP_LABELS[ex.primaryMuscle]}
-          {ex.isCustom ? " · Personalizado" : ""}
-        </Text>
-      </View>
-      <Feather name="plus-circle" size={20} color={colors.primary} />
+    <Pressable onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.92 : 1 })}>
+      <Card padding={0}>
+        <Row jc="space-between" style={{ paddingVertical: 12, paddingHorizontal: 14 }}>
+          <Col gap={2} flex={1}>
+            <Text variant="label" weight="semibold" numberOfLines={1}>
+              {ex.name}
+            </Text>
+            <Text variant="caption" muted numberOfLines={1}>
+              {EXERCISE_TYPE_LABELS[ex.type]} · {MUSCLE_GROUP_LABELS[ex.primaryMuscle]}
+              {ex.isCustom ? " · Personalizado" : ""}
+            </Text>
+          </Col>
+          <View
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 16,
+              backgroundColor: colors.accentSoft,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Feather name="plus" size={14} color={colors.accentEdge} />
+          </View>
+        </Row>
+      </Card>
     </Pressable>
   );
 }

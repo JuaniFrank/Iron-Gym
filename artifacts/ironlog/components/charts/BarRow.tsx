@@ -1,6 +1,8 @@
 import React from "react";
 import { View } from "react-native";
 
+import { ProgressBar } from "@/components/ui/ProgressBar";
+import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { useThemeColors } from "@/contexts/ThemeContext";
 
@@ -10,38 +12,28 @@ interface BarRowProps {
   max: number;
   color?: string;
   format?: (v: number) => string;
-  secondaryLabel?: string;
+  unit?: string;
 }
 
-export function BarRow({ label, value, max, color, format = (v) => v.toFixed(0), secondaryLabel }: BarRowProps) {
+export function BarRow({ label, value, max, color, format = (v) => v.toFixed(0), unit = "g" }: BarRowProps) {
   const colors = useThemeColors();
-  const pct = max > 0 ? Math.min(value / max, 1) : 0;
   return (
-    <View style={{ gap: 6 }}>
-      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-        <Text variant="label">{label}</Text>
-        <Text variant="label" muted>
-          {format(value)}
-          {secondaryLabel ? ` ${secondaryLabel}` : ""}
+    <Col gap={3}>
+      <Row jc="space-between">
+        <Text variant="caption" color={colors.muted}>
+          {label}
         </Text>
-      </View>
-      <View
-        style={{
-          height: 8,
-          backgroundColor: colors.secondary,
-          borderRadius: 4,
-          overflow: "hidden",
-        }}
-      >
-        <View
-          style={{
-            width: `${pct * 100}%`,
-            height: "100%",
-            backgroundColor: color ?? colors.primary,
-            borderRadius: 4,
-          }}
-        />
-      </View>
-    </View>
+        <View style={{ flexDirection: "row", alignItems: "baseline" }}>
+          <Text variant="mono" color={colors.ink} style={{ fontSize: 11 }}>
+            {format(value)}
+          </Text>
+          <Text variant="mono" color={colors.muted} style={{ fontSize: 11 }}>
+            /{format(max)}
+            {unit}
+          </Text>
+        </View>
+      </Row>
+      <ProgressBar value={value} max={max} color={color ?? colors.ink} height={3} />
+    </Col>
   );
 }
