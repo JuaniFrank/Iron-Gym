@@ -199,6 +199,42 @@ export interface ScheduleOverride {
   createdAt: number;
 }
 
+/**
+ * Pre-defined values for one set, before the user actually performs it.
+ * Any field can be omitted: the user may want to plan only reps but leave
+ * the weight to feel out, etc.
+ */
+export interface PlannedSet {
+  weight?: number;
+  reps?: number;
+  rpe?: number;
+  isWarmup: boolean;
+}
+
+export interface PlannedExercise {
+  exerciseId: string;
+  sets: PlannedSet[];
+  notes?: string;
+}
+
+/**
+ * A pre-defined plan for a specific calendar date and routine day. When a
+ * workout starts and a matching plan exists, its values pre-fill the
+ * `SetRow` inputs in the active screen.
+ *
+ * Keyed by `dateKey + routineId + routineDayId` — a single date can have
+ * at most one plan (matching its resolved schedule). DB shape:
+ * `session_plans(date_key TEXT, routine_id TEXT, routine_day_id TEXT,
+ *  exercises JSONB, updated_at, PRIMARY KEY(date_key))`.
+ */
+export interface SessionPlan {
+  dateKey: string;
+  routineId: string;
+  routineDayId: string;
+  exercises: PlannedExercise[];
+  updatedAt: number;
+}
+
 export type ResolvedPlan =
   | {
       kind: "training";

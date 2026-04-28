@@ -21,6 +21,15 @@ export function RestTimer({ durationSeconds, onComplete, onClose }: RestTimerPro
   const [paused, setPaused] = useState(false);
   const completedRef = useRef(false);
 
+  // Parent often re-renders frequently (e.g. the active screen ticks elapsed
+  // time each second). If `onComplete` were in the interval effect's deps,
+  // every re-render would tear down and restart the interval before it could
+  // fire — freezing the countdown. Keep the latest callback in a ref instead.
+  const onCompleteRef = useRef(onComplete);
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
   useEffect(() => {
     completedRef.current = false;
     setRemaining(durationSeconds);
@@ -36,7 +45,7 @@ export function RestTimer({ durationSeconds, onComplete, onClose }: RestTimerPro
             if (Platform.OS !== "web") {
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             }
-            onComplete?.();
+            onCompleteRef.current?.();
           }
           return 0;
         }
@@ -44,7 +53,7 @@ export function RestTimer({ durationSeconds, onComplete, onClose }: RestTimerPro
       });
     }, 1000);
     return () => clearInterval(id);
-  }, [paused, onComplete]);
+  }, [paused]);
 
   const adjust = (delta: number) => {
     if (Platform.OS !== "web") Haptics.selectionAsync();

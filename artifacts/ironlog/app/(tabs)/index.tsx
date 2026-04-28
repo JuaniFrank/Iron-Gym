@@ -14,8 +14,9 @@ import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import type { WorkoutSession } from "@/types";
 import { calorieGoalForGoal, calculateTDEE } from "@/utils/calculations";
-import { dateKey, startOfDay } from "@/utils/date";
+import { dateKey, formatDuration, startOfDay } from "@/utils/date";
 
 export default function HomeScreen() {
   const colors = useThemeColors();
@@ -28,6 +29,8 @@ export default function HomeScreen() {
     allFoods,
     allRoutines,
     getPlanForDate,
+    getSessionPlan,
+    getNextTrainingDay,
   } = useIronLog();
 
   const [swapOpen, setSwapOpen] = useState(false);
@@ -50,6 +53,13 @@ export default function HomeScreen() {
   const finishedSessions = sessions.filter((s) => s.endedAt);
   const todaySessions = finishedSessions.filter((s) => dateKey(s.endedAt!) === todayKey);
   const completedToday = todaySessions.length > 0;
+  const latestTodaySession = useMemo(
+    () =>
+      todaySessions
+        .slice()
+        .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))[0] ?? null,
+    [todaySessions],
+  );
 
   const tdee = calculateTDEE(profile);
   const calorieGoal = profile.caloriesGoal ?? calorieGoalForGoal(tdee, profile.goal);
@@ -81,23 +91,96 @@ export default function HomeScreen() {
   const initials = profile.name.trim().slice(0, 1).toUpperCase() || "A";
 
   const isRest = todayPlan.kind === "rest";
-  const showStartIcon = !!activeWorkoutId || (!isRest && !!todayRoutine && !!todayDay);
+  const showStartIcon =
+    !!activeWorkoutId ||
+    (!completedToday && !isRest && !!todayRoutine && !!todayDay);
 
+  // Plan-of-the-day & next training context for the planning entry-point card.
+  const todaySessionPlan =
+    !isRest && todayRoutine && todayDay
+      ? getSessionPlan(todayKey, todayRoutine.id, todayDay.id)
+      : undefined;
+  // If today already trained, look for next training day starting tomorrow.
+  const nextTrainingDay = useMemo(
+    () => getNextTrainingDay(14, completedToday ? 1 : 0),
+    [getNextTrainingDay, completedToday],
+  );
+  // Suggestion priority:
+  //  1. Today still pending → plan today.
+  //  2. Today already trained OR rest → plan a future training day (if any).
+  const planTarget = useMemo(() => {
+    if (activeWorkoutId) return null;
+    if (!completedToday && !isRest && todayRoutine && todayDay) {
+      return {
+        timestamp: todayTs,
+        dateKey: todayKey,
+        routineId: todayRoutine.id,
+        routineDayId: todayDay.id,
+        dayName: todayDay.name,
+        routineName: todayRoutine.name,
+        exercisesCount: todayDay.exercises.length,
+        isToday: true,
+        hasPlan: !!todaySessionPlan,
+      };
+    }
+    if (nextTrainingDay && !nextTrainingDay.isToday) {
+      const r = allRoutines.find((x) => x.id === nextTrainingDay.routineId);
+      const d = r?.days.find((x) => x.id === nextTrainingDay.routineDayId);
+      if (!r || !d) return null;
+      const planForNext = getSessionPlan(
+        nextTrainingDay.dateKey,
+        nextTrainingDay.routineId,
+        nextTrainingDay.routineDayId,
+      );
+      return {
+        timestamp: nextTrainingDay.timestamp,
+        dateKey: nextTrainingDay.dateKey,
+        routineId: nextTrainingDay.routineId,
+        routineDayId: nextTrainingDay.routineDayId,
+        dayName: d.name,
+        routineName: r.name,
+        exercisesCount: d.exercises.length,
+        isToday: false,
+        hasPlan: !!planForNext,
+      };
+    }
+    return null;
+  }, [
+    activeWorkoutId,
+    completedToday,
+    isRest,
+    todayRoutine,
+    todayDay,
+    todayTs,
+    todayKey,
+    todaySessionPlan,
+    nextTrainingDay,
+    allRoutines,
+    getSessionPlan,
+  ]);
+
+  // Hero copy reacts to: active session > completed today > today plan > rest.
   const heroTitle = activeWorkoutId
     ? "Continuar"
-    : !isRest && todayRoutine && todayDay
-      ? todayDay.name
-      : "Día de";
+    : completedToday
+      ? "Sesión"
+      : !isRest && todayRoutine && todayDay
+        ? todayDay.name
+        : "Día de";
   const heroItalic = activeWorkoutId
     ? "ahora"
-    : !isRest && todayRoutine && todayDay
-      ? "hoy"
-      : "descanso";
+    : completedToday
+      ? "completa"
+      : !isRest && todayRoutine && todayDay
+        ? "hoy"
+        : "descanso";
   const heroMeta = activeWorkoutId
     ? "Tienes una sesión activa"
-    : !isRest && todayRoutine && todayDay
-      ? `${todayRoutine.name} · ${todayDay.exercises.length} ejercicios`
-      : "Tocá para entrenar igual";
+    : completedToday && latestTodaySession
+      ? buildCompletedMeta(latestTodaySession)
+      : !isRest && todayRoutine && todayDay
+        ? `${todayRoutine.name} · ${todayDay.exercises.length} ejercicios`
+        : "Tocá para entrenar igual";
 
   const triggerHaptic = (style: "light" | "medium" = "light") => {
     if (Platform.OS === "web") return;
@@ -111,6 +194,13 @@ export default function HomeScreen() {
   const handleHeroPress = () => {
     if (activeWorkoutId) {
       router.push("/workout/active");
+      return;
+    }
+    if (completedToday && latestTodaySession) {
+      triggerHaptic();
+      router.push(
+        `/workout/summary?sessionId=${latestTodaySession.id}&prs=${latestTodaySession.prsAchieved.length}` as never,
+      );
       return;
     }
     if (!isRest && todayRoutine && todayDay) {
@@ -229,6 +319,19 @@ export default function HomeScreen() {
                   color={colors.accentInk}
                 />
               </View>
+            ) : completedToday ? (
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  backgroundColor: colors.accent,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Feather name="check" size={18} color={colors.accentInk} />
+              </View>
             ) : (
               <View
                 style={{
@@ -263,10 +366,73 @@ export default function HomeScreen() {
             color="rgba(242,240,232,0.35)"
             style={{ marginTop: 10 }}
           >
-            MANTENER PARA CAMBIAR DE DÍA
+            {completedToday && !activeWorkoutId
+              ? "TOCAR PARA VER RESUMEN"
+              : "MANTENER PARA CAMBIAR DE DÍA"}
           </Text>
         </View>
       </Pressable>
+
+      {/* Planning entry-point */}
+      {planTarget ? (
+        <Pressable
+          onPress={() =>
+            router.push(
+              `/workout/plan?routineId=${planTarget.routineId}&dayId=${planTarget.routineDayId}&dateKey=${planTarget.dateKey}` as never,
+            )
+          }
+          style={({ pressed }) => ({
+            marginBottom: 14,
+            opacity: pressed ? 0.92 : 1,
+          })}
+        >
+          <Card variant={planTarget.hasPlan ? "default" : "accent"} padding={0}>
+            <Row gap={12} style={{ paddingVertical: 14, paddingHorizontal: 16 }}>
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  backgroundColor: planTarget.hasPlan
+                    ? colors.surfaceAlt
+                    : colors.accent,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Feather
+                  name={planTarget.hasPlan ? "check-circle" : "edit-3"}
+                  size={18}
+                  color={
+                    planTarget.hasPlan ? colors.accentEdge : colors.accentInk
+                  }
+                />
+              </View>
+              <Col flex={1} gap={2}>
+                <Text variant="title" numberOfLines={1}>
+                  {planTarget.hasPlan
+                    ? planTarget.isToday
+                      ? "Plan de hoy listo"
+                      : `Plan listo · ${planTarget.dayName}`
+                    : planTarget.isToday
+                      ? "Planear entrenamiento"
+                      : "Planear próximo entrenamiento"}
+                </Text>
+                <Text variant="caption" muted numberOfLines={1}>
+                  {planTarget.isToday
+                    ? `${planTarget.dayName} · ${planTarget.exercisesCount} ejercicios`
+                    : `${formatPlanWhen(planTarget.timestamp)} · ${planTarget.dayName}`}
+                </Text>
+              </Col>
+              <Feather
+                name="chevron-right"
+                size={16}
+                color={colors.muted}
+              />
+            </Row>
+          </Card>
+        </Pressable>
+      ) : null}
 
       {/* Metrics rail */}
       <Card padding={0} style={{ marginBottom: 14 }}>
@@ -305,22 +471,6 @@ export default function HomeScreen() {
         </Row>
         <Heatmap trainedDates={trainedDates} weeks={18} />
       </Card>
-
-      {completedToday ? (
-        <Card variant="accent" style={{ marginBottom: 14 }}>
-          <Row gap={12}>
-            <Feather name="check-circle" size={20} color={colors.accentEdge} />
-            <Col gap={2} flex={1}>
-              <Text variant="title" color={colors.accentEdge}>
-                ¡Entrenamiento completado!
-              </Text>
-              <Text variant="caption" muted>
-                Recuerda comer bien y dormir.
-              </Text>
-            </Col>
-          </Row>
-        </Card>
-      ) : null}
 
       {/* Recent sessions */}
       {recent.length > 0 ? (
@@ -367,6 +517,41 @@ export default function HomeScreen() {
       <DaySwapSheet visible={swapOpen} onClose={() => setSwapOpen(false)} />
     </Screen>
   );
+}
+
+function buildCompletedMeta(session: WorkoutSession): string {
+  const skipped = new Set(session.skippedExerciseIds ?? []);
+  const setsCount = session.sets.filter(
+    (s) => !s.isWarmup && !skipped.has(s.exerciseId),
+  ).length;
+  const duration = (session.endedAt ?? Date.now()) - session.startedAt;
+  const parts: string[] = [`${setsCount} ${setsCount === 1 ? "set" : "sets"}`];
+  if (session.totalVolumeKg > 0) {
+    parts.push(`${(session.totalVolumeKg / 1000).toFixed(1)} t`);
+  }
+  parts.push(formatDuration(duration));
+  if (session.prsAchieved.length > 0) {
+    parts.push(
+      `${session.prsAchieved.length} ${session.prsAchieved.length === 1 ? "PR" : "PRs"}`,
+    );
+  }
+  return parts.join(" · ");
+}
+
+function formatPlanWhen(timestamp: number): string {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(timestamp);
+  target.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return "Hoy";
+  if (diffDays === 1) return "Mañana";
+  if (diffDays > 0 && diffDays < 7) {
+    const labels = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+    return labels[(target.getDay() + 6) % 7];
+  }
+  if (diffDays > 0) return `En ${diffDays} días`;
+  return target.toLocaleDateString("es-ES", { day: "numeric", month: "short" });
 }
 
 function MetricCell({

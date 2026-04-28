@@ -13,6 +13,11 @@ interface SetRowProps {
   initialReps?: number;
   previousWeight?: number;
   previousReps?: number;
+  /** Pre-defined target values from a SessionPlan. Used to pre-fill the
+   *  inputs before the set is completed, with priority over `previousX`. */
+  plannedWeight?: number;
+  plannedReps?: number;
+  plannedRpe?: number;
   completed: boolean;
   /** Highlights the row as a PR (lime tinted bg + edge border). */
   isPr?: boolean;
@@ -30,6 +35,9 @@ export function SetRow({
   initialReps,
   previousWeight,
   previousReps,
+  plannedWeight,
+  plannedReps,
+  plannedRpe,
   completed,
   isPr,
   isActive,
@@ -38,13 +46,33 @@ export function SetRow({
   onRemove,
 }: SetRowProps) {
   const colors = useThemeColors();
+  // Pre-fill priority for not-yet-completed sets: plan > previous > empty.
+  // When completed, we always show the actual value (`initialX`).
   const [weight, setWeight] = useState<string>(
-    initialWeight != null ? String(initialWeight) : previousWeight != null ? String(previousWeight) : "",
+    initialWeight != null
+      ? String(initialWeight)
+      : plannedWeight != null
+        ? String(plannedWeight)
+        : previousWeight != null
+          ? String(previousWeight)
+          : "",
   );
   const [reps, setReps] = useState<string>(
-    initialReps != null ? String(initialReps) : previousReps != null ? String(previousReps) : "",
+    initialReps != null
+      ? String(initialReps)
+      : plannedReps != null
+        ? String(plannedReps)
+        : previousReps != null
+          ? String(previousReps)
+          : "",
   );
-  const [rpe, setRpe] = useState<string>("");
+  const [rpe, setRpe] = useState<string>(
+    plannedRpe != null && !completed ? String(plannedRpe) : "",
+  );
+
+  const isPlanned =
+    !completed &&
+    (plannedWeight != null || plannedReps != null || plannedRpe != null);
 
   const setLabel = isWarmup ? "C" : String(index);
 
@@ -66,8 +94,16 @@ export function SetRow({
       ? colors.mHombros
       : colors.muted;
 
-  const cellBg = completed ? colors.surfaceAlt : "transparent";
-  const cellBorder = isActive ? colors.ink : colors.border;
+  const cellBg = completed
+    ? colors.surfaceAlt
+    : isPlanned
+      ? colors.accentSoft
+      : "transparent";
+  const cellBorder = isActive
+    ? colors.ink
+    : isPlanned
+      ? colors.accentEdge
+      : colors.border;
 
   const checkBg = completed ? colors.accent : "transparent";
   const checkBorder = completed ? colors.accentEdge : colors.border;

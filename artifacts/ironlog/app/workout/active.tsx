@@ -20,7 +20,7 @@ import { SetRow } from "@/components/workout/SetRow";
 import { TermHint } from "@/components/workout/TermHint";
 import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
-import { formatDuration } from "@/utils/date";
+import { dateKey, formatDuration } from "@/utils/date";
 
 export default function ActiveWorkoutScreen() {
   const colors = useThemeColors();
@@ -42,6 +42,7 @@ export default function ActiveWorkoutScreen() {
     reorderSessionExercises,
     setSessionExerciseSkipped,
     removeSessionExercise,
+    getSessionPlan,
   } = useIronLog();
 
   // Which exercise card has its action sheet open (null = closed).
@@ -67,11 +68,24 @@ export default function ActiveWorkoutScreen() {
 
   const [restingFor, setRestingFor] = useState<number | null>(null);
 
-  // Hook must run unconditionally — keep it before the early return below.
+  // Hooks must run unconditionally — keep these before the early return below.
   const skippedSet = useMemo(
     () => new Set(session?.skippedExerciseIds ?? []),
     [session?.skippedExerciseIds],
   );
+  const sessionPlan = useMemo(() => {
+    if (!session?.routineId || !session?.routineDayId) return undefined;
+    return getSessionPlan(
+      dateKey(session.startedAt),
+      session.routineId,
+      session.routineDayId,
+    );
+  }, [
+    session?.routineId,
+    session?.routineDayId,
+    session?.startedAt,
+    getSessionPlan,
+  ]);
 
   if (!session) {
     return (
@@ -295,18 +309,34 @@ export default function ActiveWorkoutScreen() {
             const warmupSets = re?.warmupSets ?? 0;
             const restSeconds = re?.restSeconds ?? defaultRestSeconds;
 
+            const plannedExercise = sessionPlan?.exercises.find(
+              (p) => p.exerciseId === exId,
+            );
+            const plannedWarmupSets = plannedExercise
+              ? plannedExercise.sets.filter((s) => s.isWarmup)
+              : null;
+            const plannedWorkSets = plannedExercise
+              ? plannedExercise.sets.filter((s) => !s.isWarmup)
+              : null;
+
             const completedForExercise = session.sets.filter((s) => s.exerciseId === exId);
             const lastSets = getLastSetsForExercise(exId, session.id);
             const exerciseMax = getMaxWeightForExercise(exId);
 
+            // Effective row counts: plan wins over routine defaults; we still
+            // grow if the user logged more sets than planned.
+            const effectiveWarmup = plannedWarmupSets?.length ?? warmupSets;
+            const effectiveWork = plannedWorkSets?.length ?? targetSets;
             const totalRows = Math.max(
-              warmupSets + targetSets,
+              effectiveWarmup + effectiveWork,
               completedForExercise.length + 1,
             );
             const rows: { isWarmup: boolean; index: number }[] = [];
-            for (let i = 0; i < warmupSets; i++) rows.push({ isWarmup: true, index: i + 1 });
+            for (let i = 0; i < effectiveWarmup; i++) {
+              rows.push({ isWarmup: true, index: i + 1 });
+            }
             let workIndex = 0;
-            for (let i = warmupSets; i < totalRows; i++) {
+            for (let i = effectiveWarmup; i < totalRows; i++) {
               workIndex++;
               rows.push({ isWarmup: false, index: workIndex });
             }
@@ -391,6 +421,11 @@ export default function ActiveWorkoutScreen() {
                       (s) => s.isWarmup === row.isWarmup,
                     )[row.index - 1];
                     const previous = row.isWarmup ? undefined : lastSets[row.index - 1];
+                    const plannedSet = plannedExercise
+                      ? (row.isWarmup ? plannedWarmupSets : plannedWorkSets)?.[
+                          row.index - 1
+                        ]
+                      : undefined;
                     const isPr =
                       !!completedSet &&
                       !completedSet.isWarmup &&
@@ -405,6 +440,9 @@ export default function ActiveWorkoutScreen() {
                         initialReps={completedSet?.reps}
                         previousWeight={previous?.weight}
                         previousReps={previous?.reps}
+                        plannedWeight={plannedSet?.weight}
+                        plannedReps={plannedSet?.reps}
+                        plannedRpe={plannedSet?.rpe}
                         completed={!!completedSet}
                         isPr={isPr}
                         isActive={!completedSet && i === firstIncomplete}
