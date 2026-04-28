@@ -16,6 +16,7 @@ import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { RestTimer } from "@/components/workout/RestTimer";
 import { SetRow } from "@/components/workout/SetRow";
+import { TermHint } from "@/components/workout/TermHint";
 import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
 import { formatDuration } from "@/utils/date";
@@ -277,26 +278,12 @@ export default function ActiveWorkoutScreen() {
                     paddingBottom: 8,
                   }}
                 >
-                  <View style={{ width: 28 }}>
-                    <Text variant="tiny" color={colors.muted} style={{ textAlign: "center" }}>
-                      SET
-                    </Text>
-                  </View>
-                  <View style={{ width: 56 }}>
-                    <Text variant="tiny" color={colors.muted} style={{ textAlign: "center" }}>
-                      PREVIO
-                    </Text>
-                  </View>
+                  <TermHint term="SET" width={28} />
+                  <TermHint term="PREVIO" width={56} />
                   <View style={{ flex: 1, flexDirection: "row", gap: 6 }}>
-                    <Text variant="tiny" color={colors.muted} style={{ flex: 1, textAlign: "center" }}>
-                      KG
-                    </Text>
-                    <Text variant="tiny" color={colors.muted} style={{ flex: 1, textAlign: "center" }}>
-                      REPS
-                    </Text>
-                    <Text variant="tiny" color={colors.muted} style={{ flex: 1, textAlign: "center" }}>
-                      RPE
-                    </Text>
+                    <TermHint term="KG" flex={1} />
+                    <TermHint term="REPS" flex={1} />
+                    <TermHint term="RPE" flex={1} />
                   </View>
                   <View style={{ width: 28 }} />
                 </View>
