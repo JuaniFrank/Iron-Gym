@@ -10,7 +10,9 @@ import type {
   BodyMeasurementEntry,
   BodyWeightEntry,
   CompletedSet,
+  DiscoveryStatus,
   Exercise,
+  FeatureDiscoveryState,
   FitnessGoal,
   FoodEntry,
   FoodItem,
@@ -22,6 +24,7 @@ import type {
   RoutineExercise,
   ScheduledRoutine,
   ScheduleOverride,
+  SessionNote,
   SessionPlan,
   UserProfile,
   WorkoutSession,
@@ -31,7 +34,12 @@ import { uid } from "@/utils/id";
 
 const STORAGE_KEY = "ironlog:v1";
 
+/** Bumpear cuando la forma de PersistedState cambia. `migrate()` se aplica al
+ *  hidratar si el blob persistido tiene una versión menor. */
+const CURRENT_SCHEMA_VERSION = 2;
+
 interface PersistedState {
+  schemaVersion: number;
   customExercises: Exercise[];
   customFoods: FoodItem[];
   routines: Routine[];
@@ -45,9 +53,27 @@ interface PersistedState {
   scheduleOverrides: ScheduleOverride[];
   sessionPlans: SessionPlan[];
   achievements: AchievementUnlock[];
+  notes: SessionNote[];
   profile: UserProfile;
   activeWorkoutId: string | null;
   defaultRestSeconds: number;
+}
+
+/** Aplica migraciones encadenadas desde `fromVersion` hasta CURRENT_SCHEMA_VERSION.
+ *  Cada step de migración recibe el state parcial y devuelve el state actualizado. */
+function migrate(
+  state: Partial<PersistedState>,
+  fromVersion: number,
+): Partial<PersistedState> {
+  let cur: Partial<PersistedState> = state;
+  let v = fromVersion;
+  // v1 → v2: agrega `notes: []` (sistema de notas estructuradas).
+  if (v < 2) {
+    cur = { ...cur, notes: cur.notes ?? [] };
+    v = 2;
+  }
+  // Futuras migraciones: agregar steps acá.
+  return { ...cur, schemaVersion: CURRENT_SCHEMA_VERSION };
 }
 
 const DEFAULT_PROFILE: UserProfile = {
@@ -67,6 +93,7 @@ const DEFAULT_PROFILE: UserProfile = {
 };
 
 const DEFAULT_STATE: PersistedState = {
+  schemaVersion: CURRENT_SCHEMA_VERSION,
   customExercises: [],
   customFoods: [],
   routines: [],
@@ -80,6 +107,7 @@ const DEFAULT_STATE: PersistedState = {
   scheduleOverrides: [],
   sessionPlans: [],
   achievements: [],
+  notes: [],
   profile: DEFAULT_PROFILE,
   activeWorkoutId: null,
   defaultRestSeconds: 90,
@@ -171,6 +199,25 @@ interface IronLogContextValue extends PersistedState {
         isToday: boolean;
       }
     | null;
+  // Notes (cf. notes-system.md)
+  addNote: (input: Omit<SessionNote, "id" | "createdAt">) => SessionNote;
+  updateNote: (id: string, patch: Partial<SessionNote>) => void;
+  deleteNote: (id: string) => void;
+  resolveNote: (id: string) => void;
+  unresolveNote: (id: string) => void;
+  clearAllNotes: () => void;
+  getNoteById: (id: string) => SessionNote | undefined;
+  getNotesForSession: (sessionId: string) => SessionNote[];
+  getNotesForSet: (setId: string) => SessionNote[];
+  getNotesForExercise: (exerciseId: string) => SessionNote[];
+  // Feature discovery (cf. feature-discovery.md)
+  setDiscoveryStatus: (
+    featureId: string,
+    status: DiscoveryStatus,
+    extra?: Partial<FeatureDiscoveryState>,
+  ) => void;
+  snoozeDiscovery: (featureId: string, durationMs?: number) => void;
+  resetAllDiscoveries: () => void;
   // Profile
   updateProfile: (patch: Partial<UserProfile>) => void;
   // Helpers
@@ -179,7 +226,7 @@ interface IronLogContextValue extends PersistedState {
   getRoutineById: (id: string) => Routine | undefined;
   getActiveSession: () => WorkoutSession | null;
   getLastSetsForExercise: (exerciseId: string, beforeSessionId?: string) => CompletedSet[];
-  getMaxWeightForExercise: (exerciseId: string) => number;
+  getMaxWeightForExercise: (exerciseId: string, excludeSessionId?: string) => number;
   getStreak: () => number;
   resetAll: () => Promise<void>;
 }
@@ -196,7 +243,12 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (raw) {
           const parsed = JSON.parse(raw) as Partial<PersistedState>;
-          setState({ ...DEFAULT_STATE, ...parsed, profile: { ...DEFAULT_PROFILE, ...(parsed.profile ?? {}) } });
+          const migrated = migrate(parsed, parsed.schemaVersion ?? 1);
+          setState({
+            ...DEFAULT_STATE,
+            ...migrated,
+            profile: { ...DEFAULT_PROFILE, ...(migrated.profile ?? {}) },
+          });
         }
       } catch {
         // ignore
@@ -252,9 +304,13 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
   );
 
   const getMaxWeightForExercise = useCallback(
-    (exerciseId: string): number => {
+    (exerciseId: string, excludeSessionId?: string): number => {
       let max = 0;
       for (const session of state.sessions) {
+        // Excluir la sesión en curso para que el primer set logueado no se
+        // marque como PR contra sí mismo (cf. bug histórico de `>=` vs max
+        // que incluía la session actual).
+        if (excludeSessionId && session.id === excludeSessionId) continue;
         for (const set of session.sets) {
           if (set.exerciseId === exerciseId && !set.isWarmup && set.weight > max) {
             max = set.weight;
@@ -1098,6 +1154,146 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
     [state.schedule, state.scheduleOverrides],
   );
 
+  // Notes (cf. notes-system.md)
+  const addNote = useCallback(
+    (input: Omit<SessionNote, "id" | "createdAt">): SessionNote => {
+      const note: SessionNote = {
+        ...input,
+        id: uid(),
+        createdAt: Date.now(),
+      };
+      // Denormalizar exerciseId si vino setId pero no exerciseId (cf. D-4).
+      if (note.setId && !note.exerciseId) {
+        for (const session of state.sessions) {
+          const set = session.sets.find((s) => s.id === note.setId);
+          if (set) {
+            note.exerciseId = set.exerciseId;
+            break;
+          }
+        }
+      }
+      update((prev) => ({ ...prev, notes: [...prev.notes, note] }));
+      return note;
+    },
+    [state.sessions, update],
+  );
+
+  const updateNote = useCallback(
+    (id: string, patch: Partial<SessionNote>) => {
+      update((prev) => ({
+        ...prev,
+        notes: prev.notes.map((n) => (n.id === id ? { ...n, ...patch } : n)),
+      }));
+    },
+    [update],
+  );
+
+  const deleteNote = useCallback(
+    (id: string) => {
+      update((prev) => ({
+        ...prev,
+        notes: prev.notes.filter((n) => n.id !== id),
+      }));
+    },
+    [update],
+  );
+
+  const resolveNote = useCallback(
+    (id: string) => {
+      const now = Date.now();
+      update((prev) => ({
+        ...prev,
+        notes: prev.notes.map((n) =>
+          n.id === id ? { ...n, resolved: true, resolvedAt: now } : n,
+        ),
+      }));
+    },
+    [update],
+  );
+
+  const unresolveNote = useCallback(
+    (id: string) => {
+      update((prev) => ({
+        ...prev,
+        notes: prev.notes.map((n) =>
+          n.id === id ? { ...n, resolved: false, resolvedAt: undefined } : n,
+        ),
+      }));
+    },
+    [update],
+  );
+
+  const clearAllNotes = useCallback(() => {
+    update((prev) => ({ ...prev, notes: [] }));
+  }, [update]);
+
+  const getNoteById = useCallback(
+    (id: string) => state.notes.find((n) => n.id === id),
+    [state.notes],
+  );
+
+  const getNotesForSession = useCallback(
+    (sessionId: string) => state.notes.filter((n) => n.sessionId === sessionId),
+    [state.notes],
+  );
+
+  const getNotesForSet = useCallback(
+    (setId: string) => state.notes.filter((n) => n.setId === setId),
+    [state.notes],
+  );
+
+  const getNotesForExercise = useCallback(
+    (exerciseId: string) =>
+      state.notes.filter((n) => n.exerciseId === exerciseId),
+    [state.notes],
+  );
+
+  // Feature discovery (cf. feature-discovery.md)
+  const setDiscoveryStatus = useCallback(
+    (
+      featureId: string,
+      status: DiscoveryStatus,
+      extra: Partial<FeatureDiscoveryState> = {},
+    ) => {
+      update((prev) => {
+        const existing = prev.profile.featureDiscoveries ?? [];
+        const idx = existing.findIndex((d) => d.featureId === featureId);
+        const base: FeatureDiscoveryState =
+          idx >= 0 ? existing[idx] : { featureId, status: "unseen" };
+        const next: FeatureDiscoveryState = {
+          ...base,
+          status,
+          decidedAt: Date.now(),
+          ...extra,
+        };
+        const list = [...existing];
+        if (idx >= 0) list[idx] = next;
+        else list.push(next);
+        return {
+          ...prev,
+          profile: { ...prev.profile, featureDiscoveries: list },
+        };
+      });
+    },
+    [update],
+  );
+
+  const snoozeDiscoveryFn = useCallback(
+    (featureId: string, durationMs = 7 * 24 * 60 * 60 * 1000) => {
+      setDiscoveryStatus(featureId, "snoozed", {
+        snoozeUntil: Date.now() + durationMs,
+      });
+    },
+    [setDiscoveryStatus],
+  );
+
+  const resetAllDiscoveriesFn = useCallback(() => {
+    update((prev) => ({
+      ...prev,
+      profile: { ...prev.profile, featureDiscoveries: [] },
+    }));
+  }, [update]);
+
   // Profile
   const updateProfile = useCallback((patch: Partial<UserProfile>) => {
     update((prev) => ({ ...prev, profile: { ...prev.profile, ...patch } }));
@@ -1161,6 +1357,19 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
       upsertSessionPlan,
       deleteSessionPlan,
       getNextTrainingDay,
+      addNote,
+      updateNote,
+      deleteNote,
+      resolveNote,
+      unresolveNote,
+      clearAllNotes,
+      getNoteById,
+      getNotesForSession,
+      getNotesForSet,
+      getNotesForExercise,
+      setDiscoveryStatus,
+      snoozeDiscovery: snoozeDiscoveryFn,
+      resetAllDiscoveries: resetAllDiscoveriesFn,
       updateProfile,
       getExerciseById,
       getFoodById,
@@ -1232,6 +1441,19 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
       getMaxWeightForExercise,
       getStreak,
       resetAll,
+      addNote,
+      updateNote,
+      deleteNote,
+      resolveNote,
+      unresolveNote,
+      clearAllNotes,
+      getNoteById,
+      getNotesForSession,
+      getNotesForSet,
+      getNotesForExercise,
+      setDiscoveryStatus,
+      snoozeDiscoveryFn,
+      resetAllDiscoveriesFn,
     ],
   );
 

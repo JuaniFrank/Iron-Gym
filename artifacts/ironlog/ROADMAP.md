@@ -533,6 +533,34 @@ Cosas que cualquier usuario que viene de Strong/Hevy/JEFIT espera. Son las que s
   - Notificación opcional: si hay 3+ notas de pain en la misma zona en 14 días, mandar alert sutil "¿Querés reposo / bajar volumen en esa zona?".
   - Export como PDF llevable al fisio = killer feature para usuarios serios.
 
+### 4.17 Smart reminder de recap para usuarios recurrentes
+
+`[ ]` Esfuerzo: **M** · Impacto: **Medio** · **Depende de 4.13**
+
+- **Qué:** si el usuario completa recaps con frecuencia (recurrencia ≥ 60% en últimas 10 sesiones), y han pasado 2 horas desde `endedAt` sin completar el recap de la sesión actual, mandar reminder. Dos surfaces complementarios: (a) push notification si tiene permiso, (b) banner en home cuando abra la app dentro de la ventana de 24h.
+- **Por qué:** el recap sostiene su valor solo si se completa con consistencia. Los users que ya demostraron hábito merecen un re-prompt amistoso cuando se les pasó por apuro. Los users que **no** son recurrentes no reciben el reminder — nada más molesto que push notifs cuando no estás enganchado.
+- **Plan de acción:**
+  1. Helper `recapCompletionRate(sessions, notes, windowSize=10)` (ya documentado en `notes-system.md` D-17).
+  2. Threshold `RECURRENCE_THRESHOLD = 0.6` (configurable, revisable con datos reales).
+  3. Al cerrar una sesión con `recapCompletionRate >= 0.6`, schedulear un `Notifications.scheduleNotificationAsync` 2h al futuro con título "¿Cómo te fue hoy?" y body "30 segundos para registrar tu sesión". Cancela automáticamente si el recap se completa antes.
+  4. Banner en home: query reactivo en `(tabs)/index.tsx` que muestra card "Reflexión pendiente · sesión de hace Xh" si hay sesión cerrada en últimas 24h sin recap, y la cohorte del usuario es recurrente.
+  5. Tap en notification o banner → abre el recap usando el flujo de D-16 (re-open en sesión cerrada).
+- **Datos / contratos:**
+  - Cero estado nuevo persistido — todo computable desde `notes` + `sessions`.
+  - Notification IDs schedulados se almacenan en estado efímero del context (no persisten entre relaunches del app process).
+- **A tener en cuenta:**
+  - **Permission**: pedir notification permission solo cuando el usuario va a recibir el primer reminder (recap completion rate cruzó el threshold). No al onboarding general.
+  - **Quiet hours**: no mandar push entre 22h y 9h locales — agendar para la mañana siguiente si el window cae en horario de descanso.
+  - **Cancelación**: si usuario completa el recap antes de las 2h, cancelar el push pendiente. Si lo abre desde el banner, idem.
+  - Configurable en settings: toggle "Reminder de recap (2h)" — algunas personas prefieren no recibir push aunque sean recurrentes.
+- **Advertencias:**
+  - Permisos de notification varían por plataforma (iOS más estricto post-iOS 18). Tener fallback de banner siempre.
+  - No mandar reminder si el usuario está en `quiet hours` configuradas o si ya recibió N notifications en el día (evitar spam).
+- **Sugerencias:**
+  - El push body puede personalizarse con stat: "Hoy hiciste tu PR de press banca · 30 segundos para registrar cómo se sintió".
+  - A/B test del tono: directo ("Falta tu reflexión") vs amable ("¿30 segs para vos?") cuando haya volumen.
+- **Refs:** `notes-system.md` D-16 + D-17.
+
 ---
 
 ## 5. Diferenciales (acá IronLog puede ganar)
@@ -781,6 +809,55 @@ Lo que separa a IronLog del resto. Apuntan a usar el modelo de datos único (ove
   - "Apply All" como atajo cuando el coach propone un set completo de ajustes coherentes (ej. "ajustar todo el día de pierna").
   - History de ajustes en settings — el user puede ver "estos son los cambios que el coach me sugirió este mes".
   - Cuando el user marca el dolor como `resolved` en 4.16, ofrecer auto-revert de los ajustes activos relacionados.
+
+### 5.15 Períodos de usuario (cut, bulk, lesión, etc.)
+
+`[ ]` Esfuerzo: **M** · Impacto: **Alto** · **Depende de 4.3, atado a 5.13**
+
+- **Qué:** capturar el **período actual del usuario** (cut, bulk, maintenance, injury_recovery, travel, stressful_period) como contexto persistente que dura semanas/meses. UI mínima para crear/cerrar período. Banner en home tipo "Cut · Día 12/30". Cualquier feature posterior que lea notas del usuario (especialmente el AI Coach 5.13) consulta el período activo para interpretar correctamente.
+- **Por qué:** el contexto cambia cómo se interpretan los datos. Un usuario con cansancio recurrente está siendo coherente con su cut intencional, no necesita warning. El AI Coach sin esta info da consejos descontextualizados ("dormí más, comé más"), molesto y poco útil. Capturar el período permite que la IA y los gráficos contextualicen — ej. "tu fuerza bajó 5% pero estás semana 4/8 de cut, eso es normal".
+- **Plan de acción:**
+  1. Tipo nuevo:
+     ```ts
+     type UserContextType =
+       | "cut"
+       | "bulk"
+       | "maintain"
+       | "injury_recovery"
+       | "travel"
+       | "stressful_period";
+
+     interface UserContextPeriod {
+       id: string;
+       type: UserContextType;
+       startDate: number;          // unix ms
+       endDate?: number;           // null = activo
+       targetEndDate?: number;     // optional — "cut planeado a 8 semanas"
+       notes?: string;             // texto libre del usuario
+       relatedBodyParts?: BodyPart[]; // para injury_recovery
+     }
+     ```
+  2. Persistencia: `PersistedState.userContexts: UserContextPeriod[]`.
+  3. Helper `getActiveContext(state, at = now)` devuelve el (único) período sin `endDate` o con `endDate >= now`. Si hay overlap, el más reciente.
+  4. UI:
+     - En `more.tsx`: sección "Mi contexto" con botón "Iniciar período" → modal que pide tipo + duración estimada + notas.
+     - Banner persistente en home cuando hay período activo: "Cut · Día 12/30" con botón "Cerrar".
+     - Detalle del período en `app/context/[id].tsx`: timeline de sesiones del período, summary de notas relevantes (energy, mood), gráficos de evolución (peso corporal, e1RM compound) con el período como overlay.
+  5. Integración con AI Coach (cuando 5.13 esté):
+     - El context que se pasa al modelo incluye `activeContext` con tipo + duración + notas.
+     - System prompt instruye al coach a contextualizar respuestas (ej. "está en cut, no sugieras subir calorías sin pedirle").
+- **Datos / contratos:** un solo período activo a la vez (excepto injury_recovery que puede coexistir con cut/bulk — se permite overlap si type === "injury_recovery").
+- **A tener en cuenta:**
+  - **Auto-cierre**: si pasaron `targetEndDate + 7 días` y el usuario no cerró el período, mostrar prompt "¿Seguís en cut? ¿Cerramos?".
+  - **Histórico**: períodos cerrados quedan en la lista para review. "Cuts del año pasado · resultados".
+  - **Privacy del término "cut"**: copy en español (Argentina). "Cut" es jerga aceptada pero también ofrecer "Definición" / "Volumen" / "Mantenimiento" como alternativa más amigable.
+- **Advertencias:**
+  - **No imponer un período**: opcional al 100%. La feature solo aporta valor cuando el usuario activamente identifica su fase. Forzar el prompt en home es contraproducente.
+  - **No diagnosticar**: `injury_recovery` no es prescripción médica — es contexto del usuario. Copy claro al respecto.
+- **Sugerencias:**
+  - Stats al cerrar un período: "Cut completado · 8 semanas · -3.2 kg, e1RM bench -5%". Útil para review honesto.
+  - Para usuarios serios: opción de adjuntar PDF/foto al período (foto inicio + foto fin = comparación visual).
+- **Refs:** `notes-system.md` D-20 (decisión de postponerlo de v1 de notas).
 
 ---
 

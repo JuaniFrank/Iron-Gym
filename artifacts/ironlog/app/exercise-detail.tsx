@@ -3,6 +3,7 @@ import React, { useMemo } from "react";
 import { Dimensions, ScrollView, View } from "react-native";
 
 import { LineChart } from "@/components/charts/LineChart";
+import { NoteCard } from "@/components/notes/NoteCard";
 import { Card } from "@/components/ui/Card";
 import { Divider } from "@/components/ui/Divider";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -19,8 +20,13 @@ import { formatDateShort, formatRelativeDate } from "@/utils/date";
 export default function ExerciseDetailScreen() {
   const colors = useThemeColors();
   const params = useLocalSearchParams<{ id: string }>();
-  const { sessions, getExerciseById, profile } = useIronLog();
+  const { sessions, getExerciseById, profile, getNotesForExercise } = useIronLog();
   const ex = getExerciseById(params.id);
+  const exerciseNotes = ex
+    ? getNotesForExercise(ex.id)
+        .slice()
+        .sort((a, b) => b.createdAt - a.createdAt)
+    : [];
   const screenWidth = Dimensions.get("window").width - 76;
 
   const data = useMemo(() => {
@@ -175,6 +181,24 @@ export default function ExerciseDetailScreen() {
             </Col>
           )}
         </Card>
+
+        {exerciseNotes.length > 0 ? (
+          <Card style={{ marginTop: 16 }}>
+            <Text variant="caption" color={colors.muted} style={{ marginBottom: 10 }}>
+              NOTAS HISTÓRICAS · {exerciseNotes.length}
+            </Text>
+            <Col gap={6}>
+              {exerciseNotes.slice(0, 20).map((note) => (
+                <NoteCard
+                  key={note.id}
+                  note={note}
+                  showDate
+                  relativeDate
+                />
+              ))}
+            </Col>
+          </Card>
+        ) : null}
       </ScrollView>
     </Screen>
   );

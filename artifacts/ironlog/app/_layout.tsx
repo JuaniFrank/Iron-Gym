@@ -35,6 +35,8 @@ function StackNavigator() {
       <Stack.Screen name="routine/[id]" options={{ presentation: "card" }} />
       <Stack.Screen name="workout/active" options={{ presentation: "card", gestureEnabled: false }} />
       <Stack.Screen name="workout/summary" options={{ presentation: "card", gestureEnabled: false }} />
+      <Stack.Screen name="workout/recap" options={{ presentation: "card" }} />
+      <Stack.Screen name="workout/preflight" options={{ presentation: "card" }} />
       <Stack.Screen name="exercises" options={{ presentation: "modal" }} />
       <Stack.Screen name="food-add" options={{ presentation: "modal" }} />
       <Stack.Screen name="food-new" options={{ presentation: "modal" }} />

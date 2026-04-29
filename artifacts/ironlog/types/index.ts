@@ -165,6 +165,8 @@ export interface UserProfile {
   /** Per-muscle weekly volume targets (sets/week). When undefined, defaults
    *  from `constants/volumeTargets.ts` are used. */
   volumeTargets?: Partial<Record<MuscleGroup, VolumeTarget>>;
+  /** Estado de descubrimiento progresivo de features (cf. D-11). */
+  featureDiscoveries?: FeatureDiscoveryState[];
 }
 
 export interface FitnessGoal {
@@ -262,4 +264,102 @@ export interface AppStateForAchievements {
   bodyWeights: BodyWeightEntry[];
   streak: number;
   prs: PRRecord[];
+}
+
+// ---------------------------------------------------------------------------
+// Sistema de notas estructuradas (cf. notes-system.md)
+
+export type NoteCategory =
+  | "pain"
+  | "effort"
+  | "technique"
+  | "equipment"
+  | "energy"
+  | "mood"
+  | "other";
+
+/** Enum cerrado de zonas corporales (cf. D-13). 17 zonas mínimas en v1.
+ *  Texto libre va en `text`; expansiones futuras son additive. */
+export type BodyPart =
+  | "shoulder_left"
+  | "shoulder_right"
+  | "elbow_left"
+  | "elbow_right"
+  | "wrist_left"
+  | "wrist_right"
+  | "neck"
+  | "upper_back"
+  | "lower_back"
+  | "chest"
+  | "abs"
+  | "hip_left"
+  | "hip_right"
+  | "knee_left"
+  | "knee_right"
+  | "ankle_left"
+  | "ankle_right";
+
+export type NoteSource = "chip" | "text" | "voice" | "recap" | "preflight";
+
+/**
+ * Una nota estructurada asociada a una sesión (y opcionalmente a un set o
+ * ejercicio). Cf. `notes-system.md` §5 para el contrato completo.
+ */
+export interface SessionNote {
+  id: string;
+  sessionId: string;
+  setId?: string;
+  exerciseId?: string;
+  createdAt: number;
+  category: NoteCategory;
+  bodyPart?: BodyPart;
+  /** 1–10. Stored crudo. UI lo traduce por categoría (cf. D-19). */
+  severity?: number;
+  resolved?: boolean;
+  resolvedAt?: number;
+  text: string;
+  source: NoteSource;
+  /** Solo cuando source === "voice". Path en FileSystem.documentDirectory. */
+  audioUri?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Feature discovery (cf. feature-discovery.md, D-11/D-12)
+
+export type DiscoveryTrigger =
+  | { kind: "sessions_completed"; count: number }
+  | { kind: "notes_count"; count: number }
+  | { kind: "pain_notes_count"; count: number }
+  | { kind: "exercise_count"; count: number }
+  | { kind: "days_since_install"; days: number };
+
+export type DiscoverySurface = "modal" | "banner";
+
+export type DiscoveryStatus =
+  | "unseen"
+  | "shown"
+  | "activated"
+  | "dismissed"
+  | "snoozed";
+
+export interface FeatureDiscoveryState {
+  featureId: string;
+  status: DiscoveryStatus;
+  shownAt?: number;
+  decidedAt?: number;
+  snoozeUntil?: number;
+}
+
+/** Definición estática de un feature en el catálogo. Hardcoded en código. */
+export interface FeatureDiscoveryDef {
+  featureId: string;
+  title: string;
+  tagline: string;
+  description: string;
+  trigger: DiscoveryTrigger;
+  surface: DiscoverySurface;
+  /** v1: undefined siempre. v2: "pro" cuando aplique. */
+  requiresEntitlement?: string;
+  activationRoute?: string;
+  settingsKey: string;
 }

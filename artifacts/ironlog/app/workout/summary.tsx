@@ -1,10 +1,12 @@
 import { Feather } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CelebrationOverlay } from "@/components/celebration/CelebrationOverlay";
+import { FeatureDiscoveryPrompt } from "@/components/notes/FeatureDiscoveryPrompt";
+import { NoteCard } from "@/components/notes/NoteCard";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Divider } from "@/components/ui/Divider";
@@ -15,6 +17,8 @@ import { Col, Row } from "@/components/ui/Stack";
 import { BigStat } from "@/components/ui/Stat";
 import { Text } from "@/components/ui/Text";
 import { ACHIEVEMENTS } from "@/constants/achievements";
+import { CATEGORY_LABEL } from "@/constants/noteChips";
+import { getEligibleDiscoveries } from "@/services/featureDiscovery";
 import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
 import { formatDuration } from "@/utils/date";
@@ -27,8 +31,30 @@ export default function WorkoutSummaryScreen() {
     prs?: string;
     achievements?: string;
   }>();
-  const { sessions, getExerciseById } = useIronLog();
+  const {
+    sessions,
+    getExerciseById,
+    getNotesForSession,
+    notes,
+    profile,
+    setDiscoveryStatus,
+  } = useIronLog();
   const session = sessions.find((s) => s.id === params.sessionId);
+  const sessionNotes = session ? getNotesForSession(session.id) : [];
+
+  // Discovery: lógica centralizada en helper (cf. FX-4 + D-11).
+  const recapStatus =
+    profile.featureDiscoveries?.find((d) => d.featureId === "recap")?.status ??
+    "unseen";
+  const recapEligible = useMemo(
+    () =>
+      getEligibleDiscoveries(profile, sessions, notes).some(
+        (d) => d.featureId === "recap",
+      ),
+    [profile, sessions, notes],
+  );
+  const shouldOfferRecap = recapStatus === "unseen" && recapEligible;
+  const [recapOffered, setRecapOffered] = useState(false);
 
   const [celebrate, setCelebrate] = useState<{
     title: string;
@@ -212,6 +238,57 @@ export default function WorkoutSummaryScreen() {
           </Card>
         ) : null}
 
+        {sessionNotes.length > 0 ? (
+          <>
+            <Text
+              variant="tiny"
+              color={colors.muted}
+              style={{ paddingHorizontal: 4, paddingVertical: 10 }}
+            >
+              HIGHLIGHTS · {sessionNotes.length}{" "}
+              {sessionNotes.length === 1 ? "nota" : "notas"}
+            </Text>
+            {(() => {
+              // Agrupar notas por categoría (cf. FX-3).
+              const order: import("@/types").NoteCategory[] = [
+                "pain",
+                "effort",
+                "energy",
+                "mood",
+                "technique",
+                "equipment",
+                "other",
+              ];
+              const groups = order
+                .map((cat) => ({
+                  cat,
+                  notes: sessionNotes
+                    .filter((n) => n.category === cat)
+                    .sort((a, b) => a.createdAt - b.createdAt),
+                }))
+                .filter((g) => g.notes.length > 0);
+              return (
+                <Col gap={14}>
+                  {groups.map((g) => (
+                    <Col key={g.cat} gap={6}>
+                      <Text
+                        variant="tiny"
+                        color={colors.muted}
+                        style={{ paddingHorizontal: 4 }}
+                      >
+                        {CATEGORY_LABEL[g.cat].toUpperCase()} · {g.notes.length}
+                      </Text>
+                      {g.notes.map((note) => (
+                        <NoteCard key={note.id} note={note} />
+                      ))}
+                    </Col>
+                  ))}
+                </Col>
+              );
+            })()}
+          </>
+        ) : null}
+
         <Text
           variant="tiny"
           color={colors.muted}
@@ -258,13 +335,63 @@ export default function WorkoutSummaryScreen() {
         }}
       >
         <Button
-          label="Volver al inicio"
-          icon="home"
+          label={
+            recapStatus === "activated"
+              ? "Reflexionar"
+              : shouldOfferRecap
+                ? "Continuar"
+                : "Volver al inicio"
+          }
+          icon={
+            recapStatus === "activated"
+              ? "edit-3"
+              : shouldOfferRecap
+                ? "arrow-right"
+                : "home"
+          }
           size="lg"
           fullWidth
-          onPress={() => router.replace("/")}
+          onPress={() => {
+            if (recapStatus === "activated" && session) {
+              router.replace(`/workout/recap?sessionId=${session.id}` as never);
+              return;
+            }
+            if (shouldOfferRecap && !recapOffered) {
+              setRecapOffered(true);
+              return;
+            }
+            router.replace("/");
+          }}
         />
       </View>
+
+      {/* Discovery prompt: recap (cf. D-11). Aparece después de la 3ra sesión
+          si el usuario nunca lo decidió. */}
+      <FeatureDiscoveryPrompt
+        visible={recapOffered && shouldOfferRecap}
+        featureId="recap"
+        onActivate={() => {
+          setDiscoveryStatus("recap", "activated");
+          setRecapOffered(false);
+          if (session) {
+            router.replace(`/workout/recap?sessionId=${session.id}` as never);
+          } else {
+            router.replace("/");
+          }
+        }}
+        onLater={() => {
+          setDiscoveryStatus("recap", "snoozed", {
+            snoozeUntil: Date.now() + 7 * 24 * 60 * 60 * 1000,
+          });
+          setRecapOffered(false);
+          router.replace("/");
+        }}
+        onDismiss={() => {
+          setDiscoveryStatus("recap", "dismissed");
+          setRecapOffered(false);
+          router.replace("/");
+        }}
+      />
 
       <CelebrationOverlay
         visible={!!celebrate}

@@ -14,6 +14,8 @@ import { IconButton } from "@/components/ui/IconButton";
 import { Screen } from "@/components/ui/Screen";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
+import { NoteSheet } from "@/components/notes/NoteSheet";
+import { QuickNoteMenu } from "@/components/notes/QuickNoteMenu";
 import { ExerciseActionSheet } from "@/components/workout/ExerciseActionSheet";
 import { RestTimer } from "@/components/workout/RestTimer";
 import { SetRow } from "@/components/workout/SetRow";
@@ -43,10 +45,26 @@ export default function ActiveWorkoutScreen() {
     setSessionExerciseSkipped,
     removeSessionExercise,
     getSessionPlan,
+    notes,
   } = useIronLog();
 
   // Which exercise card has its action sheet open (null = closed).
   const [actionForExId, setActionForExId] = useState<string | null>(null);
+
+  // NoteSheet state — abrir nota completa para un set específico (o ejercicio).
+  const [noteSheet, setNoteSheet] = useState<{
+    setId?: string;
+    exerciseId: string;
+    contextLabel: string;
+  } | null>(null);
+
+  // QuickNoteMenu state — long-press del check de un set abre menú radial
+  // con top chips de "effort". (Step 4)
+  const [quickMenu, setQuickMenu] = useState<{
+    setId: string;
+    exerciseId: string;
+    setIndex: number;
+  } | null>(null);
 
   const startedRef = useRef(false);
   useEffect(() => {
@@ -323,7 +341,9 @@ export default function ActiveWorkoutScreen() {
 
             const completedForExercise = session.sets.filter((s) => s.exerciseId === exId);
             const lastSets = getLastSetsForExercise(exId, session.id);
-            const exerciseMax = getMaxWeightForExercise(exId);
+            // Excluir la sesión en curso — el max es histórico, no incluye
+            // los sets que el usuario está logueando ahora mismo.
+            const exerciseMax = getMaxWeightForExercise(exId, session.id);
 
             // Effective row counts: plan wins over routine defaults; we still
             // grow if the user logged more sets than planned.
@@ -428,11 +448,16 @@ export default function ActiveWorkoutScreen() {
                           row.index - 1
                         ]
                       : undefined;
+                    // PR estricto: superar el max histórico (no igualar).
+                    // Igualar no es récord; la primera vez no lo era.
                     const isPr =
                       !!completedSet &&
                       !completedSet.isWarmup &&
                       exerciseMax > 0 &&
-                      completedSet.weight >= exerciseMax;
+                      completedSet.weight > exerciseMax;
+                    const setNotesCount = completedSet
+                      ? notes.filter((n) => n.setId === completedSet.id).length
+                      : 0;
                     return (
                       <SetRow
                         key={`${exId}-${i}`}
@@ -448,6 +473,27 @@ export default function ActiveWorkoutScreen() {
                         completed={!!completedSet}
                         isPr={isPr}
                         isActive={!completedSet && i === firstIncomplete}
+                        hasNotes={setNotesCount > 0}
+                        onNotePress={
+                          completedSet
+                            ? () =>
+                                setNoteSheet({
+                                  setId: completedSet.id,
+                                  exerciseId: exId,
+                                  contextLabel: `${ex.name} · Set ${row.index}`,
+                                })
+                            : undefined
+                        }
+                        onCheckLongPress={
+                          completedSet
+                            ? () =>
+                                setQuickMenu({
+                                  setId: completedSet.id,
+                                  exerciseId: exId,
+                                  setIndex: row.index,
+                                })
+                            : undefined
+                        }
                         onComplete={(w, r, rpe) => {
                           logSet(session.id, {
                             exerciseId: exId,
@@ -588,6 +634,42 @@ export default function ActiveWorkoutScreen() {
           />
         );
       })()}
+
+      {/* NoteSheet — captura/edición detallada de notas. */}
+      <NoteSheet
+        visible={noteSheet != null}
+        onClose={() => setNoteSheet(null)}
+        sessionId={session.id}
+        setId={noteSheet?.setId}
+        exerciseId={noteSheet?.exerciseId ?? ""}
+        contextLabel={noteSheet?.contextLabel}
+        existingNotes={
+          noteSheet?.setId
+            ? notes.filter((n) => n.setId === noteSheet.setId)
+            : undefined
+        }
+      />
+
+      {/* QuickNoteMenu — long-press en check del set abre menú de chips frecuentes. */}
+      <QuickNoteMenu
+        visible={quickMenu != null}
+        onClose={() => setQuickMenu(null)}
+        sessionId={session.id}
+        setId={quickMenu?.setId}
+        exerciseId={quickMenu?.exerciseId ?? ""}
+        setIndex={quickMenu?.setIndex ?? 0}
+        onMoreOptions={() => {
+          const ex = quickMenu ? getExerciseById(quickMenu.exerciseId) : null;
+          if (quickMenu && ex) {
+            setNoteSheet({
+              setId: quickMenu.setId,
+              exerciseId: quickMenu.exerciseId,
+              contextLabel: `${ex.name} · Set ${quickMenu.setIndex}`,
+            });
+          }
+          setQuickMenu(null);
+        }}
+      />
     </Screen>
   );
 }
