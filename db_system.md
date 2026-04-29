@@ -1,68 +1,324 @@
-# IronLog — Arquitectura de datos, estado y backend
+# IronLog — Sistema de datos persistente
 
-> Roadmap de arquitectura para escalar la app de un único `IronLogContext` con AsyncStorage a un sistema **local-first**, reactivo, con backend opcional y sync.
+> Plan completo de la capa de datos: estado actual del storage + arquitectura
+> local-first propuesta (SQLite + Drizzle, sync, backend opcional). Reemplaza
+> los antiguos `db.md` y `backend.md` en lo que respecta a persistencia.
 >
-> Doc vivo. Cada decisión marcada con un ADR (Architecture Decision Record) corto; cada fase con su criterio de salida.
+> Doc vivo. Cada decisión arquitectónica importante se marca con un ADR
+> (Architecture Decision Record); cada fase de migración tiene su criterio
+> de salida.
+>
+> **Ámbito**: este doc cubre la capa de datos. Para el state management
+> efímero (Zustand, UI state) ver `state_mang_system.md`.
 
 ---
 
 ## Índice
 
-1. [Diagnóstico del estado actual](#1-diagnóstico-del-estado-actual)
-2. [Principios local-first](#2-principios-local-first)
-3. [Stack propuesto](#3-stack-propuesto-tldr)
-4. [Arquitectura por capas](#4-arquitectura-por-capas)
-5. [Drizzle: schema compartido SQLite ↔ Postgres](#5-drizzle-schema-compartido-sqlite--postgres)
-6. [Reactividad con useLiveQuery](#6-reactividad-con-uselivequery)
-7. [Mutators y comandos](#7-mutators-y-comandos)
-8. [UI state efímero (Zustand)](#8-ui-state-efímero-zustand)
-9. [Estructura de carpetas propuesta](#9-estructura-de-carpetas-propuesta)
-10. [Migraciones de schema](#10-migraciones-de-schema)
-11. [Backend: cuando, qué y cómo](#11-backend-cuando-qué-y-cómo)
-12. [Estrategias de sync](#12-estrategias-de-sync)
-13. [Plan de migración por fases](#13-plan-de-migración-por-fases)
-14. [Testing](#14-testing)
-15. [Observabilidad](#15-observabilidad)
-16. [Advertencias y trade-offs](#16-advertencias-y-trade-offs)
-17. [ADRs (decisiones documentadas)](#17-adrs-decisiones-documentadas)
-18. [Glosario](#18-glosario)
+1. [Estado actual del storage](#1-estado-actual-del-storage)
+2. [Modelo de datos persistido (hoy)](#2-modelo-de-datos-persistido-hoy)
+3. [Backend que existe pero no se usa](#3-backend-que-existe-pero-no-se-usa)
+4. [Inventario de librerías de datos](#4-inventario-de-librerías-de-datos)
+5. [Flujo de datos típico (hoy)](#5-flujo-de-datos-típico-hoy)
+6. [Por qué deja de escalar](#6-por-qué-deja-de-escalar)
+7. [Lo que sí está bien posicionado](#7-lo-que-sí-está-bien-posicionado)
+8. [Principios local-first](#8-principios-local-first)
+9. [Stack propuesto (TL;DR)](#9-stack-propuesto-tldr)
+10. [Arquitectura por capas](#10-arquitectura-por-capas)
+11. [Drizzle: schema compartido SQLite ↔ Postgres](#11-drizzle-schema-compartido-sqlite--postgres)
+12. [Reactividad con useLiveQuery](#12-reactividad-con-uselivequery)
+13. [Mutators y comandos](#13-mutators-y-comandos)
+14. [Estructura de carpetas (DB-relevant)](#14-estructura-de-carpetas-db-relevant)
+15. [Migraciones de schema](#15-migraciones-de-schema)
+16. [Backend: cuándo, qué y cómo](#16-backend-cuándo-qué-y-cómo)
+17. [Estrategias de sync (con evaluación de Turso)](#17-estrategias-de-sync-con-evaluación-de-turso)
+18. [Plan de migración por fases](#18-plan-de-migración-por-fases)
+19. [Testing](#19-testing)
+20. [Observabilidad](#20-observabilidad)
+21. [Advertencias y trade-offs](#21-advertencias-y-trade-offs)
+22. [ADRs](#22-adrs)
+23. [Comandos útiles](#23-comandos-útiles)
+24. [Glosario](#24-glosario)
 
 ---
 
-## 1. Diagnóstico del estado actual
+## 1. Estado actual del storage
 
-### Cómo funciona hoy
+### TL;DR
 
-- **Estado único**: `IronLogContext` mantiene 14+ entidades distintas (`sessions`, `routines`, `customExercises`, `customFoods`, `bodyWeights`, `measurements`, `photos`, `foodEntries`, `goals`, `schedule`, `scheduleOverrides`, `sessionPlans`, `achievements`, `profile`, `activeWorkoutId`, `defaultRestSeconds`).
-- **Persistencia**: AsyncStorage como un único blob JSON bajo la clave `ironlog:v1`.
-- **Mutaciones**: ~30 funciones expuestas por el context, cada una hace `update((prev) => ({ ...prev, X: ... }))` y reescribe el blob completo en cada cambio (vía `useEffect` que serializa todo el estado).
-- **Lecturas**: cada componente que usa `useIronLog()` recibe el objeto entero. Cualquier mutación re-renderiza todos los consumers.
-- **Filtrado/agregación**: hecho en cada render con `array.filter().map().reduce()` (ej. en `progress.tsx` o `(tabs)/index.tsx`).
-- **Backend**: cero. Sin auth, sin red, sin sync, sin backup.
+- La app mobile (`artifacts/ironlog`) **no tiene base de datos**. Todo el estado vive en memoria (`useState` en un solo Context) y se persiste serializado a JSON en **AsyncStorage** bajo una única clave: `ironlog:v1`.
+- **No hay backend en uso**. El `api-server` existe en el monorepo pero solo expone `GET /api/healthz`. El cliente Expo nunca lo llama.
+- El monorepo trae **scaffolding de Postgres + Drizzle** (`lib/db`) y un **pipeline OpenAPI → cliente React Query** (`lib/api-spec` → `lib/api-client-react`), pero ambos están vacíos / no integrados a la app.
+- La única "base de datos" funcional hoy es **el JSON local del dispositivo**.
 
-### Por qué deja de escalar
+### 1.1 Mapa del repo desde el ángulo de datos
+
+```
+Iron-Gym/
+├── artifacts/
+│   ├── ironlog/                 ← App mobile (Expo). Storage real ocurre acá.
+│   │   ├── contexts/IronLogContext.tsx   ← El "store" + persistencia AsyncStorage
+│   │   ├── types/index.ts                ← Tipos canónicos del dominio
+│   │   └── constants/                    ← Datos estáticos (seed) bundled en la app
+│   └── api-server/             ← Express 5. Hoy solo /healthz. Sin DB conectada.
+└── lib/
+    ├── db/                     ← Drizzle + Postgres. Schema VACÍO. No usado.
+    ├── api-spec/               ← OpenAPI YAML + orval (codegen)
+    ├── api-zod/                ← Schemas Zod generados desde OpenAPI
+    └── api-client-react/       ← Cliente React Query generado + customFetch
+```
+
+### 1.2 Persistencia en la app mobile (lo que realmente corre)
+
+#### Mecanismo
+
+Archivo: `artifacts/ironlog/contexts/IronLogContext.tsx`.
+
+```ts
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const STORAGE_KEY = "ironlog:v1";
+```
+
+- **Un único `useState<PersistedState>`** con todo el dominio (sesiones, rutinas, comidas, fotos, perfil, etc.) — ver §2.
+- **Hidratación al boot**: en un `useEffect`, se hace `AsyncStorage.getItem("ironlog:v1")`, se parsea con `JSON.parse`, y se mergea contra los defaults: `{ ...DEFAULT_STATE, ...parsed, profile: { ...DEFAULT_PROFILE, ...parsed.profile } }`. El flag `isLoaded` evita renderizar consumidores hasta que termine.
+- **Escritura**: otro `useEffect` dispara cada vez que `state` cambia y hace `AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state))`. No hay debounce — escribe el blob entero en cada mutación.
+- **Reset**: `resetAll()` hace `AsyncStorage.removeItem(STORAGE_KEY)` + `setState(DEFAULT_STATE)`.
+- **Schema versioning**: desde el sprint de notes, `PersistedState.schemaVersion: number` + función `migrate(state, fromVersion)` aplican migraciones al hidratar (versión actual: 2).
+
+#### Qué es AsyncStorage
+
+`@react-native-async-storage/async-storage` v2.2.0. Es un key-value store asíncrono provisto por React Native.
+
+- **iOS**: respaldado por un archivo en `Documents/RCTAsyncLocalStorage_V1/` (manifest en JSON + chunks). Sobrevive a relaunches y a updates de la app, pero **se pierde si el usuario desinstala**.
+- **Android**: SQLite interno gestionado por la lib.
+- **No está cifrado**. Cualquiera con acceso al sandbox de la app puede leerlo (relevante para jailbreak / backups sin cifrar).
+
+Implicancias:
+- Migraciones limitadas: la función `migrate()` ya existe pero solo agrega campos nuevos. Cambios estructurales (renames, normalizaciones) no son triviales.
+- Sin queries: cada filtrado/agregación se hace en JS sobre arrays completos.
+- Boot lag escalable: cuanto más grande el blob, más tarda el `getItem` + `JSON.parse`.
+
+#### No hay otros mecanismos de storage
+
+Búsqueda exhaustiva — no se usan:
+- `expo-sqlite`
+- `expo-secure-store`
+- `react-native-mmkv`
+- IndexedDB / `localStorage` (la app no se ejecuta en web hoy)
+- File system (excepto fotos — ver siguiente punto)
+
+#### El "Context = store"
+
+El `IronLogContext` **es** la fuente de verdad. Cualquier componente que llame `useIronLog()` recibe **todo** el estado y se re-renderiza ante **cualquier** cambio. ~30 mutadores expuestos (`createRoutine`, `logSet`, `finishWorkout`, `addProgressPhoto`, etc.) — todos hacen `setState(prev => ({ ...prev, X: nuevoX }))`.
+
+Esto significa que **el "store" y la "persistencia" están acoplados**: cambiar memoria implica reescribir disco.
+
+#### Fotos de progreso (caso especial)
+
+`ProgressPhoto.uri: string` se guarda en el JSON, pero **no son los bytes de la imagen** — es la URI que devuelve `expo-image-picker` (típicamente `file:///.../Library/Caches/ExponentExperienceData/...`). Los bytes viven en el cache de Expo / asset library del SO.
+
+Riesgo: si iOS limpia el cache o el usuario revoca permisos, la URI puede romperse. El JSON queda con strings que apuntan a nada. Hoy no hay copia/move-to-stable-dir.
+
+---
+
+## 2. Modelo de datos persistido (hoy)
+
+Definido en `artifacts/ironlog/types/index.ts`. La forma del blob serializado:
+
+```ts
+interface PersistedState {
+  schemaVersion: number;
+  customExercises: Exercise[];
+  customFoods: FoodItem[];
+  routines: Routine[];                  // contiene RoutineDay[] → RoutineExercise[]
+  sessions: WorkoutSession[];           // cada una con CompletedSet[] + PRRecord[]
+  bodyWeights: BodyWeightEntry[];
+  measurements: BodyMeasurementEntry[];
+  photos: ProgressPhoto[];
+  foodEntries: FoodEntry[];
+  goals: FitnessGoal[];
+  schedule: ScheduledRoutine[];         // plan semanal por día de semana
+  scheduleOverrides: ScheduleOverride[];// override por fecha calendario YYYY-MM-DD
+  sessionPlans: SessionPlan[];          // pre-fill por fecha
+  achievements: AchievementUnlock[];
+  notes: SessionNote[];                 // sistema de notas (sprint 4.3)
+  profile: UserProfile;                 // datos personales + goals macros
+  activeWorkoutId: string | null;
+  defaultRestSeconds: number;
+}
+```
+
+**Convenciones que ya son DB-friendly** (heredan de la intención de migrar a SQL):
+- `dateKey: "YYYY-MM-DD"` en `ScheduleOverride`, `SessionPlan` (no timestamps).
+- IDs string generados por `utils/id.ts` (`uid()` → similar a UUIDv4 corto).
+- Campos opcionales bien marcados con `?`.
+
+**Defaults** (`DEFAULT_STATE` y `DEFAULT_PROFILE`) viven al inicio del Context y se aplican en el merge al hidratar.
+
+### 2.1 Datos seed (no persistidos — bundled en JS)
+
+Estáticos, viven en `constants/`. Se concatenan con los custom del usuario al exponerlos:
+
+| Archivo | Qué trae | Cómo se expone |
+|---|---|---|
+| `exercises.ts` | 165 ejercicios | `allExercises = [...EXERCISES, ...state.customExercises]` |
+| `foods.ts` | 47 alimentos | `allFoods = [...FOOD_DATABASE, ...state.customFoods]` |
+| `presetRoutines.ts` | 3-4 rutinas predefinidas | `allRoutines = [...PRESET_ROUTINES, ...state.routines]` |
+| `achievements.ts` | 13 achievements (definición + check fn) | `ACHIEVEMENTS` importado donde se evalúa |
+| `volumeTargets.ts` | MEV/MAV/MRV por músculo | importado en pantallas de progress |
+| `colors.ts` | paleta light/dark | leído por `ThemeContext` |
+| `bodyParts.ts` | enum + labels de zonas para notas | importado por componentes de notes |
+| `noteChips.ts` | chips default por categoría | importado por NoteSheet, QuickNoteMenu |
+| `featureCatalog.ts` | catálogo de discovery progresivo | importado por servicio de discovery |
+
+Los ejercicios y alimentos predefinidos **no se duplican** en el storage — solo viven los `customExercises` / `customFoods` creados por el usuario.
+
+---
+
+## 3. Backend que existe pero no se usa
+
+### 3.1 `artifacts/api-server` — Express 5
+
+Ruta: `artifacts/api-server/src/`.
+
+- `index.ts`: bootstrap, lee `PORT` del env, escucha.
+- `app.ts`: configura `cors`, `express.json`, `pino-http` para logging, monta `/api`.
+- `routes/health.ts`: único endpoint hoy → `GET /api/healthz` devuelve `{ status: "ok" }` validado con `HealthCheckResponse` (zod).
+- **No importa `@workspace/db`**. No hay handlers que toquen Postgres todavía.
+
+Dependencias relevantes: `express@^5`, `cors`, `pino` + `pino-http`, `cookie-parser`, `drizzle-orm` (declarado pero no importado), `@workspace/db` (declarado, no importado), `@workspace/api-zod`.
+
+### 3.2 `lib/db` — Drizzle + Postgres
+
+```ts
+// lib/db/src/index.ts
+import { drizzle } from "drizzle-orm/node-postgres";
+import pg from "pg";
+import * as schema from "./schema";
+
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL must be set...");
+}
+export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+export const db = drizzle(pool, { schema });
+```
+
+- Adaptador: `drizzle-orm/node-postgres` + `pg` v8 (Pool TCP, no edge).
+- `lib/db/drizzle.config.ts`: dialecto `postgresql`, lee `DATABASE_URL` también para `drizzle-kit push`.
+- Scripts: `pnpm --filter @workspace/db push` (sync schema → DB) y `push-force`.
+- **Schema actual** (`lib/db/src/schema/index.ts`): **vacío**. Solo trae un comentario plantilla con el patrón esperado (tabla → `createInsertSchema` zod → tipos `Insert*` / `Select`). Ningún `pgTable` definido.
+- Validación de schemas: `drizzle-zod` v0.8.3 (instalado).
+
+Hoy no hay `DATABASE_URL` en el repo (no hay `.env*` versionado). Importar `@workspace/db` en cualquier punto **rompería en runtime** por el throw del módulo.
+
+### 3.3 Pipeline de codegen API (`lib/api-spec` → `api-zod` + `api-client-react`)
+
+OpenAPI-first. Fuente única: `lib/api-spec/openapi.yaml` (hoy: solo `GET /healthz` → `HealthStatus`).
+
+Comando: `pnpm --filter @workspace/api-spec run codegen` (corre `orval`):
+
+1. **`lib/api-zod/src/generated/`** — schemas Zod listos para validar payloads (con `useDates`, `useBigInt`, `coerce` de query/param/body/response). Re-exportados desde `lib/api-zod/src/index.ts`.
+2. **`lib/api-client-react/src/generated/`** — hooks React Query (`useHealthCheck`, `getHealthCheckQueryOptions`, `getHealthCheckUrl`, etc.) atados al `customFetch` mutator.
+
+#### `customFetch` (`lib/api-client-react/src/custom-fetch.ts`)
+
+Wrapper sobre `fetch` con:
+- **`setBaseUrl(url)`** — para builds de Expo que necesitan apuntar a un host remoto. Antepone el base URL a paths que empiezan con `/`.
+- **`setAuthTokenGetter(getter)`** — registra un proveedor de Bearer token; se llama en cada request si no hay header `authorization` ya seteado. Pensado para mobile (en web los cookies se manejan solos).
+- Manejo de respuestas: `application/json`, `application/problem+json`, text, blob; `responseType: "auto"` infiere por content-type.
+- Errores tipados: `ApiError` (con `status`, `data`, `headers`, `response`) y `ResponseParseError` (cuando falla `JSON.parse`).
+- Workarounds RN: `response.body` puede ser `undefined` aunque haya payload — usa `.text()`/`.json()` directamente.
+
+### 3.4 React Query en la app
+
+`@tanstack/react-query` v5.90.21 está instalado y montado:
+
+```tsx
+// artifacts/ironlog/app/_layout.tsx
+const queryClient = new QueryClient();
+
+<QueryClientProvider client={queryClient}>
+  <IronLogProvider>...</IronLogProvider>
+</QueryClientProvider>
+```
+
+Pero ningún archivo en `app/`, `contexts/` ni `components/` invoca hooks generados (`useHealthCheck`, etc.) ni llama `customFetch`. Tampoco se llama `setBaseUrl`. Es **infraestructura preparada, sin tráfico real**.
+
+---
+
+## 4. Inventario de librerías de datos
+
+### Ya instaladas y en uso
+
+| Paquete | Versión | Dónde / para qué |
+|---|---|---|
+| `@react-native-async-storage/async-storage` | 2.2.0 | **Único storage real**. `IronLogContext` lo usa. |
+| `@tanstack/react-query` | catalog (^5.90.21) | Provider montado en `_layout.tsx`; sin queries activas todavía. |
+| `zod` | catalog (^3.25.76) | Validación tipos en api-zod (generado). En `ironlog` no se usa para forms hoy. |
+| `expo-image-picker` | ~17.0.9 | Genera URIs de fotos que terminan en el blob persistido. |
+
+### Instaladas pero no integradas a la app mobile
+
+| Paquete | Dónde | Estado |
+|---|---|---|
+| `drizzle-orm` | `lib/db`, `artifacts/api-server` | Schema vacío, no se ejecuta query alguna. |
+| `drizzle-zod` | `lib/db` | Listo para `createInsertSchema` cuando haya tablas. |
+| `drizzle-kit` | `lib/db` (dev) | Comando `push` listo, pero sin schema que pushear. |
+| `pg` | `lib/db` | Pool definido pero nadie lo importa con `DATABASE_URL` activo. |
+| `@types/pg` | `lib/db` (dev) | — |
+| `orval` | `lib/api-spec` (dev) | Codegen funcional, ya generó hooks. |
+| `express` v5, `cors`, `cookie-parser`, `pino`, `pino-http` | `api-server` | Servidor minimal corriendo (solo healthz). |
+
+### NO instaladas (ausentes confirmadas)
+
+`expo-sqlite`, `react-native-mmkv`, `expo-secure-store`, `realm`, `watermelondb`, `op-sqlite`, `tinybase`, `dexie`, `pouchdb`, `electric-sql`, `replicache`, `instantdb`, `firebase`, `supabase-js`, `aws-amplify`, `convex`, `@libsql/client` (Turso), etc.
+
+---
+
+## 5. Flujo de datos típico (hoy)
+
+Ejemplo: "loguear un set".
+
+1. Usuario completa un set en `app/workout/active.tsx` y dispara `logSet(sessionId, setData)`.
+2. `IronLogContext.logSet` ejecuta `setState(prev => ({ ...prev, sessions: prev.sessions.map(...) }))`.
+3. React re-renderiza **todos** los consumers de `useIronLog` (home, progress, planning, etc.) porque el `value` del Context cambia de identidad.
+4. El `useEffect` de persistencia detecta el cambio en `state` y hace `AsyncStorage.setItem("ironlog:v1", JSON.stringify(state))` — escribe el blob entero, sincrónicamente con el render del JS thread (la API es async pero la serialización es bloqueante).
+5. No hay round-trip a red. No hay validación con Zod. No hay batching.
+
+Para una mutación más cara (ej. `finishWorkout` que computa PRs y achievements), pasa lo mismo: cómputo en JS sobre arrays, escritura del blob completo.
+
+---
+
+## 6. Por qué deja de escalar
 
 Listo en orden de impacto creciente:
 
 1. **Re-render ciego.** Loguear un set re-renderiza la home, nutrición, progress, planning — todo lo que toque el context. Hoy se nota poco; con 50+ pantallas y 1000+ sesiones será un freeze tangible.
 2. **Persistencia O(N) en cada mutación.** Cada `setState` dispara un `JSON.stringify` del estado entero. A los 6 meses con 200 sesiones × 30 sets × 5 entries de comida diarias, el blob pasa de los MB y se vuelve lento de leer al startup (boot lag).
 3. **Sin queries.** No hay índices, no hay joins. Cada lista filtrada es un scan completo en JS.
-4. **Sin migrations**. Si renombrás un campo o cambiás la forma de un objeto, los datos viejos del usuario se rompen silenciosamente. Hoy lo "resolvemos" con `{ ...DEFAULT_STATE, ...parsed }` que es frágil.
+4. **Migraciones frágiles.** Renames y cambios estructurales requieren código manual en la función `migrate()`. Sin tests, alto riesgo de romper datos viejos.
 5. **Una sola fuente de verdad implícita.** No hay separación entre datos persistentes (sesiones), cache de remoto (no aplica todavía) y estado de UI (sheets abiertos, drafts). Todo vive en el mismo lugar.
 6. **Sin backup ni sync.** El día que el usuario cambie de teléfono pierde todo. Cuando salga la web companion no hay donde leer.
 7. **Difícil de testear.** No se puede probar `finishWorkout` sin montar React.
 8. **Acoplamiento entre dominios.** Cambiar la lógica de schedule te obliga a leer 800 líneas de un archivo que también maneja nutrición y body weight.
-
-### Lo que sí es bueno y querés preservar
-
-- El monorepo ya tiene `@workspace/db` con Drizzle + Postgres.
-- Los tipos están centralizados en `types/index.ts`.
-- Los datos ya son DB-friendly (`dateKey: YYYY-MM-DD` en `ScheduleOverride`, `SessionPlan`, etc.).
-- `drizzle-zod` está como dep — la conversión schema → tipos → validación es trivial.
+9. **Sin cifrado en disco.** AsyncStorage es texto plano, accesible a cualquier proceso con permisos al sandbox.
 
 ---
 
-## 2. Principios local-first
+## 7. Lo que sí está bien posicionado
+
+- **El monorepo ya tiene `@workspace/db` con Drizzle + Postgres.**
+- **Los tipos están centralizados** en `types/index.ts`.
+- **Los datos ya son DB-friendly**: `dateKey: YYYY-MM-DD` en `ScheduleOverride`, `SessionPlan`, etc.
+- **`drizzle-zod` está como dep** — la conversión schema → tipos → validación es trivial.
+- **IDs string** universales (UUID-like) — compatibles con `text PRIMARY KEY` en cualquier dialecto.
+- **React Query montado** — agregar el primer hook generado es un import.
+- **Schema versioning ya implementado** en el blob (`schemaVersion: 2` actual).
+
+---
+
+## 8. Principios local-first
 
 Antes de elegir librerías, fijemos el norte. Citando a Martin Kleppmann y al equipo de Ink & Switch (los papers que parieron el término):
 
@@ -84,7 +340,9 @@ Esto se traduce a IronLog así:
 
 ---
 
-## 3. Stack propuesto (TL;DR)
+## 9. Stack propuesto (TL;DR)
+
+Solo capas relacionadas a datos. Para state management efímero ver `state_mang_system.md`.
 
 | Capa | Hoy | Propuesta |
 |---|---|---|
@@ -92,20 +350,19 @@ Esto se traduce a IronLog así:
 | Schema/types | `types/index.ts` a mano | **Drizzle schema → tipos generados + drizzle-zod** |
 | Reads reactivos | `useIronLog()` (re-render global) | **`useLiveQuery` de Drizzle** (subscriptions por tabla) |
 | Mutaciones | Funciones del context | **Mutators tipados por dominio** (puros, testeables) |
-| UI state efímero | `useState` local + context | **Zustand** stores chicas por feature |
 | Validación de boundaries | Tipos TS | **Zod** (entrada de API, deeplinks, AsyncStorage de migración) |
 | Cache de remoto (cuando exista) | n/a | **TanStack Query** (ya en catalog) |
-| Backend | n/a | **Postgres (Vercel/Neon) + Drizzle + Hono o tRPC** |
+| Backend | n/a | **Postgres (Vercel/Neon) o libSQL (Turso) + Drizzle + Hono o tRPC** |
 | Auth | n/a | **Código de recuperación anónimo** v1 → Clerk/Better Auth si crece |
-| Sync (cuando exista) | n/a | **Op-log custom** v1 → **PowerSync/ElectricSQL** si dolor crece |
-| Migraciones | `{ ...DEFAULT, ...parsed }` rezando | **drizzle-kit** + `migrate()` al boot |
-| Testing | nada | **Vitest** + SQLite in-memory |
+| Sync (cuando exista) | n/a | **Snapshot en V1 → Op-log custom o Turso Embedded Replicas** |
+| Migraciones | `migrate()` manual sobre blob | **drizzle-kit** + `migrate()` SQL al boot |
+| Testing | nada | **Vitest** + SQLite in-memory (`better-sqlite3`) |
 
 Todo lo "Propuesta" está en versiones estables a 2026 y muchas piezas ya las tenés en el monorepo.
 
 ---
 
-## 4. Arquitectura por capas
+## 10. Arquitectura por capas
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -141,7 +398,7 @@ Todo lo "Propuesta" está en versiones estables a 2026 y muchas piezas ya las te
                             │
 ┌──────────────────────────────────────────────────────────────┐
 │                  Backend (artifacts/api-server)              │
-│   Hono o tRPC + Drizzle (Postgres). Auth anónimo.            │
+│   Hono o tRPC + Drizzle (Postgres o Turso). Auth anónimo.    │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -154,7 +411,7 @@ Todo lo "Propuesta" está en versiones estables a 2026 y muchas piezas ya las te
 
 ---
 
-## 5. Drizzle: schema compartido SQLite ↔ Postgres
+## 11. Drizzle: schema compartido SQLite ↔ Postgres
 
 El monorepo ya tiene `lib/db` apuntando a Postgres. Lo ampliamos con un módulo paralelo para SQLite que **comparte tipos y nombres de columnas** con Postgres, asegurando que el wire-format sea simétrico.
 
@@ -203,7 +460,7 @@ export const workoutSessions = sqliteTable("workout_sessions", {
   endedAt: integer("ended_at", { mode: "timestamp_ms" }),
   totalVolumeKg: integer("total_volume_kg").notNull().default(0),
   notes: text("notes"),
-  // Op-log metadata for sync (lo retomamos en sección 12)
+  // Op-log metadata for sync (lo retomamos en sección 17)
   updatedAt: integer("updated_at", { mode: "timestamp_ms" })
     .notNull()
     .default(sql`(unixepoch() * 1000)`),
@@ -263,6 +520,8 @@ Notar:
 - `schedule_overrides` (per-date)
 - `session_plans` (per-date pre-planeo)
 - `achievements_unlocked`
+- `session_notes` (sistema de notas — sprint 4.3 ya implementado)
+- `feature_discoveries` (estado de discovery progresivo del user)
 - `user_profile` (1 fila, KV o singleton table)
 - `key_value` (catch-all para defaults: `defaultRestSeconds`, etc.)
 - `volume_targets` (override de targets MEV/MAV/MRV)
@@ -298,7 +557,6 @@ export const completedSets = sqliteTable("completed_sets", {
   rpe: real("rpe"),
   isWarmup: integer("is_warmup", { mode: "boolean" }).notNull(),
   setIndex: integer("set_index").notNull(),
-  note: text("note"),                                // 4.3 del ROADMAP
   completedAt: integer("completed_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
@@ -310,9 +568,41 @@ Ventajas:
 - Escala bien: 50000 sets son 50000 filas, no un blob inflado.
 - PR detection se vuelve un `MAX(weight) GROUP BY exercise_id`.
 
+### Notes → tabla específica con índices estratégicos
+
+El sistema de notas (`SessionNote`) es candidato natural a tabla con índices precisos para soportar el body map de 4.16 sin escanear todo:
+
+```sql
+CREATE TABLE session_notes (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
+  set_id TEXT REFERENCES completed_sets(id) ON DELETE SET NULL,
+  exercise_id TEXT REFERENCES exercises(id),
+  created_at INTEGER NOT NULL,
+  category TEXT NOT NULL,
+  body_part TEXT,
+  severity INTEGER,
+  resolved INTEGER NOT NULL DEFAULT 0,
+  resolved_at INTEGER,
+  text TEXT NOT NULL,
+  source TEXT NOT NULL,
+  audio_uri TEXT,
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER
+);
+
+CREATE INDEX idx_notes_session  ON session_notes(session_id);
+CREATE INDEX idx_notes_exercise ON session_notes(exercise_id);
+CREATE INDEX idx_notes_created  ON session_notes(created_at DESC);
+
+-- Partial index crítico para 4.16 (body map de molestias activas).
+CREATE INDEX idx_notes_active_pain ON session_notes(body_part, severity, created_at)
+  WHERE category = 'pain' AND resolved = 0;
+```
+
 ---
 
-## 6. Reactividad con `useLiveQuery`
+## 12. Reactividad con `useLiveQuery`
 
 Drizzle tiene un hook nativo para `expo-sqlite` que se subscribe a las tablas referenciadas en una query y re-renderiza solo cuando cambian.
 
@@ -371,7 +661,7 @@ Las pantallas componen estos hooks. La capa de hooks es la API pública del domi
 
 ---
 
-## 7. Mutators y comandos
+## 13. Mutators y comandos
 
 Una mutación cumple 3 responsabilidades:
 
@@ -442,94 +732,19 @@ Las pantallas siguen funcionando, mientras movemos lecturas pantalla por pantall
 
 ---
 
-## 8. UI state efímero (Zustand)
+## 14. Estructura de carpetas (DB-relevant)
 
-No todo el estado merece ir a la DB. Cosas como:
-
-- ¿Está abierto el `DaySwapSheet`?
-- ¿Cuál es el ejercicio cuyo action sheet está abierto?
-- Drafts de inputs antes de loggear.
-- Estado de un wizard multi-paso.
-- Filtros activos en `progress.tsx`.
-
-Esto es **estado efímero**: no persiste, no sync, no DB.
-
-### Hoy
-
-Vive en `useState` local o en el context global mezclado con datos persistentes (ej. `activeWorkoutId` está en el context cuando podría ser efímero).
-
-### Propuesta
-
-[Zustand](https://github.com/pmndrs/zustand) — una librería de ~500 LOC, sin Provider, basada en hooks. La uso así:
-
-```ts
-// domains/workout/ui.ts
-import { create } from "zustand";
-
-interface WorkoutUIStore {
-  actionSheetExerciseId: string | null;
-  swapSheetOpen: boolean;
-  openActionSheet: (exId: string) => void;
-  closeActionSheet: () => void;
-  openSwapSheet: () => void;
-  closeSwapSheet: () => void;
-}
-
-export const useWorkoutUI = create<WorkoutUIStore>((set) => ({
-  actionSheetExerciseId: null,
-  swapSheetOpen: false,
-  openActionSheet: (exId) => set({ actionSheetExerciseId: exId }),
-  closeActionSheet: () => set({ actionSheetExerciseId: null }),
-  openSwapSheet: () => set({ swapSheetOpen: true }),
-  closeSwapSheet: () => set({ swapSheetOpen: false }),
-}));
-```
-
-Uso:
-```tsx
-const open = useWorkoutUI((s) => s.openActionSheet);
-const id = useWorkoutUI((s) => s.actionSheetExerciseId);
-```
-
-Subscription granular: el componente solo re-renderiza cuando el slice elegido cambia.
-
-### Cuándo Zustand vs DB
-
-| Tipo de dato | Zustand | DB |
-|---|---|---|
-| Sheet abierto / modal flag | ✓ | ✗ |
-| Filtro activo | ✓ | ✗ (a menos que el user quiera persistirlo) |
-| Texto de un input mientras tipea | ✓ | ✗ |
-| Set logueado | ✗ | ✓ |
-| Profile del usuario | ✗ | ✓ |
-| `activeWorkoutId` (sesión en curso) | ✗ — debe persistir entre cierre y apertura | ✓ |
-
-Regla: **¿si la app se cierra forzosamente, querés recuperar este dato? → DB.**
-
----
-
-## 9. Estructura de carpetas propuesta
-
-Reorganizar de "por capa técnica" a "por dominio + capa".
+Reorganizar de "por capa técnica" a "por dominio + capa". Solo capas de datos; para state efímero ver `state_mang_system.md`.
 
 ```
 artifacts/ironlog/
   app/                       # rutas expo-router (sin lógica de negocio)
-    (tabs)/
-    workout/
-    ...
-  components/
-    ui/                      # design system (Button, Card, Text...)
-    workout/                 # componentes de workout (SetRow, RestTimer...)
-    nutrition/
-    body/
-    ...
+  components/                # design system + componentes feature
   domains/                   # NUEVO — lógica + queries + mutators por dominio
     workout/
       queries.ts             # useActiveSession, useFinishedSessions, etc.
       mutators.ts            # logSet, finishWorkout, replaceSessionExercise
       computed.ts            # buildVolumeByMuscle, detectPlateaus
-      ui.ts                  # zustand store efímero (sheets, modals)
       types.ts               # tipos derivados, NO los de Drizzle
     nutrition/
     body/
@@ -537,6 +752,7 @@ artifacts/ironlog/
     routines/
     plans/
     achievements/
+    notes/                   # sistema de notas (4.3 + 4.13 + 4.14)
     profile/
   lib/
     db/
@@ -546,23 +762,11 @@ artifacts/ironlog/
     sync/
       outbox.ts              # encoder de ops + cola
       client.ts              # push/pull contra el backend (cuando exista)
-    haptics.ts
-    logger.ts
   contexts/
     ThemeContext.tsx         # queda — UI puro
     # IronLogContext.tsx ← se elimina al final de la migración
   utils/
-    id.ts
-    date.ts
-    calculations.ts
-    volume.ts
-  constants/
-    exercises.ts             # solo seed data
-    foods.ts
-    presetRoutines.ts
-    achievements.ts
-    volumeTargets.ts
-    colors.ts
+  constants/                 # solo seed data
 ```
 
 ### Reglas que esto fuerza
@@ -576,16 +780,25 @@ Esto se valida con `eslint-plugin-import` + reglas de `no-restricted-imports`.
 
 ---
 
-## 10. Migraciones de schema
+## 15. Migraciones de schema
 
 ### Hoy
 
+Función `migrate(state, fromVersion)` en `IronLogContext` que aplica steps encadenados:
+
 ```ts
-const parsed = JSON.parse(raw) as Partial<PersistedState>;
-setState({ ...DEFAULT_STATE, ...parsed, profile: { ...DEFAULT_PROFILE, ...(parsed.profile ?? {}) } });
+function migrate(state, fromVersion) {
+  let cur = state;
+  let v = fromVersion;
+  if (v < 2) {
+    cur = { ...cur, notes: cur.notes ?? [] };
+    v = 2;
+  }
+  return { ...cur, schemaVersion: CURRENT_SCHEMA_VERSION };
+}
 ```
 
-Es una "migración mágica" — funciona para agregar campos opcionales pero falla silencioso para renames, defaults complejos o invariantes.
+Funciona para agregar campos opcionales pero falla silencioso para renames, defaults complejos o invariantes.
 
 ### Propuesta
 
@@ -616,6 +829,7 @@ drizzle/
     0000_initial_schema.sql
     0001_add_session_plans.sql
     0002_add_skipped_exercise_ids.sql
+    0003_add_session_notes.sql
     ...
 ```
 
@@ -648,6 +862,9 @@ async function migrateFromLegacyStorage(db: Database) {
         await tx.insert(completedSets).values(mapLegacySet(set, s.id));
       }
     }
+    for (const note of legacy.notes ?? []) {
+      await tx.insert(sessionNotes).values(mapLegacyNote(note));
+    }
     // ... resto de las entidades
   });
   await AsyncStorage.setItem("ironlog:v1:migrated", "true");
@@ -663,7 +880,7 @@ Drizzle no soporta `down` migrations. Convivís con eso así:
 
 ---
 
-## 11. Backend: cuando, qué y cómo
+## 16. Backend: cuándo, qué y cómo
 
 ### Cuándo construirlo
 
@@ -675,19 +892,21 @@ Tres triggers concretos:
 
 Hasta que uno de esos sea fuerte, **no construyas backend**. La app local-first ya es valor diferencial.
 
-### Stack
+### Stack propuesto
 
 Cuando llegue el momento, este es el stack que recomiendo, anclado a lo que ya tenés en el monorepo:
 
 - **Hosting / runtime**: Vercel (ya hay skills para deploy).
-- **DB**: Vercel Postgres (Neon under the hood) — gratis hasta cierto umbral, cero ops.
-- **ORM**: el `@workspace/db` con Drizzle ya configurado para Postgres.
+- **DB**:
+  - **Vercel Postgres / Neon** (SQL, gratuito hasta cierto umbral, infra estándar). Compatible con `lib/db` actual.
+  - **Turso (libSQL)** — alternativa edge-friendly con Embedded Replicas (ver §17 para evaluación detallada).
+- **ORM**: el `@workspace/db` con Drizzle ya configurado para Postgres. Para Turso, `drizzle-orm/libsql`.
 - **API**:
   - **Hono** (ligero, edge-friendly) si querés simple REST/RPC.
   - **tRPC** si querés tipos end-to-end y consumís solo desde TS.
   - Mi recomendación: **Hono + Zod** — más portable, no te ata a TS en el cliente.
 - **Validación**: Zod — ya en catalog.
-- **Auth**: ver subseccción.
+- **Auth**: ver subsección.
 - **Logging**: pino (ya en api-server) + Sentry para errores.
 - **Cron**: Vercel Cron Jobs para limpieza de outbox viejas, cleanup de backups expirados.
 
@@ -737,13 +956,13 @@ El recovery code anónimo es excelente para retention temprana ("pruebo sin comp
 
 ### Multi-tenancy
 
-En todas las tablas Postgres: `userId TEXT NOT NULL` + index. Filtros en cada query del server. Cliente solo ve lo suyo.
+En todas las tablas Postgres / Turso: `userId TEXT NOT NULL` + index. Filtros en cada query del server. Cliente solo ve lo suyo.
 
 ---
 
-## 12. Estrategias de sync
+## 17. Estrategias de sync (con evaluación de Turso)
 
-Tres opciones reales, en orden de complejidad. Picá según el dolor.
+Cuatro opciones reales, en orden de complejidad. Picá según el dolor.
 
 ### Opción A — Snapshot backup (la más simple, local-first parcial)
 
@@ -758,7 +977,7 @@ Cliente: cada cambio → marcar dirty. Cada 5min, si dirty → push snapshot.
 Server: solo guarda el último snapshot por user.
 ```
 
-Esto resuelve el caso "perdí el celular" con cero infra de sync. Es lo que recomiendo de **fase 3 del ROADMAP** (cloud backup anónimo).
+Esto resuelve el caso "perdí el celular" con cero infra de sync. Es lo que recomiendo de **fase 6 del plan de migración** (cloud backup anónimo).
 
 ### Opción B — Op-log custom con LWW (sync real, hand-rolled)
 
@@ -774,27 +993,71 @@ Cada mutación local genera una **operación** (`{kind, table, id, payload, lamp
 - Schema evolution (un cliente vieja que envía una op con un campo nuevo).
 - Manejo de conflictos donde LWW no sirve (ej. dos clientes editan el mismo set distinto).
 
-### Opción C — PowerSync o ElectricSQL (managed sync)
+### Opción C — Turso Embedded Replicas (managed sync, mismo schema)
 
-Estas plataformas dan sync real Postgres↔SQLite con conflict resolution incluido.
+Turso (libSQL — fork de SQLite por la empresa Turso) trae **Embedded Replicas**: una SQLite local en el cliente que se sincroniza automáticamente con la base de datos Turso en el server. **Mismo dialecto SQLite en ambos lados**, sync managed por Turso.
 
-| | PowerSync | ElectricSQL |
-|---|---|---|
-| Modelo | Streaming Postgres → SQLite | Logical replication Postgres ↔ SQLite |
-| Hosting | Servicio managed | Self-host o Cloud |
-| Open source | Cliente sí, server no | Sí (Apache 2) |
-| Madurez 2026 | Producción | Producción (1.0+) |
-| Curva | Suave | Media (CRDTs, conceptos nuevos) |
-| Costo | Pago por filas/conexión | Gratis self-hosted; managed pago |
-| Soporta Drizzle | Sí | Sí |
+**Cómo funciona**:
+- En el cliente, usás `@libsql/client` apuntando a un archivo local + URL del Turso primary.
+- Las escrituras locales se guardan en el archivo SQLite + se suben al primary cuando hay red.
+- Las lecturas son siempre instantáneas (lee local).
+- Sync bidireccional, conflictos resueltos por la replicación de libSQL.
 
-**Cuándo**: cuando el caso Opción B se vuelve insostenible (3+ devices con escrituras concurrentes, conflictos frecuentes, schema evolution dolorosa).
+**Drizzle support**: `drizzle-orm/libsql` lo soporta nativo. El schema escrito en `drizzle-orm/sqlite-core` funciona idéntico para SQLite local y Turso server.
 
-Mi recomendación: empezar en **A** (snapshot), saltar a **C** (PowerSync) cuando justifique. Saltarse B excepto si te encanta meter mano en sync.
+**Free tier (a 2026)**:
 
-### Forma de la tabla `outbox`
+| Recurso | Free |
+|---|---|
+| Storage | 9 GB total |
+| Row reads | 1 billion / mes |
+| Row writes | 25 million / mes |
+| Databases | hasta 500 |
+| Locations | 3 por DB |
+| Inactividad | DB suspende tras 30 días sin uso |
 
-Usable en B y C:
+Para una app personal/early-adopter: **abundante**. IronLog con 1000 sesiones × 30 sets × 10 reads diarias por set = ~9M reads/mes — está al 1% del límite.
+
+**Trade-offs**:
+
+| Pro | Con |
+|---|---|
+| Schema único (SQLite ↔ libSQL) — un solo Drizzle config | Vendor lock-in moderado (migrar de Turso a Postgres requiere data migration) |
+| Sync managed — no escribís op-log | Si Turso baja, queda offline (mitigado: la app sigue funcionando local) |
+| Edge-friendly, latencia baja | Modelo de pricing por reads/writes — costos pueden subir rápido si la app explota |
+| Free tier muy generoso | Open source parcial: cliente sí, server no |
+| HTTP-based (no necesita conexión TCP persistente) | Comunidad más chica que Postgres |
+
+**Cuándo elegirla sobre Postgres**:
+- Querés sync real sin construir op-log.
+- El stack del cliente ya es SQLite local (Drizzle SQLite).
+- No tenés requirements complejos de queries (Postgres tiene mejor planner para joins masivos).
+- Free tier alcanza en early stages.
+
+**Cuándo NO**:
+- Necesitás features Postgres-specific (JSON queries complejas, full-text search robusto, GIS, etc.).
+- Querés evitar lock-in.
+- Tu app server-heavy con queries analíticas pesadas.
+
+**Mi recomendación para IronLog**: **Turso es buena opción** porque (a) el cliente ya quiere ser SQLite, (b) las queries de fitness son simples (no necesitás Postgres avanzado), (c) el free tier cubre uso personal y crecimiento temprano, (d) Embedded Replicas reemplaza el sync engine custom de Opción B.
+
+### Opción D — PowerSync o ElectricSQL (managed sync, Postgres → SQLite)
+
+Estas plataformas dan sync real Postgres↔SQLite con conflict resolution incluido. Útil si ya tenés Postgres y no querés migrar a libSQL.
+
+| | PowerSync | ElectricSQL | Turso Embedded |
+|---|---|---|---|
+| Modelo | Streaming Postgres → SQLite | Logical replication Postgres ↔ SQLite | libSQL ↔ libSQL local |
+| Hosting | Servicio managed | Self-host o Cloud | Servicio managed |
+| Open source | Cliente sí, server no | Sí (Apache 2) | Cliente sí, server no |
+| Madurez 2026 | Producción | Producción (1.0+) | Producción |
+| Curva | Suave | Media (CRDTs, conceptos nuevos) | Suave |
+| Costo | Pago por filas/conexión | Gratis self-hosted; managed pago | Free tier generoso, pago después |
+| Soporta Drizzle | Sí | Sí | Sí (nativo) |
+
+### Forma de la tabla `outbox` (para opciones B / C / D)
+
+Usable en cualquier opción que necesite encolar ops:
 
 ```ts
 export const outbox = sqliteTable("_outbox", {
@@ -815,11 +1078,19 @@ export const outbox = sqliteTable("_outbox", {
 3. Marca `pushedAt = now` cuando confirma.
 4. Reintenta con backoff exponencial si falla.
 
+> Nota: con Turso Embedded Replicas, el outbox **no es necesario** — la replicación de libSQL maneja eso. Solo hace falta para B (custom op-log) o si combinás A con sync diferido.
+
+### Camino recomendado
+
+Mi recomendación: empezar en **A** (snapshot) porque resuelve el 80% del valor con 10% del esfuerzo. Cuando aparezca la necesidad real de multi-device, saltar a **C** (Turso Embedded Replicas) por simplicidad. Saltarse B (op-log custom) excepto si te encanta meter mano en sync.
+
 ---
 
-## 13. Plan de migración por fases
+## 18. Plan de migración por fases
 
 Cada fase tiene **criterio de salida** y **rollback plan**. No avanzar a la siguiente sin cumplir el criterio.
+
+> Para el state management efímero (Zustand) ver `state_mang_system.md` — ese plan es independiente de éste y se ejecuta después.
 
 ### Fase 0 — Preparación (1-2 días)
 
@@ -827,6 +1098,7 @@ Cada fase tiene **criterio de salida** y **rollback plan**. No avanzar a la sigu
 - [ ] Crear `lib/db/src/schema/sqlite/` con tablas vacías que reflejen los tipos actuales.
 - [ ] Configurar `drizzle-kit` para SQLite (segundo config junto al actual de Postgres).
 - [ ] Generar migration inicial.
+- [ ] (Opcional) Decidir Turso vs Vercel Postgres si vas a tener backend pronto. Setear cuenta gratuita.
 
 **Criterio de salida**: `pnpm run drizzle:generate` produce SQL coherente sin errores.
 
@@ -868,12 +1140,9 @@ Orden recomendado:
 
 **Criterio de salida**: no hay referencias a `useIronLog()` ni a `IronLogProvider`. Borrás el archivo.
 
-### Fase 4 — Zustand para UI state (2-3 días)
+### Fase 4 — Zustand para UI state efímero
 
-- [ ] Crear stores efímeros donde haga falta (`workout/ui.ts`, `nutrition/ui.ts`).
-- [ ] Mover state de `useState` global a Zustand donde corresponda (sheets, modals, etc.).
-
-**Criterio de salida**: prop drilling de "is open" eliminado en componentes raíz.
+Esta fase está cubierta en `state_mang_system.md`. Es independiente de las anteriores y se puede hacer en paralelo a Fase 5 si querés.
 
 ### Fase 5 — Testing (1 sem)
 
@@ -894,7 +1163,7 @@ Orden recomendado:
 
 ### Fase 7 — Sync real (cuando duela) (4-8 sem)
 
-Idealmente PowerSync o ElectricSQL.
+Idealmente Turso Embedded Replicas (Opción C) o PowerSync (Opción D).
 
 - [ ] Setup hosted o self-host.
 - [ ] Migrar tablas `outbox` y configurar replicación.
@@ -904,7 +1173,7 @@ Idealmente PowerSync o ElectricSQL.
 
 ---
 
-## 14. Testing
+## 19. Testing
 
 ### Unit (Vitest + better-sqlite3)
 
@@ -959,7 +1228,7 @@ Por cada nueva migration, fixtures con DB en versión anterior + assert que apli
 
 ---
 
-## 15. Observabilidad
+## 20. Observabilidad
 
 ### Logging local
 
@@ -991,14 +1260,14 @@ Profiler de React DevTools + flamegraphs cada release.
 
 ---
 
-## 16. Advertencias y trade-offs
+## 21. Advertencias y trade-offs
 
 ### Cosas que duelen
 
 - **Migrar a SQLite no es free.** Es ~2-4 semanas de un dev senior haciéndolo bien. No empieces un viernes.
 - **Drizzle SQLite y Drizzle Postgres tienen quirks distintos.** `boolean` no existe en SQLite (es integer 0/1). Timestamps son números o ISO strings, no `Date`. Lo manejamos con `mode: "timestamp_ms"` y `mode: "boolean"` en Drizzle, pero hay que mantener la atención.
 - **`useLiveQuery` re-renderiza por tabla, no por fila.** Si tu home lee `workout_sessions` y mutás cualquier sesión, el home re-renderiza. Para fine-grained subscriptions necesitarías otra librería (legend-state, valtio). En la práctica, no hace falta hasta tener > 1000 sesiones visibles.
-- **El sync es genuinamente difícil.** Si hand-rolleas (Opción B), planificá tiempo de calidad para edge cases. Considerá saltar directo a PowerSync si tu caso lo permite.
+- **El sync es genuinamente difícil.** Si hand-rolleas (Opción B), planificá tiempo de calidad para edge cases. Considerá saltar directo a Turso Embedded Replicas (C) o PowerSync (D) si tu caso lo permite.
 - **iCloud Sync es notoriamente difícil.** Sí, es tentador no tener server. Pero los conflictos, los entitlements y la falta de visibilidad en producción te van a hacer perder días. Recomiendo backup-en-server > iCloud.
 - **AsyncStorage vs SQLite race**: durante Fase 1, puede haber una ventana donde escrites a AsyncStorage *y* a SQLite. Asegurate de que **una** sea la fuente de verdad; la otra es read-only mientras dure la migración.
 
@@ -1008,7 +1277,6 @@ Profiler de React DevTools + flamegraphs cada release.
 - **WatermelonDB**: era el gold standard hace años; sigue siendo bueno pero la integración con server es más oscura que Drizzle. Menos comunidad TS.
 - **Realm/MongoDB Atlas Sync**: vendor lock-in, modelo NoSQL no encaja con la naturaleza estructurada de los datos.
 - **Firebase**: lock-in fuerte, no SQL, latencia comparada al local-first.
-- **Redux/Redux Toolkit**: para state management cliente está bien, pero no aporta nada sobre Zustand y suma boilerplate.
 - **MMKV** como reemplazo de AsyncStorage: es solo KV, no resuelve queries — la app eventualmente las necesita.
 
 ### Cosas con las que hay que tener cuidado
@@ -1017,14 +1285,13 @@ Profiler de React DevTools + flamegraphs cada release.
 - **`updatedAt` y `deletedAt` deben actualizarse SIEMPRE** en cada mutator — no se pueden olvidar. Considerá un trigger SQLite o un wrapper de mutator.
 - **Soft delete para sync**: nunca hagas DELETE físico hasta el cleanup-job nocturno. Los devices con sync diferida necesitan ver el "delete" como un cambio.
 - **Tamaño del schema**: definir todo arriba (cuánto pesa cada blob, cuántas filas estimás a 1 año) ayuda a no colocar JSONs gigantes en columnas.
+- **Si elegís Turso, ojo a la inactividad**: free tier suspende DBs sin uso por 30 días. Si la app no se abre, el primary se duerme y la primera apertura puede tener latencia. Mitigado por Embedded Replicas (lecturas locales).
 
 ---
 
-## 17. ADRs (decisiones documentadas)
+## 22. ADRs
 
 Convención: cada decisión arquitectónica importante guarda un archivo en `docs/adr/NNN-titulo.md`. Formato breve.
-
-A continuación un boilerplate y los primeros 5 ADRs propuestos.
 
 ### Plantilla
 ```md
@@ -1047,16 +1314,63 @@ Qué elegimos hacer.
 - Negativas: ...
 ```
 
-### ADR sugeridos para empezar
+### ADRs sugeridos para empezar (DB-related)
+
 - **ADR-001**: SQLite + Drizzle como storage local (vs MMKV vs WatermelonDB vs realm).
-- **ADR-002**: Op-log con LWW como modelo de sync inicial (vs CRDT).
+- **ADR-002**: Op-log con LWW como modelo de sync inicial (vs CRDT) — o saltarse a Turso Embedded Replicas.
 - **ADR-003**: UUID v7 generado en cliente como primary key (vs autoincrement server-asignado).
-- **ADR-004**: Zustand para UI efímera (vs Jotai vs Context).
 - **ADR-005**: Auth con código de recuperación anónimo en V1 (vs OAuth).
+- **ADR-006**: Turso (libSQL) vs Vercel Postgres como DB del backend.
 
 ---
 
-## 18. Glosario
+## 23. Comandos útiles
+
+```bash
+# App mobile (storage local AsyncStorage hoy):
+cd artifacts/ironlog
+pnpm exec expo start --ios          # arranca Metro + simulador
+
+# API server (sin DB conectada hoy):
+PORT=3000 pnpm --filter @workspace/api-server run dev
+
+# DB Postgres (requiere DATABASE_URL en env, schema vacío hoy):
+pnpm --filter @workspace/db run push
+pnpm --filter @workspace/db run push-force
+
+# Regenerar cliente y schemas zod desde OpenAPI:
+pnpm --filter @workspace/api-spec run codegen
+```
+
+Cuando esté la migración SQLite:
+
+```bash
+# Generar migration nueva tras cambiar el schema:
+pnpm --filter @workspace/db run drizzle:generate
+
+# Ver el estado de la DB en simulator (drizzle studio):
+pnpm exec drizzle-kit studio
+```
+
+Para **borrar el storage local del simulador** (sin reset desde dentro de la app):
+
+```bash
+xcrun simctl uninstall booted host.exp.Exponent
+# o, dentro de Expo Go: Settings → Clear data
+```
+
+Para **inspeccionar el blob en runtime** desde Hermes (mientras siga AsyncStorage):
+
+```js
+// en el debugger, scope global de cualquier componente
+require("@react-native-async-storage/async-storage").default
+  .getItem("ironlog:v1")
+  .then((s) => JSON.parse(s));
+```
+
+---
+
+## 24. Glosario
 
 - **Local-first**: arquitectura donde el cliente tiene una DB completa que es la fuente de verdad; el server es backup + canal de sync.
 - **Op-log**: bitácora de mutaciones (insert/update/delete) que se replican entre devices.
@@ -1068,6 +1382,8 @@ Qué elegimos hacer.
 - **Soft delete**: marcar `deletedAt` en lugar de borrar la fila. Necesario para que devices con sync diferida sepan que algo se borró.
 - **Snapshot sync**: pushear el estado entero como blob, sin granularidad. Simple pero pisa cambios concurrentes.
 - **Reactive query**: query que re-emite resultados cuando los datos subyacentes cambian, sin que el código consumidor invalide explícitamente.
+- **libSQL**: fork de SQLite mantenido por Turso, con extensiones para HTTP API y replicación.
+- **Embedded Replicas (Turso)**: SQLite local en el cliente que se replica con un primary Turso server. Sync managed.
 
 ---
 
@@ -1075,5 +1391,5 @@ Qué elegimos hacer.
 
 - Cada decisión arquitectónica que rompa con este doc va con un ADR nuevo.
 - Cuando una fase del plan de migración se cierra, marcala con `[x]` y datada.
-- Cuando aparezca una librería nueva en consideración, agregala a la sección 16 con el dictamen (recomendada / no recomendada / a evaluar).
+- Cuando aparezca una librería nueva en consideración, agregala a la sección 21 con el dictamen (recomendada / no recomendada / a evaluar).
 - Antes de meter una decisión grande en producción, abrila como issue y pedí review — la arquitectura se cae cuando los criterios no son visibles.
