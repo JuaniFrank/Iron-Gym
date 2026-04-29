@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Dimensions,
+  Keyboard,
   Platform,
   Pressable,
   TextInput,
@@ -21,6 +22,10 @@ import { IconButton } from "@/components/ui/IconButton";
 import { Screen } from "@/components/ui/Screen";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
+import {
+  BulkColumnSheet,
+  type BulkField,
+} from "@/components/workout/BulkColumnSheet";
 import { MUSCLE_GROUP_LABELS } from "@/constants/exercises";
 import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
@@ -308,11 +313,44 @@ function PlanExerciseCard({
 }: PlanExerciseCardProps) {
   const colors = useThemeColors();
   const [showHistory, setShowHistory] = useState(false);
+  const [bulk, setBulk] = useState<{
+    field: BulkField;
+    anchor: number | undefined;
+  } | null>(null);
 
   const recommendation = useMemo(
     () => buildRecommendation(lastSets),
     [lastSets],
   );
+
+  const workSetIndices = useMemo(() => {
+    const out: number[] = [];
+    planned.sets.forEach((s, i) => {
+      if (!s.isWarmup) out.push(i);
+    });
+    return out;
+  }, [planned.sets]);
+
+  const openBulk = (field: BulkField, anchor: number | undefined) => {
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    Keyboard.dismiss();
+    setBulk({ field, anchor });
+  };
+
+  const handleBulkApply = (values: (number | undefined)[]) => {
+    if (!bulk) return;
+    const next = planned.sets.map<PlannedSet>((s, i) => {
+      if (s.isWarmup) return s;
+      const w = workSetIndices.indexOf(i);
+      const v = values[w];
+      if (bulk.field === "weight") return { ...s, weight: v };
+      if (bulk.field === "reps") return { ...s, reps: v };
+      return { ...s, rpe: v };
+    });
+    onChange(next);
+  };
 
   const updateSet = (idx: number, patch: Partial<PlannedSet>) => {
     onChange(planned.sets.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
@@ -356,37 +394,42 @@ function PlanExerciseCard({
       onChange(buildInitialSets(routineExercise, lastSets));
       return;
     }
-    if (lastSets.length === 0) {
-      // Without history these auto-fills don't apply — keep current.
+    if (kind === "repeat") {
+      if (lastSets.length === 0) return;
+      const warmups = planned.sets.filter((s) => s.isWarmup);
+      const newWork = lastSets.map<PlannedSet>((s) => ({
+        isWarmup: false,
+        weight: s.weight,
+        reps: s.reps,
+        rpe: s.rpe,
+      }));
+      onChange([...warmups, ...newWork]);
       return;
     }
-    if (kind === "repeat") {
-      onChange(
-        lastSets.map<PlannedSet>((s) => ({
-          isWarmup: false,
-          weight: s.weight,
-          reps: s.reps,
-          rpe: s.rpe,
-        })),
-      );
-    } else if (kind === "plus2_5") {
-      onChange(
-        lastSets.map<PlannedSet>((s) => ({
-          isWarmup: false,
-          weight: roundQuarter(s.weight + 2.5),
-          reps: s.reps,
-          rpe: s.rpe,
-        })),
-      );
-    } else if (kind === "plus1rep") {
-      onChange(
-        lastSets.map<PlannedSet>((s) => ({
-          isWarmup: false,
-          weight: s.weight,
-          reps: s.reps + 1,
-          rpe: s.rpe,
-        })),
-      );
+    if (kind === "plus2_5" || kind === "plus1rep") {
+      const fallbackFor = (workIdx: number) =>
+        lastSets[workIdx] ?? lastSets[lastSets.length - 1];
+      let workIdx = -1;
+      const next = planned.sets.map<PlannedSet>((s) => {
+        if (s.isWarmup) return s;
+        workIdx++;
+        const fallback = fallbackFor(workIdx);
+        const baseWeight = s.weight ?? fallback?.weight;
+        const baseReps = s.reps ?? fallback?.reps;
+        if (kind === "plus2_5") {
+          return {
+            ...s,
+            weight: baseWeight != null ? roundQuarter(baseWeight + 2.5) : undefined,
+            reps: baseReps,
+          };
+        }
+        return {
+          ...s,
+          weight: baseWeight,
+          reps: baseReps != null ? baseReps + 1 : undefined,
+        };
+      });
+      onChange(next);
     }
   };
 
@@ -519,13 +562,28 @@ function PlanExerciseCard({
           </Text>
         </View>
         <View style={{ flex: 1, flexDirection: "row", gap: 6 }}>
-          <Text variant="tiny" color={colors.muted} style={{ flex: 1, textAlign: "center" }}>
+          <Text
+            variant="tiny"
+            color={bulk?.field === "weight" ? colors.accentEdge : colors.muted}
+            weight={bulk?.field === "weight" ? "semibold" : undefined}
+            style={{ flex: 1, textAlign: "center" }}
+          >
             KG
           </Text>
-          <Text variant="tiny" color={colors.muted} style={{ flex: 1, textAlign: "center" }}>
+          <Text
+            variant="tiny"
+            color={bulk?.field === "reps" ? colors.accentEdge : colors.muted}
+            weight={bulk?.field === "reps" ? "semibold" : undefined}
+            style={{ flex: 1, textAlign: "center" }}
+          >
             REPS
           </Text>
-          <Text variant="tiny" color={colors.muted} style={{ flex: 1, textAlign: "center" }}>
+          <Text
+            variant="tiny"
+            color={bulk?.field === "rpe" ? colors.accentEdge : colors.muted}
+            weight={bulk?.field === "rpe" ? "semibold" : undefined}
+            style={{ flex: 1, textAlign: "center" }}
+          >
             RPE
           </Text>
         </View>
@@ -541,9 +599,11 @@ function PlanExerciseCard({
               key={i}
               set={s}
               setIndex={s.isWarmup ? 0 : workIndex}
+              highlightField={bulk?.field}
               onChange={(patch) => updateSet(i, patch)}
               onRemove={() => removeSet(i)}
               onToggleWarmup={() => toggleWarmup(i)}
+              onLongPressColumn={openBulk}
             />
           );
         })}
@@ -613,6 +673,15 @@ function PlanExerciseCard({
           />
         </Row>
       </View>
+
+      <BulkColumnSheet
+        visible={bulk != null}
+        field={bulk?.field ?? "weight"}
+        workSetCount={workSetIndices.length}
+        anchor={bulk?.anchor}
+        onApply={handleBulkApply}
+        onClose={() => setBulk(null)}
+      />
     </Card>
   );
 }
@@ -624,23 +693,35 @@ interface PlanSetRowProps {
   set: PlannedSet;
   /** 1-based work index. 0 if warmup. */
   setIndex: number;
+  /** When set, the matching column gets a colored outline. */
+  highlightField?: BulkField;
   onChange: (patch: Partial<PlannedSet>) => void;
   onRemove: () => void;
   onToggleWarmup: () => void;
+  onLongPressColumn?: (field: BulkField, anchor: number | undefined) => void;
 }
 
 function PlanSetRow({
   set,
   setIndex,
+  highlightField,
   onChange,
   onRemove,
   onToggleWarmup,
+  onLongPressColumn,
 }: PlanSetRowProps) {
   const colors = useThemeColors();
 
   const badgeBg = set.isWarmup ? colors.surfaceAlt : "transparent";
   const badgeBorder = set.isWarmup ? "transparent" : colors.border;
   const badgeText = set.isWarmup ? colors.mHombros : colors.muted;
+
+  // Bulk-edit only applies to work sets — warmups stay neutral even if their
+  // column is highlighted elsewhere.
+  const cellLongPress = (field: BulkField, anchor: number | undefined) => {
+    if (set.isWarmup) return;
+    onLongPressColumn?.(field, anchor);
+  };
 
   return (
     <Row gap={6} ai="center">
@@ -669,12 +750,20 @@ function PlanSetRow({
           value={set.weight}
           placeholder="kg"
           onChange={(n) => onChange({ weight: n })}
+          onLongPress={
+            set.isWarmup ? undefined : () => cellLongPress("weight", set.weight)
+          }
+          highlight={!set.isWarmup && highlightField === "weight"}
           decimal
         />
         <NumericCell
           value={set.reps}
           placeholder="reps"
           onChange={(n) => onChange({ reps: n })}
+          onLongPress={
+            set.isWarmup ? undefined : () => cellLongPress("reps", set.reps)
+          }
+          highlight={!set.isWarmup && highlightField === "reps"}
         />
         {set.isWarmup ? (
           <View
@@ -699,6 +788,8 @@ function PlanSetRow({
             value={set.rpe}
             placeholder="rpe"
             onChange={(n) => onChange({ rpe: n })}
+            onLongPress={() => cellLongPress("rpe", set.rpe)}
+            highlight={highlightField === "rpe"}
             decimal
           />
         )}
@@ -727,10 +818,21 @@ interface NumericCellProps {
   placeholder: string;
   onChange: (n: number | undefined) => void;
   decimal?: boolean;
+  onLongPress?: () => void;
+  /** Render with accent border + soft fill (used when bulk-editing the column). */
+  highlight?: boolean;
 }
 
-function NumericCell({ value, placeholder, onChange, decimal }: NumericCellProps) {
+function NumericCell({
+  value,
+  placeholder,
+  onChange,
+  decimal,
+  onLongPress,
+  highlight,
+}: NumericCellProps) {
   const colors = useThemeColors();
+  const inputRef = useRef<TextInput>(null);
   const [text, setText] = useState<string>(value != null ? String(value) : "");
 
   // Keep local text in sync if upstream resets (e.g. autofill applied).
@@ -748,13 +850,23 @@ function NumericCell({ value, placeholder, onChange, decimal }: NumericCellProps
     if (Number.isFinite(parsed)) onChange(parsed);
   };
 
-  return (
+  const borderColor = highlight ? colors.accentEdge : colors.border;
+  const borderWidth = highlight ? 1.5 : 1;
+  const backgroundColor = highlight ? colors.accentSoft : "transparent";
+
+  const input = (
     <TextInput
+      ref={inputRef}
       value={text}
       onChangeText={commit}
       placeholder={placeholder}
       placeholderTextColor={colors.mutedSoft}
       keyboardType={decimal ? "decimal-pad" : "number-pad"}
+      contextMenuHidden={onLongPress != null}
+      // When wrapped in Pressable for long-press, the parent receives the
+      // initial touch; disable input's own touchable handling so the parent
+      // wins consistently. Taps reach us via the Pressable's onPress.
+      pointerEvents={onLongPress ? "none" : "auto"}
       style={{
         flex: 1,
         height: 36,
@@ -768,12 +880,25 @@ function NumericCell({ value, placeholder, onChange, decimal }: NumericCellProps
           default: "monospace",
         }),
         fontWeight: "600",
-        borderWidth: 1,
-        borderColor: colors.border,
+        borderWidth,
+        borderColor,
         color: colors.ink,
-        backgroundColor: "transparent",
+        backgroundColor,
       }}
     />
+  );
+
+  if (!onLongPress) return input;
+
+  return (
+    <Pressable
+      onPress={() => inputRef.current?.focus()}
+      onLongPress={onLongPress}
+      delayLongPress={350}
+      style={{ flex: 1 }}
+    >
+      {input}
+    </Pressable>
   );
 }
 

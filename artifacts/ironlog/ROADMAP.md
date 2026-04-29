@@ -106,6 +106,7 @@ Convención de tildado: `[ ]` pendiente, `[~]` en progreso, `[x]` listo.
 Fricciones reales sobre lo que ya existe. Son los que mejor ratio impacto/esfuerzo tienen y pueden entrar en un sprint corto.
 
 ### 3.1 Plate calculator
+
 `[ ]` Esfuerzo: **S** · Impacto: **Alto**
 
 - **Qué:** modal que se abre al tocar el campo `KG` en `SetRow`. Muestra qué discos cargar a cada lado dada una barra (default 20 kg, configurable a 15 / 10 / fixed).
@@ -121,6 +122,7 @@ Fricciones reales sobre lo que ya existe. Son los que mejor ratio impacto/esfuer
 - **Sugerencias:** mostrar arriba "Por lado: 30 kg" cuando ya hay valor; default plates configurables desde settings.
 
 ### 3.2 Quick-weight chips
+
 `[ ]` Esfuerzo: **S** · Impacto: **Alto**
 
 - **Qué:** debajo del numpad (o flotando arriba), chips `+2.5`, `+5`, `-2.5`, `-5`, "= último" para incrementar el peso de un set sin teclear.
@@ -132,6 +134,7 @@ Fricciones reales sobre lo que ya existe. Son los que mejor ratio impacto/esfuer
 - **Sugerencias:** haptic `selection` en cada tap. No mostrar chips negativos cuando el peso es 0.
 
 ### 3.3 e1RM (estimación de 1RM)
+
 `[ ]` Esfuerzo: **S** · Impacto: **Alto**
 
 - **Qué:** mostrar el 1-rep-max estimado en cada set completado y como métrica histórica en `exercise-detail`.
@@ -145,6 +148,7 @@ Fricciones reales sobre lo que ya existe. Son los que mejor ratio impacto/esfuer
 - **Sugerencias:** mostrar la fórmula usada en el `TermHint` al long-pressear el badge.
 
 ### 3.4 Última sesión inline en SetRow
+
 `[ ]` Esfuerzo: **S** · Impacto: **Medio**
 
 - **Qué:** debajo del input KG/REPS, una línea muy fina en color `muted` con "12×80 · RPE 8" del set previo correspondiente.
@@ -155,6 +159,7 @@ Fricciones reales sobre lo que ya existe. Son los que mejor ratio impacto/esfuer
 - **Sugerencias:** si no hay PREVIO, mostrar "Primer registro" con un ícono `sparkles` muy sutil.
 
 ### 3.5 Detección de PR en vivo
+
 `[ ]` Esfuerzo: **S** · Impacto: **Alto**
 
 - **Qué:** al completar un set que rompe el max histórico, animar el row con accent + haptic medio + tooltip "¡Nuevo PR!" 1.5s.
@@ -167,6 +172,7 @@ Fricciones reales sobre lo que ya existe. Son los que mejor ratio impacto/esfuer
 - **Sugerencias:** pequeña confeti micro (1-2 partículas) en vez del overlay completo del summary.
 
 ### 3.6 Onboarding de 3 pantallas
+
 `[ ]` Esfuerzo: **M** · Impacto: **Muy alto**
 
 - **Qué:** wizard al primer abrir: nombre → datos físicos → objetivo + frecuencia → genera plan inicial desde `PRESET_ROUTINES`.
@@ -184,6 +190,7 @@ Fricciones reales sobre lo que ya existe. Son los que mejor ratio impacto/esfuer
 - **Sugerencias:** en pantalla 3, animación de calendario llenándose con los días elegidos.
 
 ### 3.7 Hero post-entrenamiento
+
 `[ ]` Esfuerzo: **S** · Impacto: **Medio**
 
 - **Qué:** cuando hoy ya entrenaste (`completedToday`), el hero card cambia a "Recovery / Comer / Logear peso" con CTAs reales en lugar de seguir mostrando "Día de hoy".
@@ -194,6 +201,7 @@ Fricciones reales sobre lo que ya existe. Son los que mejor ratio impacto/esfuer
 - **Sugerencias:** confeti suave 1 vez por día tras la primera sesión; no repetir si vuelve a entrar.
 
 ### 3.8 Empty states con acción
+
 `[ ]` Esfuerzo: **S** · Impacto: **Medio**
 
 - **Qué:** en `progress.tsx`, `body.tsx`, `goals.tsx`, reemplazar gráficas planas / cards vacías por `EmptyState` con CTA explícito y umbral de datos.
@@ -204,6 +212,7 @@ Fricciones reales sobre lo que ya existe. Son los que mejor ratio impacto/esfuer
 - **Sugerencias:** copy honesto ("Logueá 4 sesiones para desbloquear gráficas") en vez de "Sin datos".
 
 ### 3.9 Streak grace day
+
 `[ ]` Esfuerzo: **S** · Impacto: **Medio**
 
 - **Qué:** al completar 7 sesiones, ganás 1 "freeze" (tipo Duolingo). Si saltás un día, se consume sin romper el streak.
@@ -217,6 +226,7 @@ Fricciones reales sobre lo que ya existe. Son los que mejor ratio impacto/esfuer
 - **Sugerencias:** haptic + toast "Freeze usado · Tu racha sigue viva" la primera vez que se aplica.
 
 ### 3.10 Numpad mejorado en SetRow
+
 `[ ]` Esfuerzo: **S** · Impacto: **Medio**
 
 - **Qué:** cambiar el `keyboardType` a `decimal-pad`, agregar un dot custom si ya hay punto, y un tap-out que confirme valor.
@@ -230,6 +240,7 @@ Fricciones reales sobre lo que ya existe. Son los que mejor ratio impacto/esfuer
 Cosas que cualquier usuario que viene de Strong/Hevy/JEFIT espera. Son las que sostienen la decisión de usar la app a largo plazo.
 
 ### 4.1 Volumen por grupo muscular semanal
+
 `[ ]` Esfuerzo: **M** · Impacto: **Muy alto**
 
 - **Qué:** en `progress.tsx`, mostrar un gráfico por grupo muscular (pecho, espalda, etc.) con sets efectivos de la semana actual y bandas MEV/MAV/MRV (Renaissance Periodization).
@@ -245,6 +256,7 @@ Cosas que cualquier usuario que viene de Strong/Hevy/JEFIT espera. Son las que s
 - **Sugerencias:** colorear según zona (verde MEV-MAV, amarillo MAV-MRV, rojo > MRV).
 
 ### 4.2 Reordenar / reemplazar / saltar ejercicio en sesión activa
+
 `[ ]` Esfuerzo: **M** · Impacto: **Alto**
 
 - **Qué:** dentro de `workout/active.tsx`, drag-to-reorder de cards de ejercicio + acción "Reemplazar" (abre picker filtrado por mismo músculo) + "Saltar" (marca como skipped).
@@ -258,18 +270,60 @@ Cosas que cualquier usuario que viene de Strong/Hevy/JEFIT espera. Son las que s
 - **A tener en cuenta:** si el ejercicio reemplazado ya tiene sets logueados, preguntar antes de reemplazar.
 - **Sugerencias:** al saltar, sugerir un ejercicio alternativo proactivamente.
 
-### 4.3 Notas por set
-`[ ]` Esfuerzo: **S** · Impacto: **Medio**
+### 4.3 Sistema de notas estructuradas (fundación)
 
-- **Qué:** ícono `edit-2` mini al lado del check de cada set; abre input rápido para nota corta.
-- **Por qué:** "dolor en hombro derecho", "barra rebotó", "agarre estrecho" — info clave que hoy se pierde.
+`[ ]` Esfuerzo: **M** · Impacto: **Alto**
+
+- **Qué:** capturar notas durante y después del entreno como **datos estructurados**, no texto libre suelto. Cada nota tiene categoría, body part (si aplica), severity, fuente (chip/voz/texto) y referencia opcional al set/ejercicio. Es la base sobre la que se construyen 4.13–4.16, 5.13 y 5.14.
+- **Por qué:** "dolor en hombro derecho", "la segunda serie me pareció fácil", "barra rebotó" — info clave que hoy se pierde. Si la guardamos estructurada desde el día cero, cualquier feature posterior (visualizaciones, alertas, IA) puede consumirla sin parsear NLP. Sin esta capa, todo lo demás es ruido.
 - **Plan de acción:**
-  1. Campo `CompletedSet.note?: string`.
-  2. Modal chico tipo bottom sheet con `Input` + chips de notas frecuentes ("dolor", "fácil", "agarre cambiado").
-  3. En el summary, listar sets con notas como "highlights".
-- **Sugerencias:** detección automática: si la nota incluye "dolor" o "molestia", flagear el ejercicio en home con un warning sutil ("3 sesiones con molestia en X").
+  1. Tipos nuevos:
+     ```ts
+     type NoteCategory = "pain" | "effort" | "technique" | "equipment" | "energy" | "mood" | "other";
+     type BodyPart =
+       | "shoulder_left" | "shoulder_right" | "elbow_left" | "elbow_right"
+       | "wrist_left" | "wrist_right" | "lower_back" | "upper_back"
+       | "hip_left" | "hip_right" | "knee_left" | "knee_right"
+       | "ankle_left" | "ankle_right" | "neck" | "chest" | "abs";
+     type NoteSource = "chip" | "text" | "voice" | "recap";
+
+     interface SessionNote {
+       id: string;
+       sessionId: string;
+       setId?: string;          // si está atada a un set específico
+       exerciseId?: string;     // derivable de setId, o nota a nivel ejercicio
+       createdAt: number;
+       category: NoteCategory;
+       bodyPart?: BodyPart;
+       severity?: number;       // 1–10, típico para pain/effort
+       resolved?: boolean;      // usuario marca cuando dejó de molestar
+       text: string;            // texto libre — siempre presente, aunque venga de chip
+       source: NoteSource;
+       audioUri?: string;       // si vino de voice note
+     }
+     ```
+  2. Campo en `PersistedState`: `notes: SessionNote[]`.
+  3. UI de captura — `components/notes/NoteSheet.tsx`:
+     - Bottom sheet pequeño abrible desde 3 lugares: ícono `edit-2` al lado del check de un set, FAB durante la sesión, recap post-workout (4.13).
+     - Tabs verticales por categoría con chips frecuentes precomputados ("dolor", "fácil hoy", "agarre cambiado", "barra rebotó", "rom completo", "perdí tensión").
+     - Tap en chip → si es `pain` despliega selector de body part + slider de severity. Si no, se guarda directo.
+     - Campo de texto opcional siempre debajo.
+  4. Visualización en `summary.tsx`: sección "Highlights" que lista notas de la sesión, agrupadas por categoría con íconos.
+  5. Visualización en `exercise-detail.tsx`: timeline de notas históricas para ese ejercicio.
+- **Datos / contratos:** `SessionNote[]` en `PersistedState`. Migración: ninguna ruptura — campo nuevo. Cuando migremos a SQLite (cf. `backend.md`), tabla `session_notes` con índice por `sessionId` + `bodyPart`.
+- **A tener en cuenta:**
+  - **Chips evolutivos**: las top 8 chips frecuentes deben aprenderse del uso del propio usuario, no ser fijas. Si vos escribís "barra rebotó" 3 veces, aparece como chip al cuarto.
+  - **Severity sin numerología obsesiva**: en UI mostrar 3 niveles ("leve / molesta / fuerte" mapeados a 1-3 / 4-6 / 7-10) — el número crudo se guarda pero no aturde.
+- **Advertencias:**
+  - El `bodyPart` es enum cerrado a propósito. Texto libre como body part rompe la utilidad estructural. Si el usuario tipea "dolor en el aductor" sin mapear a `hip_left/right`, queda como `other` con `text` poblado — la IA puede inferir, los gráficos no.
+  - **No prometemos diagnóstico médico**: copy explícito en onboarding del feature ("registro personal, no consejo profesional").
+- **Sugerencias:**
+  - Haptic `selection` al tap de chip; haptic `medium` al guardar nota de pain con severity ≥ 7.
+  - Si una nota nueva de pain tiene severity ≥ 8, ofrecer dos botones inmediatos: "Terminar sesión" / "Seguir con cuidado".
+  - Default de chips por categoría: pain → ["leve", "molesta", "fuerte"]; effort → ["fácil", "duro", "RPE alto"]; technique → ["form rota", "buena ejecución", "perdí tensión"].
 
 ### 4.4 Supersets visualmente agrupados
+
 `[ ]` Esfuerzo: **M** · Impacto: **Medio**
 
 - **Qué:** el campo `supersetWith` ya existe en `RoutineExercise` pero no se renderiza. Mostrarlos como un bloque con indentación + marcador "A1/A2" + rest timer compartido.
@@ -284,6 +338,7 @@ Cosas que cualquier usuario que viene de Strong/Hevy/JEFIT espera. Son las que s
 - **Sugerencias:** label A1/A2 con la inicial del ejercicio entre paréntesis para identificación rápida.
 
 ### 4.5 Barcode scanner en nutrición
+
 `[ ]` Esfuerzo: **M** · Impacto: **Muy alto**
 
 - **Qué:** botón cámara en `food-add.tsx` que abre `expo-camera` + `expo-barcode-scanner`. Lookup contra Open Food Facts API (gratis, no requiere key).
@@ -300,6 +355,7 @@ Cosas que cualquier usuario que viene de Strong/Hevy/JEFIT espera. Son las que s
 - **Sugerencias:** ofrecer "Foto del paquete" como fallback (foto + macros manuales después).
 
 ### 4.6 Templates de rutina por wizard
+
 `[ ]` Esfuerzo: **M** · Impacto: **Alto**
 
 - **Qué:** wizard "Generar rutina": eligen objetivo (fuerza/hipertrofia/cutting), frecuencia (3/4/5/6 días), foco (full body / split). La app ensambla días desde `EXERCISES`.
@@ -314,6 +370,7 @@ Cosas que cualquier usuario que viene de Strong/Hevy/JEFIT espera. Son las que s
 - **Sugerencias:** mostrar un preview semanal antes de confirmar.
 
 ### 4.7 Body fat % calculado (Navy method)
+
 `[ ]` Esfuerzo: **S** · Impacto: **Medio**
 
 - **Qué:** la fórmula Navy ya está en `calculations.ts`. Agregar UI en `body.tsx` para registrar las medidas necesarias (cuello, cintura, cadera) y mostrar trend.
@@ -325,6 +382,7 @@ Cosas que cualquier usuario que viene de Strong/Hevy/JEFIT espera. Son las que s
 - **Sugerencias:** dejar claro que es estimación (±3-4%); no usar copy "tu body fat es X".
 
 ### 4.8 Stats arriba en exercise-detail
+
 `[ ]` Esfuerzo: **S** · Impacto: **Medio**
 
 - **Qué:** 4 stats arriba del chart: primer registro, último PR, volumen lifetime, mejor e1RM.
@@ -335,6 +393,7 @@ Cosas que cualquier usuario que viene de Strong/Hevy/JEFIT espera. Son las que s
 - **Sugerencias:** tap en cada stat lleva a la sesión donde ocurrió.
 
 ### 4.9 Quick-add por repetir comida
+
 `[ ]` Esfuerzo: **S** · Impacto: **Alto**
 
 - **Qué:** en `nutrition.tsx`, sección "Repetir": las últimas 3 comidas logueadas (por meal type) tappeables.
@@ -345,6 +404,7 @@ Cosas que cualquier usuario que viene de Strong/Hevy/JEFIT espera. Son las que s
 - **Sugerencias:** permitir "guardar comida combinada" (recipe) tras 3 ingresos del mismo conjunto.
 
 ### 4.10 Recipe builder
+
 `[ ]` Esfuerzo: **M** · Impacto: **Alto**
 
 - **Qué:** combinar varios `FoodItem` en un único "Recipe" reutilizable (ej. "Mi avena de mañana = avena 60g + leche 200g + miel 15g").
@@ -357,6 +417,7 @@ Cosas que cualquier usuario que viene de Strong/Hevy/JEFIT espera. Son las que s
 - **Sugerencias:** importar/exportar recipes como JSON para compartir.
 
 ### 4.11 Water tracker
+
 `[ ]` Esfuerzo: **S** · Impacto: **Medio**
 
 - **Qué:** vasos de agua diarios. Stepper +/- con goal configurable (default 8).
@@ -368,6 +429,7 @@ Cosas que cualquier usuario que viene de Strong/Hevy/JEFIT espera. Son las que s
 - **Sugerencias:** si hay sesión activa, sumar 1 vaso automáticamente al terminar.
 
 ### 4.12 Foto del plato (visual log)
+
 `[ ]` Esfuerzo: **S** · Impacto: **Medio**
 
 - **Qué:** opción de adjuntar foto al `FoodEntry`. Sin análisis IA — solo log visual.
@@ -378,6 +440,99 @@ Cosas que cualquier usuario que viene de Strong/Hevy/JEFIT espera. Son las que s
   3. Galería en nutrition por día.
 - **Advertencias:** las URIs locales se rompen si el usuario limpia caché; copiar a `FileSystem.documentDirectory`.
 
+### 4.13 Recap reflexivo post-workout
+
+`[ ]` Esfuerzo: **S** · Impacto: **Alto** · **Depende de 4.3**
+
+- **Qué:** después del summary actual, una pantalla extra de 30 segundos con 3 prompts cortos. Skipeable con un tap. Lo capturado se guarda como `SessionNote[]` con `source: "recap"`.
+- **Por qué:** la mejor data viene cuando se pide en el momento. Hoy la sesión termina y la oportunidad de capturar "cómo me sentí hoy" se pierde. 30 segundos de fricción consciente = data de altísima calidad para gráficos, alertas y para la IA después.
+- **Plan de acción:**
+  1. Nueva pantalla `app/workout/recap.tsx`. Aparece tras `summary.tsx` con animación slide-up, no bloqueante (botón "Saltar" arriba).
+  2. Tres bloques verticales:
+     - **"¿Cómo te sentiste?"** — slider 1–5 con emoji (😩 / 😐 / 🙂 / 😄 / 🔥). Se guarda como `SessionNote { category: "mood", severity: 1-5 }`.
+     - **"¿Alguna molestia?"** — silueta SVG del cuerpo (vista frontal + posterior tabbeable). Tap en zona → severity slider. Multi-select. Cada zona genera una `SessionNote { category: "pain", bodyPart, severity }`.
+     - **"¿Algo que querés recordar?"** — text input opcional. Una `SessionNote { category: "other", text, source: "recap" }`.
+  3. CTA grande "Listo" → home.
+- **Datos / contratos:** usa los tipos de 4.3. Sin tipos nuevos.
+- **A tener en cuenta:**
+  - El recap NO debe ser obligatorio. Si el user lo skipea, no rompe nada.
+  - Si ya hay notas durante la sesión que coinciden con el body part del recap (ej. ya marcaste "rodilla derecha" durante un set), pre-seleccionar esa zona en el body map y permitir update de severity en lugar de duplicar.
+- **Sugerencias:**
+  - Mostrar al final un mini-summary: "Hoy: energía 4/5 · 1 molestia (hombro D leve)" para reforzar el valor del registro.
+  - Después de 5 sesiones con recap completado, desbloquear el "Health timeline" (4.16).
+
+### 4.14 Pre-workout "Factor X"
+
+`[ ]` Esfuerzo: **S** · Impacto: **Alto** · **Depende de 4.3**
+
+- **Qué:** pantalla de 10 segundos al iniciar la sesión que captura **factores de confusión**: sueño, energía, contexto. Estos taggean la sesión entera y se guardan como notas de categoría `energy`.
+- **Por qué:** un PR un día y una sesión basura al siguiente se explican casi siempre por sueño, ayuno, stress, viaje. Hoy se pierden. Capturándolos podemos correlacionar performance vs contexto y decirle al user *"tus mejores sesiones de squat son cuando dormiste +7h"* — un humano nunca correlaciona eso solo.
+- **Plan de acción:**
+  1. Nueva pantalla `app/workout/preflight.tsx`. Aparece tras tap "Empezar entrenamiento" en home, antes de `active.tsx`.
+  2. Tres preguntas rápidas (todas skipeables):
+     - **Sueño anoche**: 3 chips (mal · OK · bien).
+     - **Energía hoy**: 3 chips (baja · media · alta).
+     - **Algo distinto?** — chips multi-select: ayuno · post-cardio · stress · viaje · enfermedad · primer entreno tras descanso largo · cafeína fuerte · post-comida pesada.
+  3. Persiste 1–N `SessionNote { category: "energy", text, source: "chip", createdAt: now }` antes de empezar la sesión.
+- **Datos / contratos:** usa tipos de 4.3.
+- **A tener en cuenta:**
+  - Setting global "Saltar siempre el preflight" para usuarios que les molesta. Por default ON las primeras 5 sesiones, después se vuelve opcional con un dismiss.
+  - Si ya hay un preflight de hace < 4 horas (ej. usuario hizo dos entrenos el mismo día), reusar y no preguntar de nuevo.
+- **Sugerencias:**
+  - Después de 10 sesiones, mostrar un insight inicial en home: "Tus mejores PRs ocurren con sueño 'bien' (78% vs 22% con 'mal')".
+  - Animación sutil del bloque de chips elegidos integrándose en el header de la sesión activa ("Energía: alta · ayuno") para reforzar la captura.
+
+### 4.15 Voice notes hands-free durante la sesión
+
+`[ ]` Esfuerzo: **M** · Impacto: **Medio** · **Depende de 4.3**
+
+- **Qué:** botón flotante 🎙 en `workout/active.tsx`. Hold-to-record. Se transcribe on-device (iOS 17+ Speech framework, Android SpeechRecognizer) y se asocia automáticamente al ejercicio en curso + timestamp.
+- **Por qué:** tipear con manos sudadas/guantes entre series es feo. Hablar es natural. Captura matices que no entran en chips ("esta serie sentí que el peso me ganó en la última rep, perdí la tensión"). Reduce drásticamente la fricción de capturar nota.
+- **Plan de acción:**
+  1. Lib: `expo-speech-recognition` o el wrapper sobre `SFSpeechRecognizer` (iOS) / `RecognizerIntent` (Android). Ambos on-device en versiones modernas.
+  2. Permiso `NSSpeechRecognitionUsageDescription` (iOS) y `RECORD_AUDIO` + `INTERNET` (Android — algunas mantienen on-device, otras requieren cloud, hay que validar por device).
+  3. UI: FAB redondo lime accent en bottom-right durante sesión activa. Hold-to-record con waveform mini en pantalla. Suelta → muestra transcript en una card → tap "Guardar" o "Editar".
+  4. Persiste como `SessionNote { source: "voice", text: transcript, audioUri, exerciseId: <currentExerciseId> }`.
+  5. Audio file en `FileSystem.documentDirectory + "audio_notes/"`.
+- **Datos / contratos:** usa tipos de 4.3 + `audioUri`.
+- **A tener en cuenta:**
+  - Modo offline: si el SO no soporta on-device en ese device, fallback a guardar solo audio (sin transcript) y mostrar play button. La IA después puede transcribir.
+  - **Keep-awake**: la pantalla no debe bloquearse mientras estás grabando.
+  - Botón claro para silenciar/desactivar voice notes para sesiones donde no querés (gym ruidoso, no querés que escuchen).
+- **Advertencias:**
+  - No bypassar el sistema de mic-permission del SO. Cada vez que empieza una sesión y no hay permiso, mostrar un primer-uso explicativo con "Activá micrófono para voice notes".
+  - **Privacidad**: el audio se guarda local. **Nunca** se sube a la nube sin consent explícito por usuario (relevante también para 5.13).
+- **Sugerencias:**
+  - El transcript pasa por un mini-clasificador de chips (regex simple): si dice "dolor" / "molestia" → category=pain con prompt de body part; si dice "fácil" / "duro" → category=effort con severity inferido.
+  - Atajo de iOS: Action Button del iPhone 15 Pro+ → empezar voice note (out of scope v1, anotado).
+
+### 4.16 Health timeline / body map de molestias
+
+`[ ]` Esfuerzo: **M** · Impacto: **Alto** · **Depende de 4.3**
+
+- **Qué:** vista nueva accesible desde `body.tsx` o como tab en progress: silueta SVG del cuerpo donde podés tap cualquier zona y ver la timeline de notas de tipo `pain` ahí. Severity over time + sesiones donde apareció + botón "Marcar como resuelto".
+- **Por qué:** visualización honesta de tus molestias acumuladas. Útil para vos (detectar patrones) y para mostrar al kine/PT/médico sin tener que recordar fechas. Ninguna app de gym mainstream tiene esto.
+- **Plan de acción:**
+  1. Nueva ruta `app/health-timeline.tsx`.
+  2. Componente `BodyMapSVG` con todas las zonas mappeadas a `BodyPart`. Frontal + posterior con tab toggle.
+  3. Cada zona se colorea con intensidad según notas activas (no `resolved`):
+     - Sin notas: muted.
+     - 1–2 menciones, severity ≤ 4: amarillo soft.
+     - 3+ menciones o severity ≥ 6: rojo soft (`danger`).
+  4. Tap en zona → bottom sheet con:
+     - Lista de notas (desc por fecha): `"hace 3 días · entreno de pierna · severity 6 · 'molesta al bajar'"`.
+     - Mini-chart de severity vs tiempo.
+     - Lista de ejercicios donde más apareció (top 3).
+     - Botón "Marcar todas como resueltas" → seteo `resolved: true` en todas.
+  5. Botón "Exportar resumen" → genera PDF con timeline filtrable por fecha + body part. Útil para llevar al kine.
+- **Datos / contratos:** usa tipos de 4.3.
+- **A tener en cuenta:**
+  - **Silueta unisex** y respetuosa. Considerar profile.sex para variantes mínimas (no anatomía detallada — silueta abstracta tipo emergency room).
+  - Estado "resuelto" debe persistir incluso si después aparecen notas nuevas en la misma zona (cada nota se evalúa individualmente).
+- **Sugerencias:**
+  - Notificación opcional: si hay 3+ notas de pain en la misma zona en 14 días, mandar alert sutil "¿Querés reposo / bajar volumen en esa zona?".
+  - Export como PDF llevable al fisio = killer feature para usuarios serios.
+
 ---
 
 ## 5. Diferenciales (acá IronLog puede ganar)
@@ -385,6 +540,7 @@ Cosas que cualquier usuario que viene de Strong/Hevy/JEFIT espera. Son las que s
 Lo que separa a IronLog del resto. Apuntan a usar el modelo de datos único (override-by-date, e1RM, RPE) en formas que la competencia no hace bien.
 
 ### 5.1 Auto-regulation por RPE
+
 `[ ]` Esfuerzo: **M** · Impacto: **Muy alto**
 
 - **Qué:** sugerir el peso del próximo set basándose en el RPE de los últimos N sets de ese ejercicio. Si los RPE vienen bajos, +2.5 kg. Si vienen altos, mantener o bajar.
@@ -400,6 +556,7 @@ Lo que separa a IronLog del resto. Apuntan a usar el modelo de datos único (ove
 - **Sugerencias:** explicación en `TermHint`: "Sugerido según RPE de tus últimas sesiones".
 
 ### 5.2 Auto-fit del plan semanal
+
 `[ ]` Esfuerzo: **M** · Impacto: **Alto**
 
 - **Qué:** si saltaste lunes (rest forzado), el martes el hero te sugiere "Mover Push de ayer a hoy" como banner proactivo (no escondido en el sheet). Mismo motor para semana de descarga: cada N semanas detectar y proponer deload.
@@ -413,6 +570,7 @@ Lo que separa a IronLog del resto. Apuntan a usar el modelo de datos único (ove
 - **Sugerencias:** copy honesto y específico: "Ayer faltaste a Push. ¿Lo movés acá?".
 
 ### 5.3 Plateau detector
+
 `[ ]` Esfuerzo: **M** · Impacto: **Alto**
 
 - **Qué:** análisis pasivo. Si un ejercicio core (squat/bench/deadlift/row) no progresa en e1RM en 3+ sesiones, card en home: "Bench estancado · 4 semanas" con 3 caminos.
@@ -425,6 +583,7 @@ Lo que separa a IronLog del resto. Apuntan a usar el modelo de datos único (ove
 - **Sugerencias:** detectarlos sólo en ejercicios marcados como "principales" para no spammear.
 
 ### 5.4 Readiness check de 5 segundos
+
 `[ ]` Esfuerzo: **M** · Impacto: **Alto**
 
 - **Qué:** modal opcional al iniciar sesión: 3 sliders 1-5 (sueño / energía / dolor). Calcula un score que ajusta el target RPE del día.
@@ -439,6 +598,7 @@ Lo que separa a IronLog del resto. Apuntan a usar el modelo de datos único (ove
 - **Sugerencias:** después de 4 semanas, correlacionar score con PRs/volumen y mostrar insights.
 
 ### 5.5 Year/Month in Lift
+
 `[ ]` Esfuerzo: **M** · Impacto: **Alto**
 
 - **Qué:** review automático tipo Spotify Wrapped a fin de mes/año. Volumen total, ejercicio favorito (más volumen), mayor PR, días entrenados, racha máxima, kg "movidos" totales.
@@ -453,6 +613,7 @@ Lo que separa a IronLog del resto. Apuntan a usar el modelo de datos único (ove
 - **Sugerencias:** Easter egg: si el usuario hizo > 100 sesiones en el año, slide especial con copy honesto.
 
 ### 5.6 Modo coach customizable
+
 `[ ]` Esfuerzo: **M** · Impacto: **Medio**
 
 - **Qué:** el `TermHint` actual crece a un sistema de tips contextuales por ejercicio (form cues, errores comunes), togglable: "estricto" / "minimalista" / "humorístico".
@@ -464,6 +625,7 @@ Lo que separa a IronLog del resto. Apuntan a usar el modelo de datos único (ove
 - **Sugerencias:** dejar al usuario sugerir tips propios, persisten como custom.
 
 ### 5.7 Live Activity en lock screen
+
 `[ ]` Esfuerzo: **L** · Impacto: **Alto**
 
 - **Qué:** durante una sesión activa, Live Activity en lock screen + Dynamic Island con rest timer + último set + sets restantes.
@@ -477,6 +639,7 @@ Lo que separa a IronLog del resto. Apuntan a usar el modelo de datos único (ove
 - **Sugerencias:** ofrecer al usuario al primer end-of-session: "Activá Live Activity para ver el timer en pantalla bloqueada".
 
 ### 5.8 Apple Watch companion mínimo
+
 `[ ]` Esfuerzo: **XL** · Impacto: **Alto**
 
 - **Qué:** app watchOS minimal: rest timer + tap "set hecho" + dial RPE.
@@ -489,6 +652,7 @@ Lo que separa a IronLog del resto. Apuntan a usar el modelo de datos único (ove
 - **Sugerencias:** primera versión read-only ("ver tu sesión activa"), luego escritura.
 
 ### 5.9 Modo gym social no-auth (sesión live compartida)
+
 `[ ]` Esfuerzo: **L** · Impacto: **Medio**
 
 - **Qué:** generar un link efímero (24h TTL) de tu sesión activa. Un amigo lo abre y ve los sets en vivo. Sin cuenta.
@@ -502,6 +666,7 @@ Lo que separa a IronLog del resto. Apuntan a usar el modelo de datos único (ove
 - **Sugerencias:** copy del link incluye un código de 4 letras para confirmar entre amigos.
 
 ### 5.10 Voz / Siri Shortcut
+
 `[ ]` Esfuerzo: **M** · Impacto: **Medio**
 
 - **Qué:** Intents para "Empezar día de pierna" y "Loguear 100 kg por 5 reps". Disparados desde Siri o atajos.
@@ -513,6 +678,7 @@ Lo que separa a IronLog del resto. Apuntan a usar el modelo de datos único (ove
 - **Advertencias:** App Intents no son triviales en RN/Expo; investigar si bare workflow es necesario.
 
 ### 5.11 What-if simulator
+
 `[ ]` Esfuerzo: **M** · Impacto: **Medio**
 
 - **Qué:** en `exercise-detail`, slider hipotético: "si mi próximo set es 105 kg × 5, ¿cómo cambia mi e1RM trend?".
@@ -522,6 +688,7 @@ Lo que separa a IronLog del resto. Apuntan a usar el modelo de datos único (ove
   2. Recomputar e1RM proyectado y mostrar punto fantasma en el chart.
 
 ### 5.12 Compound goals
+
 `[ ]` Esfuerzo: **S** · Impacto: **Medio**
 
 - **Qué:** unir dos `FitnessGoal` en una meta compuesta ("Bajar a 70 kg AND bench 100 kg para diciembre").
@@ -530,6 +697,91 @@ Lo que separa a IronLog del resto. Apuntan a usar el modelo de datos único (ove
   1. Campo `FitnessGoal.linkedGoalIds?: string[]`.
   2. Render de progreso combinado (% promedio o ambos progresos en paralelo).
 
+### 5.13 AI Coach conversacional con privacy-first
+
+`[ ]` Esfuerzo: **XL** · Impacto: **Muy alto** · **Depende de 4.3, 4.13, 4.14, 4.16**
+
+- **Qué:** un chat dentro de la app — pestaña nueva o screen en `more` — donde un coach IA **lee tus notas, sesiones y body map** y conversa con vos. Te pregunta proactivamente, te da recomendaciones, contesta tus dudas. Soporta dos modos: **on-device** (Apple Intelligence en iOS 18+ o un small model open-source para Android) o **cloud** (con consent explícito y prompt logs visibles).
+- **Por qué:** las notas son data de salud — eso es **diferencial real** vs apps que mandan todo a OpenAI sin pedirte permiso. Tener un coach que conoce todo tu historial y respeta tu privacidad es un moat genuino. El usuario serio paga por eso.
+- **Plan de acción:**
+  1. **Capa de datos**: función `buildCoachContext(userId)` que arma un JSON compacto con:
+     - Últimas N sesiones con stats agregadas.
+     - Notas activas (no `resolved`) de todas las categorías.
+     - Body map de zonas con menciones.
+     - Goals activos.
+     - Profile (sin info personal sensible — sexo, edad, peso si user opt-in).
+     Truncado a un budget de tokens razonable (ej. 4k tokens).
+  2. **Capa de inferencia** — abstracción `CoachProvider` con dos backends:
+     - `AppleIntelligenceCoach` — usa el `LanguageModelSession` API (iOS 18.1+). 100% on-device. Cero red.
+     - `CloudCoach` — backend `api-server` + `lib/db` + endpoint que hace proxy a Anthropic/OpenAI. Requiere auth (cuando llegue, cf. `backend.md`). Logs de prompts visibles al user.
+  3. **UI** — `app/coach.tsx`:
+     - Chat estándar tipo Messages, con tu propia paleta.
+     - Header con badge: "On-device" verde lime / "Cloud" charcoal.
+     - Mensajes proactivos del coach al abrir (ej. *"Vi 3 menciones de molestia en hombro derecho esta semana. ¿Querés que ajuste tu próxima sesión?"*).
+     - Acciones inline: si el coach propone un cambio al plan (cf. 5.14), botones "Aplicar" / "Rechazar" / "Más info".
+  4. **System prompt** — versionado, en `constants/coachPrompts.ts`. Define tone (calmo, no alarmista, español argentino), reglas (no diagnósticos médicos, sugerencias deben ser conservadoras ante pain), formato de output cuando proponga cambios al plan.
+  5. **Triggers proactivos**: el coach abre conversación sin que pidás cuando:
+     - Hay 3+ notas de pain en misma zona en 14 días.
+     - Hay 2+ sesiones consecutivas con energía "baja".
+     - Detecta plateau (cf. 5.3).
+     - Llevás N días sin entrenar con goal activo.
+  6. **Privacy controls** en settings:
+     - Toggle "Modo on-device (recomendado)" / "Modo cloud".
+     - Lista de las últimas N requests cloud con prompt visible y botón "Eliminar".
+     - Botón "Borrar todas las conversaciones".
+- **Datos / contratos:**
+  - `interface CoachMessage { id: string; role: "user" | "assistant" | "system"; content: string; createdAt: number; provider: "apple" | "cloud"; promptVersion: string; appliedActions?: AppliedAction[] }`
+  - Persistido en `PersistedState.coachMessages: CoachMessage[]` (capeado a últimas 200 messages).
+- **A tener en cuenta:**
+  - **Apple Intelligence requiere iPhone 15 Pro o más nuevo, iOS 18.1+**. Devices viejos no tienen on-device. Para esos, ofrecer cloud explícito con consent fuerte o no tener coach.
+  - **Latencia on-device**: 1–3s por respuesta es normal. UX debe mostrar typing indicator.
+  - **Hallucinations** son riesgo real. Mitigar con: prompt strict ("solo respondé sobre la data provista"), validación de outputs estructurados con Zod cuando el coach propone acciones, fallback "No tengo suficiente info" hardcodeado para ciertos triggers.
+- **Advertencias:**
+  - **Disclaimer médico** obvio en onboarding del feature: "no es consejo médico, reemplaza un kine/médico solo si te conviene".
+  - **No mostrar el coach a usuarios menores de 16 años** (regulación, además de prudencia).
+  - El backend cloud, si se usa, **debe** estar bajo `api-server` propio, no llamar OpenAI desde la app directo (api keys en cliente = leak).
+- **Sugerencias:**
+  - Primer mensaje de bienvenida educativo: explicar qué puede y qué no puede hacer.
+  - Comandos rápidos sugeridos como chips arriba del input: "¿Cómo voy?", "Ajustar plan", "Resumen de la semana".
+  - Export de chat completo a Markdown — útil si querés llevar al kine.
+
+### 5.14 Auto-ajuste del plan basado en notas
+
+`[ ]` Esfuerzo: **L** · Impacto: **Muy alto** · **Depende de 5.13**
+
+- **Qué:** el coach (5.13) no solo conversa — **acciona**. Cuando detecta dolor en zona X, propone un "plan ajustado" para los próximos N días: -10% peso en ejercicios que más involucran esa zona, alternativas de ejercicios, posible inserción de cooldown / mobility extra. El usuario confirma o rechaza con un tap.
+- **Por qué:** es el output natural del coach. Sin esta capa, el coach es solo conversación; con ella, se vuelve un asistente real que cierra el loop "captura nota → analiza → modifica plan". Es exactamente la idea original de "si hay dolor, sugerir 1kg menos o reps menos en músculos afectados".
+- **Plan de acción:**
+  1. **Mapa ejercicio → músculos** ya parcialmente en `EXERCISES` con `primaryMuscle` + `secondaryMuscles`. Expandir si hace falta.
+  2. **Mapa body part → músculos afectados** (`shoulder_right` → `chest, anterior_delt, triceps`).
+  3. **Action types** que el coach puede proponer (validados con Zod):
+     ```ts
+     type CoachAction =
+       | { type: "reduce_weight"; exerciseId: string; daysAhead: number; reductionPct: number }
+       | { type: "reduce_reps"; exerciseId: string; daysAhead: number; reductionAbs: number }
+       | { type: "swap_exercise"; fromId: string; toId: string; reason: string; daysAhead: number }
+       | { type: "skip_exercise"; exerciseId: string; daysAhead: number }
+       | { type: "add_warmup"; bodyPart: BodyPart; durationSec: number };
+     ```
+  4. **Aplicación**: cuando el user acepta, el sistema crea/edita `SessionPlan` para los próximos `daysAhead` días afectados. Un nuevo `appliedActions: AppliedAction[]` se asocia al plan para mostrar al user en `plan.tsx` ("Coach ajustó: -10% press banca por molestia hombro derecho").
+  5. **Diff visible**: la pantalla `plan.tsx` muestra los cambios en un diff inline (tachado peso original, nuevo peso accent). Botón "Restaurar original" siempre disponible.
+  6. **Learning loop**: si el user rechaza 3 veces el mismo tipo de sugerencia, el coach deja de proponerla y aprende ese contexto.
+- **Datos / contratos:**
+  - `interface AppliedAction { id: string; action: CoachAction; appliedAt: number; messageId: string; rejected?: boolean; rejectedAt?: number }`
+  - `SessionPlan.appliedActions?: AppliedAction[]`.
+- **A tener en cuenta:**
+  - **Conservadurismo by default**: -10% de peso es demasiada para algunos, demasiado poco para otros. El coach debe inferir desde la severity (severity 4 → -5%, severity 8 → -20% + skip si es ejercicio compound).
+  - **Reversibilidad**: el original siempre se preserva. El "ajustado" es una capa encima. Esto es crítico — si el user no quiere el ajuste, debe poder deshacerlo en 1 tap sin perder data.
+  - **No tocar más de N días hacia adelante** sin confirmación (ej. máximo 3 sesiones). Más allá es presunción.
+- **Advertencias:**
+  - El coach no es médico. Si severity ≥ 8 o duración > 21 días, en lugar de ajustar el plan, recomendar consulta profesional explícitamente.
+  - **No bypassar consent**: ningún plan se modifica sin tap explícito del user. El coach propone, user dispone.
+  - Validar exhaustivo el output del LLM con Zod — si el LLM aluc inación un ejercicio que no existe, descartar la acción y loggear.
+- **Sugerencias:**
+  - "Apply All" como atajo cuando el coach propone un set completo de ajustes coherentes (ej. "ajustar todo el día de pierna").
+  - History de ajustes en settings — el user puede ver "estos son los cambios que el coach me sugirió este mes".
+  - Cuando el user marca el dolor como `resolved` en 4.16, ofrecer auto-revert de los ajustes activos relacionados.
+
 ---
 
 ## 6. Plataforma e integraciones
@@ -537,6 +789,7 @@ Lo que separa a IronLog del resto. Apuntan a usar el modelo de datos único (ove
 Cosas que tocan más infraestructura. Pensar bien antes de meter scope.
 
 ### 6.1 Apple HealthKit sync
+
 `[ ]` Esfuerzo: **L** · Impacto: **Alto**
 
 - **Qué:** import body weight desde Health, export workouts (calorías quemadas estimadas, duración) a Health.
@@ -550,6 +803,7 @@ Cosas que tocan más infraestructura. Pensar bien antes de meter scope.
 - **Sugerencias:** durante onboarding, ofrecer importar últimos 30 días de peso.
 
 ### 6.2 Cloud backup anónimo
+
 `[ ]` Esfuerzo: **L** · Impacto: **Muy alto**
 
 - **Qué:** generar código de recuperación al instalar (12 palabras o 6 letras + 6 dígitos). Con ese código en otro dispositivo, recuperás todo. Sin email, sin password, sin cuenta.
@@ -565,6 +819,7 @@ Cosas que tocan más infraestructura. Pensar bien antes de meter scope.
 - **Sugerencias:** guardar fecha del último backup en profile y mostrarla en settings.
 
 ### 6.3 Sync iCloud
+
 `[ ]` Esfuerzo: **M** · Impacto: **Alto**
 
 - **Qué:** entre iPhone/iPad/Mac del mismo Apple ID, vía CKShare o documento iCloud.
@@ -575,6 +830,7 @@ Cosas que tocan más infraestructura. Pensar bien antes de meter scope.
 - **Advertencias:** iCloud Sync es notoriamente difícil. Considerar 6.2 antes de esto.
 
 ### 6.4 Web companion read-only / editor
+
 `[ ]` Esfuerzo: **L** · Impacto: **Medio**
 
 - **Qué:** web app (Next.js) para diseñar rutinas con teclado en pantalla grande. Read-only en MVP1; editor en MVP2.
@@ -585,6 +841,7 @@ Cosas que tocan más infraestructura. Pensar bien antes de meter scope.
   3. Sync vía 6.2 o un endpoint dedicado.
 
 ### 6.5 Export / Import
+
 `[ ]` Esfuerzo: **S** · Impacto: **Alto**
 
 - **Qué:** export a JSON / CSV. Import desde Strong y Hevy CSV.
@@ -598,6 +855,7 @@ Cosas que tocan más infraestructura. Pensar bien antes de meter scope.
 - **Sugerencias:** preview antes de confirmar import.
 
 ### 6.6 Widgets (iOS 17+)
+
 `[ ]` Esfuerzo: **L** · Impacto: **Medio**
 
 - **Qué:** widget de home: día de hoy + streak + último PR. Variante interactiva para iOS 17+ con "Iniciar sesión".
@@ -608,6 +866,7 @@ Cosas que tocan más infraestructura. Pensar bien antes de meter scope.
 - **Advertencias:** mantenimiento. Solo iOS.
 
 ### 6.7 Notificaciones
+
 `[ ]` Esfuerzo: **S** · Impacto: **Medio**
 
 - **Qué:** recordatorios: rest timer, día de entrenamiento programado, missed-day nudge.
@@ -618,6 +877,7 @@ Cosas que tocan más infraestructura. Pensar bien antes de meter scope.
 - **Advertencias:** no spammear. Dar control granular en settings.
 
 ### 6.8 Localización (multi-idioma)
+
 `[ ]` Esfuerzo: **M** · Impacto: **Medio**
 
 - **Qué:** infra i18n + traducciones en EN. Hoy hardcoded en español.
@@ -633,6 +893,7 @@ Cosas que tocan más infraestructura. Pensar bien antes de meter scope.
 Cosas chicas que detecté pantalla por pantalla.
 
 ### Home (`(tabs)/index.tsx`)
+
 - `[ ]` Hero post-entrenamiento dinámico (3.7).
 - `[ ]` Banner de sugerencia auto-fit (5.2).
 - `[ ]` Card de plateau detector cuando aplica (5.3).
@@ -641,12 +902,14 @@ Cosas chicas que detecté pantalla por pantalla.
 - `[ ]` Heatmap interactivo: tap en un día abre detalle de esa sesión.
 
 ### Workout tab (`(tabs)/workout.tsx`)
+
 - `[ ]` Sección "Recientes" arriba con últimas 3 rutinas usadas.
 - `[ ]` Search en el listado de rutinas si > 10.
 - `[ ]` "Quick start" abajo con contextual: si hay schedule de hoy, CTA directo.
 - `[ ]` Filtrar presets por equipamiento disponible.
 
 ### Workout activo (`workout/active.tsx`)
+
 - `[ ]` Auto-arrancar rest timer al log set (3.5 PR detection lo refuerza).
 - `[ ]` Reordenar/saltar (4.2).
 - `[ ]` Notas por set (4.3).
@@ -656,11 +919,13 @@ Cosas chicas que detecté pantalla por pantalla.
 - `[ ]` Foto de la barra (1 por sesión) para record visual.
 
 ### Progress (`(tabs)/progress.tsx`)
+
 - `[ ]` Volumen por músculo arriba (4.1) > body weight chart.
 - `[ ]` Tab "Comparar": dos rangos de fechas lado a lado.
 - `[ ]` Filtro por ejercicio en el line chart.
 
 ### Nutrition (`(tabs)/nutrition.tsx`)
+
 - `[ ]` Quick-add por repetir comida (4.9).
 - `[ ]` Recipe builder (4.10).
 - `[ ]` Water tracker (4.11).
@@ -669,12 +934,14 @@ Cosas chicas que detecté pantalla por pantalla.
 - `[ ]` Pegar copy nutricional desde el portapapeles (parsing simple) — para usuarios que ya escanearon en otra app.
 
 ### Body (`body.tsx`)
+
 - `[ ]` Mini line chart por cada medida (cintura, brazo, etc.). Hoy solo peso tiene chart.
 - `[ ]` Comparador foto-a-foto con slider de transparencia.
 - `[ ]` Body fat estimado (4.7).
 - `[ ]` Sleep slider diario (alimenta 5.4).
 
 ### Exercise detail (`exercise-detail.tsx`)
+
 - `[ ]` 4 stats arriba (4.8).
 - `[ ]` Toggle "peso máx / volumen / e1RM" en el chart.
 - `[ ]` Listado de últimas 10 sesiones con peso/reps/RPE.
@@ -682,21 +949,25 @@ Cosas chicas que detecté pantalla por pantalla.
 - `[ ]` What-if simulator (5.11).
 
 ### Goals (`goals.tsx`)
+
 - `[ ]` Compound goals (5.12).
 - `[ ]` Bar de progreso real (no solo checkbox).
 - `[ ]` Si goal exercise tiene PR reciente, auto-marcar como completed.
 
 ### Achievements (`achievements.tsx`)
+
 - `[ ]` Más achievements (Volume 1M kg, "Sin saltar 30 días", "RPE 10 en compound", etc.). Hoy son 13.
 - `[ ]` Filtrar por categoría.
 - `[ ]` Compartir achievement como imagen.
 
 ### Planning (`planning.tsx`)
+
 - `[ ]` Drag-and-drop en el plan semanal para reordenar.
 - `[ ]` Acción "Repetir esta semana" → copia overrides al rango futuro.
 - `[ ]` Vista de mes con plan + sesiones reales superpuestas.
 
 ### Settings (`settings.tsx`)
+
 - `[ ]` Export/Import (6.5).
 - `[ ]` Backup en la nube (6.2).
 - `[ ]` Cambiar barra default + discos disponibles (3.1).
@@ -706,6 +977,7 @@ Cosas chicas que detecté pantalla por pantalla.
 - `[ ]` Notificaciones granular (6.7).
 
 ### More (`(tabs)/more.tsx`)
+
 - `[ ]` Reorganizar para que entradas frecuentes (body, planning, achievements) estén arriba.
 - `[ ]` Section "Recetas" si 4.10 está hecha.
 
@@ -716,47 +988,56 @@ Cosas chicas que detecté pantalla por pantalla.
 Cosas que no son features pero impactan toda la app.
 
 ### 8.1 Testing
+
 - `[ ]` Setup `vitest` o `jest` para utils puros (`calculations.ts`, `volume.ts`, autoregulation).
 - `[ ]` Detox o Maestro para flow E2E mínimo: onboarding → log set → finish workout.
 - `[ ]` Snapshot tests de componentes UI base.
 - **A tener en cuenta:** la lógica del context es donde más bugs van a aparecer; testear `getPlanForDate`, `swapDates`, `finishWorkout`.
 
 ### 8.2 Telemetría / analítica
+
 - `[ ]` Posthog o Plausible (sin PII). Eventos clave: `onboarding_done`, `set_logged`, `workout_finished`, `pr_detected`.
 - `[ ]` Toggle on/off en settings + opt-out al instalar.
 - **Advertencias:** no trackear contenido (nombres, fotos). Sólo eventos agregados.
 
 ### 8.3 Crashlytics / error reporting
+
 - `[ ]` Sentry SDK con `expo-application` + `expo-device`.
 - `[ ]` Cubrir el `ErrorBoundary` para que reporte automáticamente.
 
 ### 8.4 Performance
+
 - `[ ]` Profiling de re-renders con `react-devtools` profiler. El `IronLogContext` actual disemina cambios; considerar dividir en sub-contexts (workout, nutrition, profile).
 - `[ ]` Memoizar selectors caros (`getStreak`, agregaciones de progress).
 - `[ ]` Lazy-load de pantallas no críticas (`achievements`, `goals`).
 
 ### 8.5 Accesibilidad
+
 - `[ ]` Audit de touch targets (`SetRow` tiene zonas chicas para gym hands sudados).
 - `[ ]` `accessibilityLabel` en IconButtons sin texto.
 - `[ ]` `Dynamic Type` support — la tipografía actual fija `fontSize` en muchos lados.
 - `[ ]` Modo "gym hands": tamaño de tap aumentado configurable.
 
 ### 8.6 Migraciones de schema
+
 - `[ ]` Versionado de la clave AsyncStorage (`ironlog:v1` → `:v2`).
 - `[ ]` Función `migrate(prevState, prevVersion)` que se ejecuta al cargar.
 - **Advertencias:** ya hay datos vivos en device; cualquier rename de campo necesita backfill.
 
 ### 8.7 Diseño de tokens / dark mode revisión
+
 - `[ ]` Auditar contraste de los `mutedSoft` en dark mode.
 - `[ ]` Definir `radius` token por scale (sm/md/lg/full) en lugar del único actual.
 - `[ ]` Animations tokens (durations, easings) para consistencia.
 
 ### 8.8 Sweat / gym mode
+
 - `[ ]` Modo "Pantalla siempre encendida" durante sesión activa (`expo-keep-awake`).
 - `[ ]` Modo automático dim por sensor de luz ambiental.
 - `[ ]` Botones grandes opcional.
 
 ### 8.9 Internacionalización del data
+
 - `[ ]` Si se libera con i18n (6.8), traducir nombres de ejercicios y comidas.
 - `[ ]` Mantener nombres alternativos buscables.
 
@@ -849,3 +1130,4 @@ Foco: cerrar el lado de nutrición y abrir cloud/sync.
 - Mantené este doc actualizado al cerrar cada feature (cambia `[ ]` por `[x]` y movelo a la sección de "Estado actual" si es relevante).
 - Cada feature que entre debería tener su propia entrada de PR description con link a la sección correspondiente.
 - Cuando aparezcan nuevas ideas, sumalas al final de la sección que corresponda con el mismo formato.
+
