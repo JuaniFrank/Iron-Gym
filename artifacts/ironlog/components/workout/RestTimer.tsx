@@ -2,7 +2,9 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import React, { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, View } from "react-native";
+import Svg, { Circle } from "react-native-svg";
 
+import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { useThemeColors } from "@/contexts/ThemeContext";
 import { formatTime } from "@/utils/date";
@@ -19,6 +21,15 @@ export function RestTimer({ durationSeconds, onComplete, onClose }: RestTimerPro
   const [paused, setPaused] = useState(false);
   const completedRef = useRef(false);
 
+  // Parent often re-renders frequently (e.g. the active screen ticks elapsed
+  // time each second). If `onComplete` were in the interval effect's deps,
+  // every re-render would tear down and restart the interval before it could
+  // fire — freezing the countdown. Keep the latest callback in a ref instead.
+  const onCompleteRef = useRef(onComplete);
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
+
   useEffect(() => {
     completedRef.current = false;
     setRemaining(durationSeconds);
@@ -34,7 +45,7 @@ export function RestTimer({ durationSeconds, onComplete, onClose }: RestTimerPro
             if (Platform.OS !== "web") {
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             }
-            onComplete?.();
+            onCompleteRef.current?.();
           }
           return 0;
         }
@@ -42,7 +53,7 @@ export function RestTimer({ durationSeconds, onComplete, onClose }: RestTimerPro
       });
     }, 1000);
     return () => clearInterval(id);
-  }, [paused, onComplete]);
+  }, [paused]);
 
   const adjust = (delta: number) => {
     if (Platform.OS !== "web") Haptics.selectionAsync();
@@ -50,118 +61,160 @@ export function RestTimer({ durationSeconds, onComplete, onClose }: RestTimerPro
   };
 
   const pct = durationSeconds > 0 ? remaining / durationSeconds : 0;
+  const r = 64;
+  const C = 2 * Math.PI * r;
+  const handleX = 70 + r * Math.cos(-Math.PI / 2 + pct * 2 * Math.PI);
+  const handleY = 70 + r * Math.sin(-Math.PI / 2 + pct * 2 * Math.PI);
 
   return (
     <View
       style={{
-        backgroundColor: colors.card,
-        borderRadius: colors.radius,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: colors.border,
+        backgroundColor: colors.ink,
+        borderRadius: 20,
+        padding: 18,
+        position: "relative",
+        overflow: "hidden",
       }}
     >
-      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <View
+        style={{
+          position: "absolute",
+          right: -40,
+          top: -40,
+          width: 200,
+          height: 200,
+          borderRadius: 999,
+          backgroundColor: colors.accent,
+          opacity: 0.1,
+        }}
+      />
+
+      <Row jc="space-between" style={{ marginBottom: 14 }}>
+        <Row gap={8}>
+          <Feather name="clock" size={14} color={colors.accent} />
+          <Text variant="tiny" color={colors.accent}>
+            DESCANSO
+          </Text>
+        </Row>
+        <Pressable onPress={onClose} hitSlop={8}>
+          <Feather name="x" size={16} color="rgba(242,240,232,0.5)" />
+        </Pressable>
+      </Row>
+
+      <Row gap={20} ai="center">
+        <View style={{ width: 140, height: 140 }}>
+          <Svg width={140} height={140} viewBox="0 0 140 140">
+            <Circle
+              cx={70}
+              cy={70}
+              r={r}
+              fill="none"
+              stroke="rgba(242,240,232,0.1)"
+              strokeWidth={4}
+            />
+            <Circle
+              cx={70}
+              cy={70}
+              r={r}
+              fill="none"
+              stroke={colors.accent}
+              strokeWidth={4}
+              strokeLinecap="round"
+              strokeDasharray={C}
+              strokeDashoffset={C * (1 - pct)}
+              transform="rotate(-90 70 70)"
+            />
+            <Circle cx={handleX} cy={handleY} r={7} fill={colors.accent} stroke={colors.ink} strokeWidth={3} />
+          </Svg>
           <View
+            pointerEvents="none"
             style={{
-              width: 28,
-              height: 28,
-              borderRadius: 14,
-              backgroundColor: colors.accent,
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <Feather name="clock" size={14} color={colors.primary} />
+            <Text
+              variant="display"
+              color={colors.bg}
+              style={{ fontSize: 38, lineHeight: 38 }}
+            >
+              {formatTime(remaining)}
+            </Text>
+            <Text variant="tiny" color="rgba(242,240,232,0.5)">
+              RESTANTE
+            </Text>
           </View>
-          <Text variant="label" muted>
-            Descanso
-          </Text>
         </View>
-
-        <Pressable onPress={onClose} hitSlop={8}>
-          <Feather name="x" size={20} color={colors.mutedForeground} />
-        </Pressable>
-      </View>
-
-      <Text variant="display" style={{ textAlign: "center", marginVertical: 8, fontVariant: ["tabular-nums"] }}>
-        {formatTime(remaining)}
-      </Text>
-
-      <View
-        style={{
-          height: 6,
-          backgroundColor: colors.secondary,
-          borderRadius: 3,
-          overflow: "hidden",
-          marginBottom: 16,
-        }}
-      >
-        <View
-          style={{
-            width: `${pct * 100}%`,
-            height: "100%",
-            backgroundColor: colors.primary,
-            borderRadius: 3,
-          }}
-        />
-      </View>
-
-      <View style={{ flexDirection: "row", gap: 8 }}>
-        <Pressable
-          onPress={() => adjust(-15)}
-          style={({ pressed }) => ({
-            flex: 1,
-            backgroundColor: colors.secondary,
-            paddingVertical: 12,
-            borderRadius: colors.radius,
-            alignItems: "center",
-            opacity: pressed ? 0.7 : 1,
-          })}
-        >
-          <Text variant="label" weight="semibold">
-            −15s
+        <Col gap={6} flex={1}>
+          <Text variant="tiny" color="rgba(242,240,232,0.5)">
+            {paused ? "EN PAUSA" : "EN MARCHA"}
           </Text>
-        </Pressable>
-        <Pressable
-          onPress={() => {
-            if (Platform.OS !== "web") Haptics.selectionAsync();
-            setPaused((p) => !p);
-          }}
-          style={({ pressed }) => ({
-            flex: 1.4,
-            backgroundColor: colors.primary,
-            paddingVertical: 12,
-            borderRadius: colors.radius,
-            alignItems: "center",
-            flexDirection: "row",
-            justifyContent: "center",
-            gap: 6,
-            opacity: pressed ? 0.85 : 1,
-          })}
-        >
-          <Feather name={paused ? "play" : "pause"} size={16} color={colors.primaryForeground} />
-          <Text variant="label" weight="semibold" color={colors.primaryForeground}>
-            {paused ? "Reanudar" : "Pausar"}
+          <Text variant="body" color={colors.bg}>
+            Ajusta con −15 / +15.
           </Text>
-        </Pressable>
-        <Pressable
-          onPress={() => adjust(15)}
-          style={({ pressed }) => ({
-            flex: 1,
-            backgroundColor: colors.secondary,
-            paddingVertical: 12,
-            borderRadius: colors.radius,
-            alignItems: "center",
-            opacity: pressed ? 0.7 : 1,
-          })}
-        >
-          <Text variant="label" weight="semibold">
-            +15s
-          </Text>
-        </Pressable>
-      </View>
+          <Row gap={6} style={{ marginTop: 8 }}>
+            <Pressable
+              onPress={() => adjust(-15)}
+              style={({ pressed }) => ({
+                flex: 1,
+                height: 36,
+                borderRadius: 10,
+                backgroundColor: "rgba(242,240,232,0.08)",
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              <Text variant="label" color={colors.bg}>
+                −15
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                if (Platform.OS !== "web") Haptics.selectionAsync();
+                setPaused((p) => !p);
+              }}
+              style={({ pressed }) => ({
+                flex: 1.2,
+                height: 36,
+                borderRadius: 10,
+                backgroundColor: colors.accent,
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 4,
+                opacity: pressed ? 0.85 : 1,
+              })}
+            >
+              <Feather name={paused ? "play" : "pause"} size={12} color={colors.accentInk} />
+              <Text variant="label" weight="semibold" color={colors.accentInk}>
+                {paused ? "Reanudar" : "Pausar"}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => adjust(15)}
+              style={({ pressed }) => ({
+                flex: 1,
+                height: 36,
+                borderRadius: 10,
+                backgroundColor: "rgba(242,240,232,0.08)",
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: pressed ? 0.7 : 1,
+              })}
+            >
+              <Text variant="label" color={colors.bg}>
+                +15
+              </Text>
+            </Pressable>
+          </Row>
+        </Col>
+      </Row>
     </View>
   );
 }

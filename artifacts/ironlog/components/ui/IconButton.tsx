@@ -10,7 +10,7 @@ interface IconButtonProps {
   onPress?: () => void;
   size?: number;
   iconSize?: number;
-  variant?: "filled" | "ghost" | "outline" | "primary";
+  variant?: "filled" | "ghost" | "outline" | "primary" | "ink";
   color?: string;
   style?: ViewStyle;
   disabled?: boolean;
@@ -19,9 +19,9 @@ interface IconButtonProps {
 export function IconButton({
   icon,
   onPress,
-  size = 40,
+  size = 36,
   iconSize,
-  variant = "filled",
+  variant = "outline",
   color,
   style,
   disabled,
@@ -32,14 +32,16 @@ export function IconButton({
   const variantStyle = (() => {
     switch (variant) {
       case "primary":
-        return { bg: colors.primary, fg: colors.primaryForeground, border: "transparent" };
+        return { bg: colors.accent, fg: color ?? colors.accentInk, border: colors.accentEdge };
+      case "ink":
+        return { bg: colors.ink, fg: color ?? colors.bg, border: colors.ink };
       case "ghost":
-        return { bg: "transparent", fg: color ?? colors.foreground, border: "transparent" };
-      case "outline":
-        return { bg: "transparent", fg: color ?? colors.foreground, border: colors.border };
+        return { bg: "transparent", fg: color ?? colors.ink, border: "transparent" };
       case "filled":
+        return { bg: colors.surfaceAlt, fg: color ?? colors.ink, border: "transparent" };
+      case "outline":
       default:
-        return { bg: colors.secondary, fg: color ?? colors.foreground, border: "transparent" };
+        return { bg: colors.surface, fg: color ?? colors.ink, border: colors.border };
     }
   })();
 
@@ -57,7 +59,7 @@ export function IconButton({
           height: size,
           borderRadius: size / 2,
           backgroundColor: variantStyle.bg,
-          borderWidth: variant === "outline" ? 1 : 0,
+          borderWidth: variant === "ghost" ? 0 : 1,
           borderColor: variantStyle.border,
           alignItems: "center",
           justifyContent: "center",

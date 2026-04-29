@@ -2,13 +2,17 @@ import { Feather } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useMemo, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Divider } from "@/components/ui/Divider";
 import { Header } from "@/components/ui/Header";
+import { IconButton } from "@/components/ui/IconButton";
 import { Input } from "@/components/ui/Input";
 import { Screen } from "@/components/ui/Screen";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
@@ -16,6 +20,7 @@ import type { FoodItem, MealType } from "@/types";
 
 export default function FoodAddScreen() {
   const colors = useThemeColors();
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ date?: string; meal?: MealType }>();
   const { allFoods, logFood } = useIronLog();
   const [search, setSearch] = useState("");
@@ -44,70 +49,109 @@ export default function FoodAddScreen() {
 
     return (
       <Screen noPadding>
-        <Header title={selected.name} back onBack={() => setSelected(null)} />
-        <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
-          <Card>
-            <Text variant="tiny" muted style={{ marginBottom: 6 }}>
+        <Header
+          title=""
+          compact
+          right={<IconButton icon="x" onPress={() => setSelected(null)} />}
+        />
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 80 }}>
+          <Text variant="h1" style={{ marginBottom: 18, paddingHorizontal: 4 }}>
+            {selected.name}
+          </Text>
+
+          <Card style={{ marginBottom: 12 }}>
+            <Text variant="tiny" color={colors.muted} style={{ marginBottom: 10 }}>
               POR 100G
             </Text>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
-              <MacroPill label="Kcal" value={selected.caloriesPer100g.toFixed(0)} color={colors.primary} />
-              <MacroPill label="Prot" value={`${selected.proteinPer100g.toFixed(1)}g`} color={colors.success} />
-              <MacroPill label="Carb" value={`${selected.carbsPer100g.toFixed(1)}g`} color={colors.warning} />
-              <MacroPill label="Grasa" value={`${selected.fatPer100g.toFixed(1)}g`} color={colors.backColor} />
-            </View>
+            <Row gap={20} jc="space-between">
+              <Col gap={2}>
+                <Text variant="tiny" color={colors.muted}>
+                  KCAL
+                </Text>
+                <Text variant="title">{selected.caloriesPer100g.toFixed(0)}</Text>
+              </Col>
+              <Col gap={2}>
+                <Text variant="tiny" color={colors.muted}>
+                  PROT
+                </Text>
+                <Text variant="title">{selected.proteinPer100g.toFixed(1)}g</Text>
+              </Col>
+              <Col gap={2}>
+                <Text variant="tiny" color={colors.muted}>
+                  CARB
+                </Text>
+                <Text variant="title">{selected.carbsPer100g.toFixed(1)}g</Text>
+              </Col>
+              <Col gap={2}>
+                <Text variant="tiny" color={colors.muted}>
+                  GRASA
+                </Text>
+                <Text variant="title">{selected.fatPer100g.toFixed(1)}g</Text>
+              </Col>
+            </Row>
           </Card>
 
           <Input
-            label="Cantidad (gramos)"
+            fieldLabel="CANTIDAD"
             value={grams}
             onChangeText={setGrams}
             keyboardType="decimal-pad"
-            rightAdornment={<Text variant="caption" muted>g</Text>}
+            suffix="g"
           />
 
-          <Card>
-            <Text variant="tiny" muted style={{ marginBottom: 8 }}>
+          <Card style={{ marginVertical: 14 }}>
+            <Text variant="tiny" color={colors.muted} style={{ marginBottom: 12 }}>
               TOTAL
             </Text>
-            <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
+            <Row jc="space-between" style={{ marginBottom: 10 }}>
               <Text variant="title">Calorías</Text>
-              <Text variant="title" color={colors.primary}>
-                {Math.round(cal)}
+              <Text variant="monoLg" color={colors.ink}>
+                {Math.round(cal).toLocaleString()}
               </Text>
-            </View>
-            <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />
-            <View style={{ flexDirection: "row", justifyContent: "space-around", paddingTop: 8 }}>
-              <View style={{ alignItems: "center" }}>
-                <Text variant="caption" muted>P</Text>
-                <Text variant="label" weight="semibold">{pro.toFixed(1)}g</Text>
-              </View>
-              <View style={{ alignItems: "center" }}>
-                <Text variant="caption" muted>C</Text>
-                <Text variant="label" weight="semibold">{car.toFixed(1)}g</Text>
-              </View>
-              <View style={{ alignItems: "center" }}>
-                <Text variant="caption" muted>G</Text>
-                <Text variant="label" weight="semibold">{fat.toFixed(1)}g</Text>
-              </View>
-            </View>
+            </Row>
+            <Divider />
+            <Row jc="space-around" style={{ paddingTop: 12 }}>
+              <Col gap={2} ai="center">
+                <Text variant="tiny" color={colors.muted}>
+                  P
+                </Text>
+                <Text variant="mono" color={colors.ink} style={{ fontSize: 14, fontWeight: "600" }}>
+                  {pro.toFixed(1)}g
+                </Text>
+              </Col>
+              <Col gap={2} ai="center">
+                <Text variant="tiny" color={colors.muted}>
+                  C
+                </Text>
+                <Text variant="mono" color={colors.ink} style={{ fontSize: 14, fontWeight: "600" }}>
+                  {car.toFixed(1)}g
+                </Text>
+              </Col>
+              <Col gap={2} ai="center">
+                <Text variant="tiny" color={colors.muted}>
+                  G
+                </Text>
+                <Text variant="mono" color={colors.ink} style={{ fontSize: 14, fontWeight: "600" }}>
+                  {fat.toFixed(1)}g
+                </Text>
+              </Col>
+            </Row>
           </Card>
 
-          <View>
-            <Text variant="label" muted style={{ marginBottom: 8 }}>
-              Comida
-            </Text>
-            <SegmentedControl
-              options={[
-                { label: "Desayuno", value: "breakfast" as const },
-                { label: "Almuerzo", value: "lunch" as const },
-                { label: "Snack", value: "snack" as const },
-                { label: "Cena", value: "dinner" as const },
-              ]}
-              value={meal === "other" ? "snack" : meal}
-              onChange={(v) => setMeal(v as MealType)}
-            />
-          </View>
+          <Text variant="tiny" color={colors.muted} style={{ marginBottom: 8 }}>
+            COMIDA
+          </Text>
+          <SegmentedControl
+            options={[
+              { label: "Desayuno", value: "breakfast" as const },
+              { label: "Almuerzo", value: "lunch" as const },
+              { label: "Snack", value: "snack" as const },
+              { label: "Cena", value: "dinner" as const },
+            ]}
+            value={meal === "other" ? "snack" : meal}
+            onChange={(v) => setMeal(v as MealType)}
+            style={{ marginBottom: 18 }}
+          />
 
           <Button
             label="Añadir al diario"
@@ -132,74 +176,103 @@ export default function FoodAddScreen() {
 
   return (
     <Screen noPadding>
-      <Header
-        title="Añadir alimento"
-        back
-        right={
-          <Pressable onPress={() => router.push("/food-new")} hitSlop={8}>
-            <Feather name="plus" size={22} color={colors.primary} />
-          </Pressable>
-        }
-      />
-      <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
-        <Input
-          placeholder="Buscar alimento..."
-          value={search}
-          onChangeText={setSearch}
-          rightAdornment={
-            search ? (
-              <Pressable onPress={() => setSearch("")} hitSlop={8}>
-                <Feather name="x-circle" size={16} color={colors.mutedForeground} />
-              </Pressable>
-            ) : (
-              <Feather name="search" size={16} color={colors.mutedForeground} />
-            )
-          }
+      <View
+        style={{
+          paddingTop: insets.top + 8,
+          paddingHorizontal: 20,
+          paddingBottom: 14,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <IconButton icon="chevron-down" onPress={() => router.back()} />
+        <Text variant="title">Añadir alimento</Text>
+        <IconButton
+          icon="plus"
+          variant="primary"
+          onPress={() => router.push("/food-new")}
         />
       </View>
 
+      <View style={{ paddingHorizontal: 20, marginBottom: 14 }}>
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderWidth: 1,
+            borderColor: colors.border,
+            borderRadius: 14,
+            height: 48,
+            flexDirection: "row",
+            alignItems: "center",
+            paddingHorizontal: 14,
+            gap: 10,
+          }}
+        >
+          <Feather name="search" size={16} color={colors.muted} />
+          <Input
+            placeholder="Buscar alimento…"
+            value={search}
+            onChangeText={setSearch}
+            containerStyle={{ flex: 1 }}
+            style={{ paddingVertical: 0 }}
+          />
+          {search ? (
+            <Pressable onPress={() => setSearch("")} hitSlop={8}>
+              <Feather name="x" size={14} color={colors.muted} />
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
+
+      <Text
+        variant="tiny"
+        color={colors.muted}
+        style={{ paddingHorizontal: 24, paddingBottom: 10 }}
+      >
+        RESULTADOS · {filtered.length}
+      </Text>
+
       <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: 80, gap: 6 }}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 80, gap: 6 }}
         keyboardShouldPersistTaps="handled"
       >
         {filtered.map((f) => (
           <Pressable
             key={f.id}
             onPress={() => setSelected(f)}
-            style={({ pressed }) => ({
-              flexDirection: "row",
-              alignItems: "center",
-              backgroundColor: colors.card,
-              padding: 12,
-              borderRadius: 10,
-              borderWidth: 1,
-              borderColor: colors.border,
-              opacity: pressed ? 0.85 : 1,
-            })}
+            style={({ pressed }) => ({ opacity: pressed ? 0.92 : 1 })}
           >
-            <View style={{ flex: 1 }}>
-              <Text variant="label" weight="semibold" numberOfLines={1}>
-                {f.name}
-              </Text>
-              <Text variant="caption" muted>
-                {f.caloriesPer100g.toFixed(0)} kcal · P {f.proteinPer100g.toFixed(0)}g · C {f.carbsPer100g.toFixed(0)}g · G {f.fatPer100g.toFixed(0)}g
-              </Text>
-            </View>
-            <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
+            <Card padding={0}>
+              <Row jc="space-between" style={{ paddingVertical: 12, paddingHorizontal: 14 }}>
+                <Col gap={3} flex={1}>
+                  <Text variant="label" weight="semibold" numberOfLines={1}>
+                    {f.name}
+                  </Text>
+                  <Row gap={10}>
+                    <Text variant="mono" color={colors.ink} style={{ fontSize: 11, fontWeight: "600" }}>
+                      {f.caloriesPer100g.toFixed(0)}
+                      <Text variant="mono" color={colors.muted} style={{ fontSize: 11 }}>
+                        kcal
+                      </Text>
+                    </Text>
+                    <Text variant="mono" color={colors.muted} style={{ fontSize: 11 }}>
+                      P{f.proteinPer100g.toFixed(0)}
+                    </Text>
+                    <Text variant="mono" color={colors.muted} style={{ fontSize: 11 }}>
+                      C{f.carbsPer100g.toFixed(0)}
+                    </Text>
+                    <Text variant="mono" color={colors.muted} style={{ fontSize: 11 }}>
+                      G{f.fatPer100g.toFixed(0)}
+                    </Text>
+                  </Row>
+                </Col>
+                <Feather name="chevron-right" size={14} color={colors.muted} />
+              </Row>
+            </Card>
           </Pressable>
         ))}
       </ScrollView>
     </Screen>
-  );
-}
-
-function MacroPill({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <View style={{ flex: 1, minWidth: "20%" }}>
-      <Text variant="tiny" color={color} weight="bold">
-        {label.toUpperCase()}
-      </Text>
-      <Text variant="title">{value}</Text>
-    </View>
   );
 }

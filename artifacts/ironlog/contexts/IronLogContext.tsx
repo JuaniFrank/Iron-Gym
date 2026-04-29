@@ -16,14 +16,17 @@ import type {
   FoodItem,
   PRRecord,
   ProgressPhoto,
+  ResolvedPlan,
   Routine,
   RoutineDay,
   RoutineExercise,
   ScheduledRoutine,
+  ScheduleOverride,
+  SessionPlan,
   UserProfile,
   WorkoutSession,
 } from "@/types";
-import { dateKey, startOfDay } from "@/utils/date";
+import { dateKey, getDayOfWeek, startOfDay } from "@/utils/date";
 import { uid } from "@/utils/id";
 
 const STORAGE_KEY = "ironlog:v1";
@@ -39,6 +42,8 @@ interface PersistedState {
   foodEntries: FoodEntry[];
   goals: FitnessGoal[];
   schedule: ScheduledRoutine[];
+  scheduleOverrides: ScheduleOverride[];
+  sessionPlans: SessionPlan[];
   achievements: AchievementUnlock[];
   profile: UserProfile;
   activeWorkoutId: string | null;
@@ -72,6 +77,8 @@ const DEFAULT_STATE: PersistedState = {
   foodEntries: [],
   goals: [],
   schedule: [],
+  scheduleOverrides: [],
+  sessionPlans: [],
   achievements: [],
   profile: DEFAULT_PROFILE,
   activeWorkoutId: null,
@@ -110,6 +117,10 @@ interface IronLogContextValue extends PersistedState {
   finishWorkout: (sessionId: string, notes?: string) => { session: WorkoutSession; prs: PRRecord[]; newAchievements: string[] };
   cancelWorkout: (sessionId: string) => void;
   addExerciseToActiveWorkout: (sessionId: string, exerciseId: string) => void;
+  reorderSessionExercises: (sessionId: string, fromIndex: number, toIndex: number) => void;
+  replaceSessionExercise: (sessionId: string, fromExerciseId: string, toExerciseId: string) => void;
+  setSessionExerciseSkipped: (sessionId: string, exerciseId: string, skipped: boolean) => void;
+  removeSessionExercise: (sessionId: string, exerciseId: string) => void;
   setDefaultRest: (seconds: number) => void;
   // Body
   logBodyWeight: (weightKg: number, date?: number) => void;
@@ -129,6 +140,37 @@ interface IronLogContextValue extends PersistedState {
   // Schedule
   scheduleRoutine: (entry: ScheduledRoutine) => void;
   unscheduleDay: (dayOfWeek: number) => void;
+  // Per-date overrides (additive on top of weekly schedule)
+  getPlanForDate: (timestamp: number) => ResolvedPlan;
+  setOverrideForDate: (
+    timestamp: number,
+    plan: { routineId: string; routineDayId: string } | null,
+  ) => void;
+  clearOverrideForDate: (timestamp: number) => void;
+  swapDates: (timestampA: number, timestampB: number) => void;
+  // Pre-defined session plans (per calendar date)
+  getSessionPlan: (
+    dateKey: string,
+    routineId?: string,
+    routineDayId?: string,
+  ) => SessionPlan | undefined;
+  upsertSessionPlan: (plan: Omit<SessionPlan, "updatedAt">) => void;
+  deleteSessionPlan: (dateKey: string) => void;
+  /** Returns the first training day in the calendar days range
+   *  `[startOffsetDays, startOffsetDays + daysAhead)` from today.
+   *  Defaults: starts today, scans 14 days. `null` if no training is scheduled. */
+  getNextTrainingDay: (
+    daysAhead?: number,
+    startOffsetDays?: number,
+  ) =>
+    | {
+        timestamp: number;
+        dateKey: string;
+        routineId: string;
+        routineDayId: string;
+        isToday: boolean;
+      }
+    | null;
   // Profile
   updateProfile: (patch: Partial<UserProfile>) => void;
   // Helpers
@@ -543,6 +585,102 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
     [update],
   );
 
+  const reorderSessionExercises = useCallback(
+    (sessionId: string, fromIndex: number, toIndex: number) => {
+      update((prev) => ({
+        ...prev,
+        sessions: prev.sessions.map((s) => {
+          if (s.id !== sessionId) return s;
+          if (fromIndex < 0 || fromIndex >= s.exerciseOrder.length) return s;
+          if (toIndex < 0 || toIndex >= s.exerciseOrder.length) return s;
+          if (fromIndex === toIndex) return s;
+          const newOrder = [...s.exerciseOrder];
+          const [moved] = newOrder.splice(fromIndex, 1);
+          newOrder.splice(toIndex, 0, moved);
+          return { ...s, exerciseOrder: newOrder };
+        }),
+      }));
+    },
+    [update],
+  );
+
+  /**
+   * Replace one exercise with another inside an active session, preserving
+   * its position. Sets logged for the old id are *migrated* to the new id so
+   * the user keeps weight/reps for the substitute movement (most common case
+   * is "machine occupied, swap for an analogue"). Skipped flag is preserved.
+   */
+  const replaceSessionExercise = useCallback(
+    (sessionId: string, fromExerciseId: string, toExerciseId: string) => {
+      if (fromExerciseId === toExerciseId) return;
+      update((prev) => ({
+        ...prev,
+        sessions: prev.sessions.map((s) => {
+          if (s.id !== sessionId) return s;
+          // If the new exercise is already in the order somewhere else, keep
+          // the substitute at the original position and drop the duplicate.
+          const fromIdx = s.exerciseOrder.indexOf(fromExerciseId);
+          if (fromIdx === -1) return s;
+          const newOrder = s.exerciseOrder
+            .filter((x, i) => !(x === toExerciseId && i !== fromIdx))
+            .map((x) => (x === fromExerciseId ? toExerciseId : x));
+          const newSets = s.sets.map((set) =>
+            set.exerciseId === fromExerciseId
+              ? { ...set, exerciseId: toExerciseId }
+              : set,
+          );
+          const skipped = s.skippedExerciseIds ?? [];
+          const newSkipped = skipped.map((x) =>
+            x === fromExerciseId ? toExerciseId : x,
+          );
+          return {
+            ...s,
+            exerciseOrder: newOrder,
+            sets: newSets,
+            skippedExerciseIds: newSkipped,
+          };
+        }),
+      }));
+    },
+    [update],
+  );
+
+  const setSessionExerciseSkipped = useCallback(
+    (sessionId: string, exerciseId: string, skipped: boolean) => {
+      update((prev) => ({
+        ...prev,
+        sessions: prev.sessions.map((s) => {
+          if (s.id !== sessionId) return s;
+          const current = new Set(s.skippedExerciseIds ?? []);
+          if (skipped) current.add(exerciseId);
+          else current.delete(exerciseId);
+          return { ...s, skippedExerciseIds: Array.from(current) };
+        }),
+      }));
+    },
+    [update],
+  );
+
+  const removeSessionExercise = useCallback(
+    (sessionId: string, exerciseId: string) => {
+      update((prev) => ({
+        ...prev,
+        sessions: prev.sessions.map((s) => {
+          if (s.id !== sessionId) return s;
+          return {
+            ...s,
+            exerciseOrder: s.exerciseOrder.filter((x) => x !== exerciseId),
+            sets: s.sets.filter((set) => set.exerciseId !== exerciseId),
+            skippedExerciseIds: (s.skippedExerciseIds ?? []).filter(
+              (x) => x !== exerciseId,
+            ),
+          };
+        }),
+      }));
+    },
+    [update],
+  );
+
   const finishWorkout = useCallback(
     (sessionId: string, notes?: string) => {
       let resultSession: WorkoutSession | null = null;
@@ -551,9 +689,11 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
       update((prev) => {
         const session = prev.sessions.find((s) => s.id === sessionId);
         if (!session) return prev;
+        const skipped = new Set(session.skippedExerciseIds ?? []);
         // PR detection
         const detectedPrs: PRRecord[] = [];
         for (const exId of session.exerciseOrder) {
+          if (skipped.has(exId)) continue;
           const exercise = getExerciseFromConstants(exId, prev.customExercises);
           if (!exercise) continue;
           const allSetsForEx = prev.sessions
@@ -575,7 +715,7 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
           }
         }
         const totalVolumeKg = session.sets
-          .filter((s) => !s.isWarmup)
+          .filter((s) => !s.isWarmup && !skipped.has(s.exerciseId))
           .reduce((sum, s) => sum + s.weight * s.reps, 0);
         const finishedSession: WorkoutSession = {
           ...session,
@@ -745,6 +885,219 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
     }));
   }, [update]);
 
+  // Per-date overrides (additive layer over weekly schedule).
+  // Resolution: override (if present, even if rest) > weekly schedule[dow] > rest.
+  const getPlanForDate = useCallback(
+    (timestamp: number): ResolvedPlan => {
+      const k = dateKey(timestamp);
+      const override = state.scheduleOverrides.find((o) => o.dateKey === k);
+      if (override) {
+        if (override.routineId && override.routineDayId) {
+          return {
+            kind: "training",
+            routineId: override.routineId,
+            routineDayId: override.routineDayId,
+            isOverride: true,
+          };
+        }
+        return { kind: "rest", isOverride: true };
+      }
+      const dow = getDayOfWeek(timestamp);
+      const sched = state.schedule.find((s) => s.dayOfWeek === dow);
+      if (sched) {
+        return {
+          kind: "training",
+          routineId: sched.routineId,
+          routineDayId: sched.routineDayId,
+          isOverride: false,
+        };
+      }
+      return { kind: "rest", isOverride: false };
+    },
+    [state.schedule, state.scheduleOverrides],
+  );
+
+  const setOverrideForDate = useCallback(
+    (
+      timestamp: number,
+      plan: { routineId: string; routineDayId: string } | null,
+    ) => {
+      const k = dateKey(timestamp);
+      update((prev) => ({
+        ...prev,
+        scheduleOverrides: [
+          ...prev.scheduleOverrides.filter((o) => o.dateKey !== k),
+          {
+            dateKey: k,
+            routineId: plan?.routineId ?? null,
+            routineDayId: plan?.routineDayId ?? null,
+            createdAt: Date.now(),
+          },
+        ],
+      }));
+    },
+    [update],
+  );
+
+  const clearOverrideForDate = useCallback(
+    (timestamp: number) => {
+      const k = dateKey(timestamp);
+      update((prev) => ({
+        ...prev,
+        scheduleOverrides: prev.scheduleOverrides.filter((o) => o.dateKey !== k),
+      }));
+    },
+    [update],
+  );
+
+  // Swap two dates' resolved plans by writing overrides on both.
+  // Resolves each side against the *current* schedule + overrides snapshot inside
+  // the updater so the two writes are consistent (no stale read between them).
+  const swapDates = useCallback(
+    (timestampA: number, timestampB: number) => {
+      if (dateKey(timestampA) === dateKey(timestampB)) return;
+      update((prev) => {
+        const resolve = (ts: number): ResolvedPlan => {
+          const k = dateKey(ts);
+          const ov = prev.scheduleOverrides.find((o) => o.dateKey === k);
+          if (ov) {
+            if (ov.routineId && ov.routineDayId) {
+              return {
+                kind: "training",
+                routineId: ov.routineId,
+                routineDayId: ov.routineDayId,
+                isOverride: true,
+              };
+            }
+            return { kind: "rest", isOverride: true };
+          }
+          const dow = getDayOfWeek(ts);
+          const sched = prev.schedule.find((s) => s.dayOfWeek === dow);
+          if (sched) {
+            return {
+              kind: "training",
+              routineId: sched.routineId,
+              routineDayId: sched.routineDayId,
+              isOverride: false,
+            };
+          }
+          return { kind: "rest", isOverride: false };
+        };
+
+        const planA = resolve(timestampA);
+        const planB = resolve(timestampB);
+        const kA = dateKey(timestampA);
+        const kB = dateKey(timestampB);
+
+        const toOverride = (
+          k: string,
+          p: ResolvedPlan,
+        ): ScheduleOverride => ({
+          dateKey: k,
+          routineId: p.kind === "training" ? p.routineId : null,
+          routineDayId: p.kind === "training" ? p.routineDayId : null,
+          createdAt: Date.now(),
+        });
+
+        const filtered = prev.scheduleOverrides.filter(
+          (o) => o.dateKey !== kA && o.dateKey !== kB,
+        );
+
+        return {
+          ...prev,
+          scheduleOverrides: [
+            ...filtered,
+            toOverride(kA, planB),
+            toOverride(kB, planA),
+          ],
+        };
+      });
+    },
+    [update],
+  );
+
+  // Session plans: pre-defined sets/reps/weight per date.
+  const getSessionPlan = useCallback(
+    (
+      dateKey: string,
+      routineId?: string,
+      routineDayId?: string,
+    ): SessionPlan | undefined => {
+      const found = state.sessionPlans.find((p) => p.dateKey === dateKey);
+      if (!found) return undefined;
+      // If caller pinned routine + day, only return when they match — avoids
+      // returning a stale plan after the schedule got swapped to a different
+      // routine for that date.
+      if (routineId && found.routineId !== routineId) return undefined;
+      if (routineDayId && found.routineDayId !== routineDayId) return undefined;
+      return found;
+    },
+    [state.sessionPlans],
+  );
+
+  const upsertSessionPlan = useCallback(
+    (plan: Omit<SessionPlan, "updatedAt">) => {
+      update((prev) => ({
+        ...prev,
+        sessionPlans: [
+          ...prev.sessionPlans.filter((p) => p.dateKey !== plan.dateKey),
+          { ...plan, updatedAt: Date.now() },
+        ],
+      }));
+    },
+    [update],
+  );
+
+  const deleteSessionPlan = useCallback(
+    (dateKey: string) => {
+      update((prev) => ({
+        ...prev,
+        sessionPlans: prev.sessionPlans.filter((p) => p.dateKey !== dateKey),
+      }));
+    },
+    [update],
+  );
+
+  const getNextTrainingDay = useCallback(
+    (daysAhead = 14, startOffsetDays = 0) => {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      for (let i = startOffsetDays; i < startOffsetDays + daysAhead; i++) {
+        const cursor = new Date(today);
+        cursor.setDate(cursor.getDate() + i);
+        const ts = cursor.getTime();
+        // Re-implement the resolution inline so we don't depend on
+        // `getPlanForDate` (its closure may be stale here).
+        const k = dateKey(ts);
+        const ov = state.scheduleOverrides.find((o) => o.dateKey === k);
+        let routineId: string | null = null;
+        let routineDayId: string | null = null;
+        if (ov) {
+          routineId = ov.routineId;
+          routineDayId = ov.routineDayId;
+        } else {
+          const dow = getDayOfWeek(ts);
+          const sched = state.schedule.find((s) => s.dayOfWeek === dow);
+          if (sched) {
+            routineId = sched.routineId;
+            routineDayId = sched.routineDayId;
+          }
+        }
+        if (routineId && routineDayId) {
+          return {
+            timestamp: ts,
+            dateKey: k,
+            routineId,
+            routineDayId,
+            isToday: i === 0,
+          };
+        }
+      }
+      return null;
+    },
+    [state.schedule, state.scheduleOverrides],
+  );
+
   // Profile
   const updateProfile = useCallback((patch: Partial<UserProfile>) => {
     update((prev) => ({ ...prev, profile: { ...prev.profile, ...patch } }));
@@ -781,6 +1134,10 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
       finishWorkout,
       cancelWorkout,
       addExerciseToActiveWorkout,
+      reorderSessionExercises,
+      replaceSessionExercise,
+      setSessionExerciseSkipped,
+      removeSessionExercise,
       setDefaultRest,
       logBodyWeight,
       deleteBodyWeight,
@@ -796,6 +1153,14 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
       deleteGoal,
       scheduleRoutine,
       unscheduleDay,
+      getPlanForDate,
+      setOverrideForDate,
+      clearOverrideForDate,
+      swapDates,
+      getSessionPlan,
+      upsertSessionPlan,
+      deleteSessionPlan,
+      getNextTrainingDay,
       updateProfile,
       getExerciseById,
       getFoodById,
@@ -831,6 +1196,10 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
       finishWorkout,
       cancelWorkout,
       addExerciseToActiveWorkout,
+      reorderSessionExercises,
+      replaceSessionExercise,
+      setSessionExerciseSkipped,
+      removeSessionExercise,
       setDefaultRest,
       logBodyWeight,
       deleteBodyWeight,
@@ -846,6 +1215,14 @@ export function IronLogProvider({ children }: { children: React.ReactNode }) {
       deleteGoal,
       scheduleRoutine,
       unscheduleDay,
+      getPlanForDate,
+      setOverrideForDate,
+      clearOverrideForDate,
+      swapDates,
+      getSessionPlan,
+      upsertSessionPlan,
+      deleteSessionPlan,
+      getNextTrainingDay,
       updateProfile,
       getExerciseById,
       getFoodById,

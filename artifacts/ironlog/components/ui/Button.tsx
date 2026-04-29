@@ -12,7 +12,7 @@ import {
 
 import { useThemeColors } from "@/contexts/ThemeContext";
 
-type Variant = "primary" | "secondary" | "ghost" | "danger" | "outline";
+type Variant = "primary" | "secondary" | "ghost" | "danger" | "outline" | "dark";
 type Size = "sm" | "md" | "lg";
 
 interface ButtonProps {
@@ -45,22 +45,25 @@ export function Button({
   const colors = useThemeColors();
 
   const heights: Record<Size, number> = { sm: 36, md: 48, lg: 56 };
-  const paddings: Record<Size, number> = { sm: 12, md: 18, lg: 22 };
-  const fontSizes: Record<Size, number> = { sm: 13, md: 15, lg: 17 };
-  const iconSizes: Record<Size, number> = { sm: 16, md: 18, lg: 20 };
+  const paddings: Record<Size, number> = { sm: 14, md: 20, lg: 24 };
+  const fontSizes: Record<Size, number> = { sm: 13, md: 15, lg: 16 };
+  const iconSizes: Record<Size, number> = { sm: 14, md: 16, lg: 18 };
+  const radii: Record<Size, number> = { sm: 12, md: 14, lg: 18 };
 
   const variantStyle = (() => {
     switch (variant) {
       case "primary":
-        return { bg: colors.primary, fg: colors.primaryForeground, border: "transparent" };
+        return { bg: colors.accent, fg: colors.accentInk, border: colors.accentEdge };
+      case "dark":
+        return { bg: colors.ink, fg: colors.bg, border: colors.ink };
       case "secondary":
-        return { bg: colors.secondary, fg: colors.foreground, border: "transparent" };
+        return { bg: colors.surface, fg: colors.ink, border: colors.border };
       case "ghost":
-        return { bg: "transparent", fg: colors.foreground, border: "transparent" };
+        return { bg: "transparent", fg: colors.ink, border: "transparent" };
       case "danger":
-        return { bg: colors.destructive, fg: colors.destructiveForeground, border: "transparent" };
+        return { bg: "transparent", fg: colors.danger, border: colors.danger };
       case "outline":
-        return { bg: "transparent", fg: colors.foreground, border: colors.border };
+        return { bg: "transparent", fg: colors.ink, border: colors.borderStrong };
     }
   })();
 
@@ -82,11 +85,11 @@ export function Button({
           paddingHorizontal: paddings[size],
           backgroundColor: variantStyle.bg,
           borderColor: variantStyle.border,
-          borderWidth: variant === "outline" ? 1 : 0,
-          borderRadius: colors.radius,
-          opacity: disabled ? 0.5 : pressed ? 0.85 : 1,
+          borderWidth: variant === "ghost" ? 0 : 1,
+          borderRadius: radii[size],
+          opacity: disabled ? 0.4 : pressed ? 0.85 : 1,
           alignSelf: fullWidth ? "stretch" : "auto",
-          transform: [{ scale: pressed ? 0.98 : 1 }],
+          transform: [{ scale: pressed ? 0.985 : 1 }],
         },
         style,
       ]}
@@ -102,6 +105,7 @@ export function Button({
                 color: variantStyle.fg,
                 fontFamily: "Inter_600SemiBold",
                 fontSize: fontSizes[size],
+                letterSpacing: -0.1,
               }}
             >
               {label}

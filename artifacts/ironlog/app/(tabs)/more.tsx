@@ -4,112 +4,139 @@ import React from "react";
 import { Pressable, View } from "react-native";
 
 import { Card } from "@/components/ui/Card";
+import { Divider } from "@/components/ui/Divider";
+import { Header } from "@/components/ui/Header";
 import { Screen } from "@/components/ui/Screen";
+import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
+import { ACHIEVEMENTS } from "@/constants/achievements";
 import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
 
 export default function MoreScreen() {
   const colors = useThemeColors();
   const { profile, achievements, goals } = useIronLog();
+  const initials = profile.name.trim().slice(0, 1).toUpperCase() || "A";
+  const activeGoals = goals.filter((g) => !g.completed).length;
+  const totalAchievements = ACHIEVEMENTS.length;
 
   return (
-    <Screen scroll>
-      <View style={{ marginBottom: 16 }}>
-        <Text variant="h1">Más</Text>
-      </View>
+    <Screen scroll noPadding tabBarSpacing>
+      <Header title="Más" />
+      <View style={{ paddingHorizontal: 20 }}>
+        <Pressable onPress={() => router.push("/profile")} style={{ marginBottom: 18 }}>
+          <Card padding={18}>
+            <Row gap={14}>
+              <View
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 28,
+                  backgroundColor: colors.ink,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text variant="h2" color={colors.bg}>
+                  {initials}
+                </Text>
+              </View>
+              <Col gap={4} flex={1}>
+                <Text variant="h3">{profile.name}</Text>
+                <Text variant="caption" muted>
+                  {profile.weightKg.toFixed(1)} kg · {profile.heightCm} cm · {profile.age} años
+                </Text>
+              </Col>
+              <Feather name="chevron-right" size={16} color={colors.muted} />
+            </Row>
+          </Card>
+        </Pressable>
 
-      {/* Profile card */}
-      <Pressable onPress={() => router.push("/profile")}>
-        <Card>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <View
-              style={{
-                width: 56,
-                height: 56,
-                borderRadius: 28,
-                backgroundColor: colors.primary,
-                alignItems: "center",
-                justifyContent: "center",
-                marginRight: 14,
-              }}
-            >
-              <Text variant="h2" color="#FFFFFF">
-                {profile.name.charAt(0).toUpperCase()}
-              </Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text variant="h3">{profile.name}</Text>
-              <Text variant="caption" muted>
-                {profile.weightKg.toFixed(1)} kg · {profile.heightCm} cm · {profile.age} años
-              </Text>
-            </View>
-            <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
-          </View>
-        </Card>
-      </Pressable>
-
-      <View style={{ marginTop: 24 }}>
-        <Text variant="tiny" muted style={{ marginBottom: 8, paddingHorizontal: 4 }}>
-          ENTRENAMIENTO
-        </Text>
-        <View style={{ gap: 1, borderRadius: colors.radius, overflow: "hidden", backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
-          <MenuRow icon="calendar" label="Planificación semanal" onPress={() => router.push("/planning")} />
-          <Separator />
+        <SectionLabel>ENTRENAMIENTO</SectionLabel>
+        <Card padding={0} style={{ marginBottom: 18 }}>
+          <MenuRow
+            icon="calendar"
+            label="Planificación semanal"
+            onPress={() => router.push("/planning")}
+          />
+          <DividerInset />
           <MenuRow
             icon="target"
             label="Metas"
-            badge={goals.filter((g) => !g.completed).length || undefined}
+            badge={activeGoals > 0 ? String(activeGoals) : undefined}
             onPress={() => router.push("/goals")}
           />
-          <Separator />
+          <DividerInset />
           <MenuRow
             icon="award"
             label="Logros"
-            badge={achievements.length || undefined}
+            badge={
+              achievements.length > 0
+                ? `${achievements.length} / ${totalAchievements}`
+                : undefined
+            }
             onPress={() => router.push("/achievements")}
+            last
           />
-        </View>
-      </View>
+        </Card>
 
-      <View style={{ marginTop: 24 }}>
-        <Text variant="tiny" muted style={{ marginBottom: 8, paddingHorizontal: 4 }}>
-          CUERPO
-        </Text>
-        <View style={{ gap: 1, borderRadius: colors.radius, overflow: "hidden", backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
-          <MenuRow icon="trending-up" label="Peso, medidas y fotos" onPress={() => router.push("/body")} />
-        </View>
-      </View>
+        <SectionLabel>CUERPO</SectionLabel>
+        <Card padding={0} style={{ marginBottom: 18 }}>
+          <MenuRow
+            icon="trending-up"
+            label="Peso, medidas y fotos"
+            onPress={() => router.push("/body")}
+            last
+          />
+        </Card>
 
-      <View style={{ marginTop: 24 }}>
-        <Text variant="tiny" muted style={{ marginBottom: 8, paddingHorizontal: 4 }}>
-          PREFERENCIAS
-        </Text>
-        <View style={{ gap: 1, borderRadius: colors.radius, overflow: "hidden", backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }}>
-          <MenuRow icon="settings" label="Ajustes" onPress={() => router.push("/settings")} />
-        </View>
-      </View>
+        <SectionLabel>PREFERENCIAS</SectionLabel>
+        <Card padding={0}>
+          <MenuRow
+            icon="sliders"
+            label="Ajustes"
+            onPress={() => router.push("/settings")}
+            last
+          />
+        </Card>
 
-      <View style={{ marginTop: 32, alignItems: "center" }}>
-        <View
-          style={{
-            width: 48,
-            height: 48,
-            borderRadius: 12,
-            backgroundColor: colors.accent,
-            alignItems: "center",
-            justifyContent: "center",
-            marginBottom: 8,
-          }}
-        >
-          <Feather name="zap" size={20} color={colors.primary} />
-        </View>
-        <Text variant="caption" muted>
-          IronLog · v1.0
-        </Text>
+        <Col gap={6} ai="center" style={{ marginTop: 32 }}>
+          <View
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              backgroundColor: colors.accentSoft,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Feather name="zap" size={20} color={colors.accentEdge} />
+          </View>
+          <Text variant="tiny" color={colors.muted}>
+            IRONLOG · V1.0
+          </Text>
+        </Col>
       </View>
     </Screen>
   );
+}
+
+function SectionLabel({ children }: { children: string }) {
+  const colors = useThemeColors();
+  return (
+    <Text
+      variant="tiny"
+      color={colors.muted}
+      style={{ paddingHorizontal: 4, paddingVertical: 10 }}
+    >
+      {children}
+    </Text>
+  );
+}
+
+function DividerInset() {
+  return <Divider style={{ marginLeft: 60 }} />;
 }
 
 function MenuRow({
@@ -117,70 +144,62 @@ function MenuRow({
   label,
   onPress,
   badge,
-  destructive,
+  last,
 }: {
   icon: keyof typeof Feather.glyphMap;
   label: string;
   onPress: () => void;
-  badge?: number;
-  destructive?: boolean;
+  badge?: string;
+  last?: boolean;
 }) {
   const colors = useThemeColors();
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => ({
-        backgroundColor: pressed ? colors.secondary : "transparent",
-        flexDirection: "row",
-        alignItems: "center",
+        backgroundColor: pressed ? colors.surfaceAlt : "transparent",
         paddingHorizontal: 16,
         paddingVertical: 14,
+        borderTopLeftRadius: 0,
+        borderTopRightRadius: 0,
+        borderBottomLeftRadius: last ? 20 : 0,
+        borderBottomRightRadius: last ? 20 : 0,
       })}
     >
-      <View
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: 8,
-          backgroundColor: colors.secondary,
-          alignItems: "center",
-          justifyContent: "center",
-          marginRight: 12,
-        }}
-      >
-        <Feather
-          name={icon}
-          size={16}
-          color={destructive ? colors.destructive : colors.foreground}
-        />
-      </View>
-      <Text variant="title" style={{ flex: 1 }} color={destructive ? colors.destructive : colors.foreground}>
-        {label}
-      </Text>
-      {badge ? (
-        <View
-          style={{
-            minWidth: 22,
-            height: 22,
-            borderRadius: 11,
-            backgroundColor: colors.primary,
-            alignItems: "center",
-            justifyContent: "center",
-            paddingHorizontal: 6,
-            marginRight: 8,
-          }}
-        >
-          <Text variant="tiny" color="#FFFFFF" weight="bold">
-            {badge}
-          </Text>
-        </View>
-      ) : null}
-      <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+      <Row jc="space-between">
+        <Row gap={14}>
+          <View
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 9,
+              backgroundColor: colors.surfaceAlt,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Feather name={icon} size={16} color={colors.ink} />
+          </View>
+          <Text variant="title">{label}</Text>
+        </Row>
+        <Row gap={8}>
+          {badge ? (
+            <View
+              style={{
+                paddingHorizontal: 7,
+                paddingVertical: 3,
+                borderRadius: 5,
+                backgroundColor: colors.accent,
+              }}
+            >
+              <Text variant="tiny" color={colors.accentInk}>
+                {badge}
+              </Text>
+            </View>
+          ) : null}
+          <Feather name="chevron-right" size={14} color={colors.muted} />
+        </Row>
+      </Row>
     </Pressable>
   );
-}
-
-function Separator() {
-  const colors = useThemeColors();
-  return <View style={{ height: 1, backgroundColor: colors.border, marginLeft: 60 }} />;
 }

@@ -1,18 +1,22 @@
 import { Feather } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
+import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
-import React, { useMemo } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import React, { useMemo, useState } from "react";
+import { Platform, Pressable, View } from "react-native";
 
 import { Heatmap } from "@/components/charts/Heatmap";
+import { DaySwapSheet } from "@/components/home/DaySwapSheet";
+import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
-import { Header } from "@/components/ui/Header";
+import { Divider } from "@/components/ui/Divider";
 import { Screen } from "@/components/ui/Screen";
+import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import type { WorkoutSession } from "@/types";
 import { calorieGoalForGoal, calculateTDEE } from "@/utils/calculations";
-import { dateKey, getDayOfWeek } from "@/utils/date";
+import { dateKey, formatDuration, startOfDay } from "@/utils/date";
 
 export default function HomeScreen() {
   const colors = useThemeColors();
@@ -20,26 +24,42 @@ export default function HomeScreen() {
     profile,
     sessions,
     foodEntries,
-    schedule,
-    allRoutines,
     activeWorkoutId,
     getStreak,
     allFoods,
+    allRoutines,
+    getPlanForDate,
+    getSessionPlan,
+    getNextTrainingDay,
   } = useIronLog();
+
+  const [swapOpen, setSwapOpen] = useState(false);
 
   const streak = getStreak();
   const todayKey = dateKey(Date.now());
   const today = useMemo(() => new Date(), []);
-  const dow = getDayOfWeek(today.getTime());
+  const todayTs = useMemo(() => startOfDay(Date.now()), []);
+  const todayPlan = getPlanForDate(todayTs);
 
-  const todayScheduled = schedule.find((s) => s.dayOfWeek === dow);
-  const todayRoutine = todayScheduled
-    ? allRoutines.find((r) => r.id === todayScheduled.routineId)
-    : null;
-  const todayDay = todayRoutine?.days.find((d) => d.id === todayScheduled?.routineDayId) ?? null;
+  const todayRoutine =
+    todayPlan.kind === "training"
+      ? allRoutines.find((r) => r.id === todayPlan.routineId)
+      : null;
+  const todayDay =
+    todayRoutine && todayPlan.kind === "training"
+      ? todayRoutine.days.find((d) => d.id === todayPlan.routineDayId) ?? null
+      : null;
 
-  const todaySessions = sessions.filter((s) => s.endedAt && dateKey(s.endedAt) === todayKey);
+  const finishedSessions = sessions.filter((s) => s.endedAt);
+  const todaySessions = finishedSessions.filter((s) => dateKey(s.endedAt!) === todayKey);
   const completedToday = todaySessions.length > 0;
+  const latestTodaySession = useMemo(
+    () =>
+      todaySessions
+        .slice()
+        .sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))[0] ?? null,
+    [todaySessions],
+  );
 
   const tdee = calculateTDEE(profile);
   const calorieGoal = profile.caloriesGoal ?? calorieGoalForGoal(tdee, profile.goal);
@@ -51,12 +71,13 @@ export default function HomeScreen() {
     return sum + (food.caloriesPer100g * e.grams) / 100;
   }, 0);
 
-  const last7Sessions = sessions.filter(
-    (s) => s.endedAt && Date.now() - s.endedAt < 7 * 24 * 60 * 60 * 1000,
+  const last7Sessions = finishedSessions.filter(
+    (s) => Date.now() - (s.endedAt ?? 0) < 7 * 24 * 60 * 60 * 1000,
   );
   const weekVolume = last7Sessions.reduce((sum, s) => sum + s.totalVolumeKg, 0);
 
-  const trainedDates = sessions.filter((s) => s.endedAt).map((s) => s.endedAt!);
+  const trainedDates = finishedSessions.map((s) => s.endedAt!);
+  const dayName = today.toLocaleDateString("es-ES", { weekday: "long" }).toUpperCase();
 
   const greeting = (() => {
     const h = today.getHours();
@@ -66,289 +87,506 @@ export default function HomeScreen() {
     return "Buenas noches";
   })();
 
+  const recent = finishedSessions.slice(-3).reverse();
+  const initials = profile.name.trim().slice(0, 1).toUpperCase() || "A";
+
+  const isRest = todayPlan.kind === "rest";
+  const showStartIcon =
+    !!activeWorkoutId ||
+    (!completedToday && !isRest && !!todayRoutine && !!todayDay);
+
+  // Plan-of-the-day & next training context for the planning entry-point card.
+  const todaySessionPlan =
+    !isRest && todayRoutine && todayDay
+      ? getSessionPlan(todayKey, todayRoutine.id, todayDay.id)
+      : undefined;
+  // If today already trained, look for next training day starting tomorrow.
+  const nextTrainingDay = useMemo(
+    () => getNextTrainingDay(14, completedToday ? 1 : 0),
+    [getNextTrainingDay, completedToday],
+  );
+  // Suggestion priority:
+  //  1. Today still pending → plan today.
+  //  2. Today already trained OR rest → plan a future training day (if any).
+  const planTarget = useMemo(() => {
+    if (activeWorkoutId) return null;
+    if (!completedToday && !isRest && todayRoutine && todayDay) {
+      return {
+        timestamp: todayTs,
+        dateKey: todayKey,
+        routineId: todayRoutine.id,
+        routineDayId: todayDay.id,
+        dayName: todayDay.name,
+        routineName: todayRoutine.name,
+        exercisesCount: todayDay.exercises.length,
+        isToday: true,
+        hasPlan: !!todaySessionPlan,
+      };
+    }
+    if (nextTrainingDay && !nextTrainingDay.isToday) {
+      const r = allRoutines.find((x) => x.id === nextTrainingDay.routineId);
+      const d = r?.days.find((x) => x.id === nextTrainingDay.routineDayId);
+      if (!r || !d) return null;
+      const planForNext = getSessionPlan(
+        nextTrainingDay.dateKey,
+        nextTrainingDay.routineId,
+        nextTrainingDay.routineDayId,
+      );
+      return {
+        timestamp: nextTrainingDay.timestamp,
+        dateKey: nextTrainingDay.dateKey,
+        routineId: nextTrainingDay.routineId,
+        routineDayId: nextTrainingDay.routineDayId,
+        dayName: d.name,
+        routineName: r.name,
+        exercisesCount: d.exercises.length,
+        isToday: false,
+        hasPlan: !!planForNext,
+      };
+    }
+    return null;
+  }, [
+    activeWorkoutId,
+    completedToday,
+    isRest,
+    todayRoutine,
+    todayDay,
+    todayTs,
+    todayKey,
+    todaySessionPlan,
+    nextTrainingDay,
+    allRoutines,
+    getSessionPlan,
+  ]);
+
+  // Hero copy reacts to: active session > completed today > today plan > rest.
+  const heroTitle = activeWorkoutId
+    ? "Continuar"
+    : completedToday
+      ? "Sesión"
+      : !isRest && todayRoutine && todayDay
+        ? todayDay.name
+        : "Día de";
+  const heroItalic = activeWorkoutId
+    ? "ahora"
+    : completedToday
+      ? "completa"
+      : !isRest && todayRoutine && todayDay
+        ? "hoy"
+        : "descanso";
+  const heroMeta = activeWorkoutId
+    ? "Tienes una sesión activa"
+    : completedToday && latestTodaySession
+      ? buildCompletedMeta(latestTodaySession)
+      : !isRest && todayRoutine && todayDay
+        ? `${todayRoutine.name} · ${todayDay.exercises.length} ejercicios`
+        : "Tocá para entrenar igual";
+
+  const triggerHaptic = (style: "light" | "medium" = "light") => {
+    if (Platform.OS === "web") return;
+    Haptics.impactAsync(
+      style === "medium"
+        ? Haptics.ImpactFeedbackStyle.Medium
+        : Haptics.ImpactFeedbackStyle.Light,
+    );
+  };
+
+  const handleHeroPress = () => {
+    if (activeWorkoutId) {
+      router.push("/workout/active");
+      return;
+    }
+    if (completedToday && latestTodaySession) {
+      triggerHaptic();
+      router.push(
+        `/workout/summary?sessionId=${latestTodaySession.id}&prs=${latestTodaySession.prsAchieved.length}` as never,
+      );
+      return;
+    }
+    if (!isRest && todayRoutine && todayDay) {
+      triggerHaptic();
+      router.push(
+        `/workout/active?routineId=${todayRoutine.id}&dayId=${todayDay.id}`,
+      );
+      return;
+    }
+    // Rest day: open the swap sheet so the user can train anyway.
+    triggerHaptic();
+    setSwapOpen(true);
+  };
+
+  const handleHeroLongPress = () => {
+    triggerHaptic("medium");
+    setSwapOpen(true);
+  };
+
   return (
-    <Screen scroll>
-      <View style={{ paddingHorizontal: 0, marginBottom: 20 }}>
-        <Text variant="caption" muted>
-          {greeting}
-        </Text>
-        <Text variant="h1" style={{ marginTop: 2 }}>
-          {profile.name}
-        </Text>
-      </View>
-
-      {/* Today's workout hero */}
-      {activeWorkoutId ? (
+    <Screen scroll tabBarSpacing>
+      {/* Greeting */}
+      <Row jc="space-between" ai="flex-start" style={{ marginBottom: 28, paddingTop: 12 }}>
+        <Col gap={6}>
+          <Text variant="tiny" color={colors.muted}>
+            {greeting}
+          </Text>
+          <Text variant="h1">{profile.name}</Text>
+        </Col>
         <Pressable
-          onPress={() => router.push("/workout/active")}
-          style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}
+          onPress={() => router.push("/profile")}
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 22,
+            backgroundColor: colors.surface,
+            borderWidth: 1,
+            borderColor: colors.border,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
         >
-          <LinearGradient
-            colors={["#FF6B35", "#FF4F1F"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[styles.hero, { borderRadius: colors.radius }]}
-          >
-            <View style={{ flex: 1 }}>
-              <Text variant="tiny" color="rgba(255,255,255,0.9)">
-                EN CURSO
-              </Text>
-              <Text variant="h3" color="#FFFFFF" style={{ marginTop: 4 }}>
-                Continuar entrenamiento
-              </Text>
-              <Text variant="caption" color="rgba(255,255,255,0.85)">
-                Tienes una sesión activa
-              </Text>
-            </View>
-            <Feather name="play-circle" size={44} color="#FFFFFF" />
-          </LinearGradient>
+          <Text variant="label" weight="semibold">
+            {initials}
+          </Text>
         </Pressable>
-      ) : todayRoutine && todayDay ? (
+      </Row>
+
+      {/* Hero card */}
+      <Pressable
+        onPress={handleHeroPress}
+        onLongPress={handleHeroLongPress}
+        delayLongPress={350}
+        style={({ pressed }) => ({ opacity: pressed ? 0.92 : 1 })}
+      >
+        <View
+          style={{
+            backgroundColor: colors.ink,
+            borderRadius: 24,
+            padding: 22,
+            position: "relative",
+            overflow: "hidden",
+            marginBottom: 14,
+          }}
+        >
+          <View
+            style={{
+              position: "absolute",
+              right: -30,
+              top: -30,
+              width: 200,
+              height: 200,
+              borderRadius: 999,
+              backgroundColor: isRest ? "rgba(242,240,232,0.06)" : colors.accent,
+              opacity: isRest ? 1 : 0.18,
+            }}
+          />
+          <Row jc="space-between" ai="flex-start" style={{ marginBottom: 28 }}>
+            <Row gap={6} ai="center">
+              <Text
+                variant="tiny"
+                color={isRest && !activeWorkoutId ? "rgba(242,240,232,0.55)" : colors.accent}
+              >
+                {activeWorkoutId ? "EN CURSO" : `HOY · ${dayName}`}
+              </Text>
+              {todayPlan.isOverride && !activeWorkoutId ? (
+                <View
+                  style={{
+                    paddingHorizontal: 6,
+                    paddingVertical: 2,
+                    borderRadius: 4,
+                    backgroundColor: "rgba(201,242,77,0.18)",
+                  }}
+                >
+                  <Text variant="tiny" color={colors.accent}>
+                    AJUSTADO
+                  </Text>
+                </View>
+              ) : null}
+            </Row>
+
+            {showStartIcon ? (
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  backgroundColor: colors.accent,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Feather
+                  name={activeWorkoutId ? "play-circle" : "play"}
+                  size={16}
+                  color={colors.accentInk}
+                />
+              </View>
+            ) : completedToday ? (
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  backgroundColor: colors.accent,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Feather name="check" size={18} color={colors.accentInk} />
+              </View>
+            ) : (
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Feather
+                  name="moon"
+                  size={18}
+                  color="rgba(242,240,232,0.55)"
+                />
+              </View>
+            )}
+          </Row>
+          <Text variant="hero" color={colors.bg}>
+            {heroTitle}{" "}
+            <Text variant="hero" color={colors.bg} italic style={{ fontWeight: "300" }}>
+              {heroItalic}
+            </Text>
+          </Text>
+          <Row gap={8} style={{ marginTop: 14 }}>
+            <Text variant="caption" color="rgba(242,240,232,0.65)">
+              {heroMeta}
+            </Text>
+          </Row>
+          <Text
+            variant="tiny"
+            color="rgba(242,240,232,0.35)"
+            style={{ marginTop: 10 }}
+          >
+            {completedToday && !activeWorkoutId
+              ? "TOCAR PARA VER RESUMEN"
+              : "MANTENER PARA CAMBIAR DE DÍA"}
+          </Text>
+        </View>
+      </Pressable>
+
+      {/* Planning entry-point */}
+      {planTarget ? (
         <Pressable
-          onPress={() => router.push(`/workout/active?routineId=${todayRoutine.id}&dayId=${todayDay.id}`)}
-          style={({ pressed }) => ({ opacity: pressed ? 0.9 : 1 })}
+          onPress={() =>
+            router.push(
+              `/workout/plan?routineId=${planTarget.routineId}&dayId=${planTarget.routineDayId}&dateKey=${planTarget.dateKey}` as never,
+            )
+          }
+          style={({ pressed }) => ({
+            marginBottom: 14,
+            opacity: pressed ? 0.92 : 1,
+          })}
         >
-          <LinearGradient
-            colors={["#FF6B35", "#E64A1A"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[styles.hero, { borderRadius: colors.radius }]}
-          >
-            <View style={{ flex: 1 }}>
-              <Text variant="tiny" color="rgba(255,255,255,0.9)">
-                HOY
-              </Text>
-              <Text variant="h3" color="#FFFFFF" style={{ marginTop: 4 }}>
-                {todayDay.name}
-              </Text>
-              <Text variant="caption" color="rgba(255,255,255,0.85)">
-                {todayRoutine.name} · {todayDay.exercises.length} ejercicios
-              </Text>
-            </View>
-            <View
-              style={{
-                backgroundColor: "rgba(255,255,255,0.2)",
-                borderRadius: 24,
-                width: 48,
-                height: 48,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Feather name="play" size={22} color="#FFFFFF" />
-            </View>
-          </LinearGradient>
+          <Card variant={planTarget.hasPlan ? "default" : "accent"} padding={0}>
+            <Row gap={12} style={{ paddingVertical: 14, paddingHorizontal: 16 }}>
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  backgroundColor: planTarget.hasPlan
+                    ? colors.surfaceAlt
+                    : colors.accent,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Feather
+                  name={planTarget.hasPlan ? "check-circle" : "edit-3"}
+                  size={18}
+                  color={
+                    planTarget.hasPlan ? colors.accentEdge : colors.accentInk
+                  }
+                />
+              </View>
+              <Col flex={1} gap={2}>
+                <Text variant="title" numberOfLines={1}>
+                  {planTarget.hasPlan
+                    ? planTarget.isToday
+                      ? "Plan de hoy listo"
+                      : `Plan listo · ${planTarget.dayName}`
+                    : planTarget.isToday
+                      ? "Planear entrenamiento"
+                      : "Planear próximo entrenamiento"}
+                </Text>
+                <Text variant="caption" muted numberOfLines={1}>
+                  {planTarget.isToday
+                    ? `${planTarget.dayName} · ${planTarget.exercisesCount} ejercicios`
+                    : `${formatPlanWhen(planTarget.timestamp)} · ${planTarget.dayName}`}
+                </Text>
+              </Col>
+              <Feather
+                name="chevron-right"
+                size={16}
+                color={colors.muted}
+              />
+            </Row>
+          </Card>
         </Pressable>
-      ) : (
-        <Card>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <View
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 22,
-                backgroundColor: colors.accent,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Feather name="calendar" size={20} color={colors.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text variant="title">Día de descanso</Text>
-              <Text variant="caption" muted>
-                No tienes nada programado hoy
-              </Text>
-            </View>
-            <Pressable onPress={() => router.push("/planning")}>
-              <Feather name="chevron-right" size={20} color={colors.mutedForeground} />
-            </Pressable>
-          </View>
-        </Card>
-      )}
+      ) : null}
 
-      {/* Quick stats */}
-      <View style={{ flexDirection: "row", gap: 12, marginTop: 16 }}>
-        <StatCard
-          icon="zap"
-          value={String(streak)}
-          label={`${streak === 1 ? "Día" : "Días"} seguidos`}
-          color={colors.primary}
-        />
-        <StatCard
-          icon="award"
-          value={String(sessions.filter((s) => s.endedAt).length)}
-          label="Entrenamientos"
-          color={colors.success}
-        />
-      </View>
-
-      <View style={{ flexDirection: "row", gap: 12, marginTop: 12 }}>
-        <StatCard
-          icon="bar-chart-2"
-          value={`${(weekVolume / 1000).toFixed(1)}t`}
-          label="Volumen 7 días"
-          color={colors.backColor}
-        />
-        <StatCard
-          icon="pie-chart"
-          value={`${Math.round(consumedCalories)}`}
-          label={`/ ${calorieGoal} kcal`}
-          color={colors.warning}
-        />
-      </View>
+      {/* Metrics rail */}
+      <Card padding={0} style={{ marginBottom: 14 }}>
+        <Row jc="space-between" style={{ paddingVertical: 16, paddingHorizontal: 4 }}>
+          <MetricCell label="RACHA" value={String(streak)} sub="días" />
+          <Divider vertical />
+          <MetricCell label="SESIONES" value={String(finishedSessions.length)} sub="totales" />
+          <Divider vertical />
+          <MetricCell
+            label="VOL · 7D"
+            value={(weekVolume / 1000).toFixed(1)}
+            sub="t"
+            highlight
+          />
+          <Divider vertical />
+          <MetricCell
+            label="KCAL"
+            value={String(Math.round(consumedCalories))}
+            sub={`/ ${calorieGoal}`}
+          />
+        </Row>
+      </Card>
 
       {/* Heatmap */}
-      <Card style={{ marginTop: 16 }}>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <View>
-            <Text variant="title">Actividad</Text>
+      <Card style={{ marginBottom: 14 }}>
+        <Row jc="space-between" ai="flex-start" style={{ marginBottom: 16 }}>
+          <Col gap={4}>
+            <Text variant="h3">Actividad</Text>
             <Text variant="caption" muted>
               Últimas 18 semanas
             </Text>
-          </View>
-          <View
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 18,
-              backgroundColor: colors.accent,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Feather name="activity" size={16} color={colors.primary} />
-          </View>
-        </View>
-        <Heatmap trainedDates={trainedDates} weeks={18} cellSize={13} />
+          </Col>
+          <Text variant="tiny" color={colors.muted}>
+            {finishedSessions.length} / 126 días
+          </Text>
+        </Row>
+        <Heatmap trainedDates={trainedDates} weeks={18} />
       </Card>
 
-      {completedToday ? (
-        <Card style={{ marginTop: 16, backgroundColor: colors.accent, borderColor: colors.primary }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-            <Feather name="check-circle" size={24} color={colors.primary} />
-            <View style={{ flex: 1 }}>
-              <Text variant="title" color={colors.primary}>
-                ¡Entrenamiento completado hoy!
-              </Text>
-              <Text variant="caption" color={colors.accentForeground}>
-                Excelente trabajo. Recuerda comer bien y dormir.
-              </Text>
-            </View>
-          </View>
-        </Card>
-      ) : null}
-
-      {/* Recent activity */}
-      {sessions.filter((s) => s.endedAt).slice(-3).reverse().length > 0 ? (
-        <View style={{ marginTop: 24 }}>
-          <Text variant="h3" style={{ marginBottom: 12 }}>
-            Sesiones recientes
+      {/* Recent sessions */}
+      {recent.length > 0 ? (
+        <>
+          <Text
+            variant="tiny"
+            color={colors.muted}
+            style={{ paddingHorizontal: 4, paddingVertical: 10 }}
+          >
+            SESIONES RECIENTES
           </Text>
-          <View style={{ gap: 8 }}>
-            {sessions
-              .filter((s) => s.endedAt)
-              .slice(-3)
-              .reverse()
-              .map((s) => (
-                <Card key={s.id}>
-                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <Col gap={8}>
+            {recent.map((s) => (
+              <Card key={s.id} padding={0}>
+                <Row jc="space-between" style={{ paddingVertical: 14, paddingHorizontal: 16 }}>
+                  <Row gap={12} flex={1}>
                     <View
                       style={{
-                        width: 4,
-                        height: 36,
-                        backgroundColor: colors.primary,
+                        width: 3,
+                        alignSelf: "stretch",
+                        backgroundColor: colors.accent,
                         borderRadius: 2,
-                        marginRight: 12,
                       }}
                     />
-                    <View style={{ flex: 1 }}>
+                    <Col gap={2} flex={1}>
                       <Text variant="title" numberOfLines={1}>
                         {s.dayName}
                       </Text>
                       <Text variant="caption" muted numberOfLines={1}>
                         {s.sets.length} sets · {(s.totalVolumeKg / 1000).toFixed(1)}t
                       </Text>
-                    </View>
-                    {s.prsAchieved.length > 0 ? (
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          alignItems: "center",
-                          gap: 4,
-                          backgroundColor: colors.accent,
-                          paddingHorizontal: 8,
-                          paddingVertical: 4,
-                          borderRadius: 12,
-                        }}
-                      >
-                        <Feather name="trending-up" size={12} color={colors.primary} />
-                        <Text variant="tiny" color={colors.primary} weight="bold">
-                          {s.prsAchieved.length} PR
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
-                </Card>
-              ))}
-          </View>
-        </View>
+                    </Col>
+                  </Row>
+                  {s.prsAchieved.length > 0 ? (
+                    <Badge label={`${s.prsAchieved.length} PR`} />
+                  ) : null}
+                </Row>
+              </Card>
+            ))}
+          </Col>
+        </>
       ) : null}
+
+      <DaySwapSheet visible={swapOpen} onClose={() => setSwapOpen(false)} />
     </Screen>
   );
 }
 
-function StatCard({
-  icon,
-  value,
+function buildCompletedMeta(session: WorkoutSession): string {
+  const skipped = new Set(session.skippedExerciseIds ?? []);
+  const setsCount = session.sets.filter(
+    (s) => !s.isWarmup && !skipped.has(s.exerciseId),
+  ).length;
+  const duration = (session.endedAt ?? Date.now()) - session.startedAt;
+  const parts: string[] = [`${setsCount} ${setsCount === 1 ? "set" : "sets"}`];
+  if (session.totalVolumeKg > 0) {
+    parts.push(`${(session.totalVolumeKg / 1000).toFixed(1)} t`);
+  }
+  parts.push(formatDuration(duration));
+  if (session.prsAchieved.length > 0) {
+    parts.push(
+      `${session.prsAchieved.length} ${session.prsAchieved.length === 1 ? "PR" : "PRs"}`,
+    );
+  }
+  return parts.join(" · ");
+}
+
+function formatPlanWhen(timestamp: number): string {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(timestamp);
+  target.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return "Hoy";
+  if (diffDays === 1) return "Mañana";
+  if (diffDays > 0 && diffDays < 7) {
+    const labels = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+    return labels[(target.getDay() + 6) % 7];
+  }
+  if (diffDays > 0) return `En ${diffDays} días`;
+  return target.toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+}
+
+function MetricCell({
   label,
-  color,
+  value,
+  sub,
+  highlight,
 }: {
-  icon: keyof typeof Feather.glyphMap;
-  value: string;
   label: string;
-  color: string;
+  value: string;
+  sub?: string;
+  highlight?: boolean;
 }) {
   const colors = useThemeColors();
   return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: colors.card,
-        borderColor: colors.border,
-        borderWidth: 1,
-        borderRadius: colors.radius,
-        padding: 14,
-      }}
-    >
-      <View
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: 16,
-          backgroundColor: color + "20",
-          alignItems: "center",
-          justifyContent: "center",
-          marginBottom: 8,
-        }}
-      >
-        <Feather name={icon} size={16} color={color} />
-      </View>
-      <Text variant="h2" style={{ fontSize: 24, lineHeight: 28 }}>
-        {value}
-      </Text>
-      <Text variant="caption" muted>
+    <Col gap={4} ai="center" flex={1} style={{ paddingHorizontal: 4 }}>
+      <Text variant="tiny" color={colors.muted}>
         {label}
       </Text>
-    </View>
+      <View
+        style={{
+          backgroundColor: highlight ? colors.accent : "transparent",
+          paddingHorizontal: highlight ? 6 : 0,
+          borderRadius: 4,
+        }}
+      >
+        <Text variant="monoLg" color={colors.ink}>
+          {value}
+        </Text>
+      </View>
+      {sub ? (
+        <Text variant="caption" muted>
+          {sub}
+        </Text>
+      ) : null}
+    </Col>
   );
 }
-
-const styles = StyleSheet.create({
-  hero: {
-    padding: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-});

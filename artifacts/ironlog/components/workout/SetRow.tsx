@@ -13,7 +13,16 @@ interface SetRowProps {
   initialReps?: number;
   previousWeight?: number;
   previousReps?: number;
+  /** Pre-defined target values from a SessionPlan. Used to pre-fill the
+   *  inputs before the set is completed, with priority over `previousX`. */
+  plannedWeight?: number;
+  plannedReps?: number;
+  plannedRpe?: number;
   completed: boolean;
+  /** Highlights the row as a PR (lime tinted bg + edge border). */
+  isPr?: boolean;
+  /** Highlights the row as the active/next set. */
+  isActive?: boolean;
   onComplete: (weight: number, reps: number, rpe?: number) => void;
   onUncomplete: () => void;
   onRemove: () => void;
@@ -26,22 +35,46 @@ export function SetRow({
   initialReps,
   previousWeight,
   previousReps,
+  plannedWeight,
+  plannedReps,
+  plannedRpe,
   completed,
+  isPr,
+  isActive,
   onComplete,
   onUncomplete,
   onRemove,
 }: SetRowProps) {
   const colors = useThemeColors();
+  // Pre-fill priority for not-yet-completed sets: plan > previous > empty.
+  // When completed, we always show the actual value (`initialX`).
   const [weight, setWeight] = useState<string>(
-    initialWeight != null ? String(initialWeight) : previousWeight != null ? String(previousWeight) : "",
+    initialWeight != null
+      ? String(initialWeight)
+      : plannedWeight != null
+        ? String(plannedWeight)
+        : previousWeight != null
+          ? String(previousWeight)
+          : "",
   );
   const [reps, setReps] = useState<string>(
-    initialReps != null ? String(initialReps) : previousReps != null ? String(previousReps) : "",
+    initialReps != null
+      ? String(initialReps)
+      : plannedReps != null
+        ? String(plannedReps)
+        : previousReps != null
+          ? String(previousReps)
+          : "",
   );
-  const [rpe, setRpe] = useState<string>("");
+  const [rpe, setRpe] = useState<string>(
+    plannedRpe != null && !completed ? String(plannedRpe) : "",
+  );
+
+  const isPlanned =
+    !completed &&
+    (plannedWeight != null || plannedReps != null || plannedRpe != null);
 
   const setLabel = isWarmup ? "C" : String(index);
-  const setColor = isWarmup ? colors.warning : colors.foreground;
 
   const handleComplete = () => {
     const w = parseFloat(weight) || 0;
@@ -52,32 +85,60 @@ export function SetRow({
     onComplete(w, r, rpeVal);
   };
 
+  // Set badge fill: warmup → orange-yellow, completed work → lime, otherwise outline.
+  const badgeBg = completed ? (isWarmup ? colors.mHombros : colors.accent) : "transparent";
+  const badgeBorder = completed ? "transparent" : colors.border;
+  const badgeText = completed
+    ? colors.accentInk
+    : isWarmup
+      ? colors.mHombros
+      : colors.muted;
+
+  const cellBg = completed
+    ? colors.surfaceAlt
+    : isPlanned
+      ? colors.accentSoft
+      : "transparent";
+  const cellBorder = isActive
+    ? colors.ink
+    : isPlanned
+      ? colors.accentEdge
+      : colors.border;
+
+  const checkBg = completed ? colors.accent : "transparent";
+  const checkBorder = completed ? colors.accentEdge : colors.border;
+
   return (
     <View
       style={[
         styles.row,
         {
-          backgroundColor: completed ? colors.accent : colors.secondary,
-          borderColor: completed ? colors.primary : "transparent",
-          borderWidth: 1,
-          opacity: completed ? 1 : 1,
+          backgroundColor: isPr ? colors.accentSoft : "transparent",
+          borderColor: isPr ? colors.accentEdge : "transparent",
+          borderWidth: isPr ? 1 : 0,
+          padding: isPr ? 4 : 0,
         },
       ]}
     >
-      <View style={[styles.setBadge, { backgroundColor: completed ? colors.primary : colors.background }]}>
-        <Text
-          variant="label"
-          weight="bold"
-          color={completed ? colors.primaryForeground : setColor}
-        >
+      <View
+        style={[
+          styles.setBadge,
+          {
+            backgroundColor: badgeBg,
+            borderColor: badgeBorder,
+            borderWidth: completed ? 0 : 1,
+          },
+        ]}
+      >
+        <Text variant="label" weight="bold" color={badgeText}>
           {setLabel}
         </Text>
       </View>
 
       <View style={styles.previousContainer}>
-        <Text variant="caption" muted style={{ textAlign: "center" }}>
+        <Text variant="mono" color={colors.muted} style={{ fontSize: 11, textAlign: "center" }}>
           {previousWeight != null && previousReps != null
-            ? `${previousWeight} × ${previousReps}`
+            ? `${previousWeight}×${previousReps}`
             : "—"}
         </Text>
       </View>
@@ -87,15 +148,15 @@ export function SetRow({
           value={weight}
           onChangeText={setWeight}
           keyboardType="decimal-pad"
-          placeholder="0"
-          placeholderTextColor={colors.mutedForeground}
+          placeholder="—"
+          placeholderTextColor={colors.muted}
           editable={!completed}
           style={[
             styles.input,
             {
-              color: colors.foreground,
-              backgroundColor: completed ? "transparent" : colors.background,
-              fontFamily: "Inter_600SemiBold",
+              color: colors.ink,
+              backgroundColor: cellBg,
+              borderColor: cellBorder,
             },
           ]}
         />
@@ -103,15 +164,15 @@ export function SetRow({
           value={reps}
           onChangeText={setReps}
           keyboardType="number-pad"
-          placeholder="0"
-          placeholderTextColor={colors.mutedForeground}
+          placeholder="—"
+          placeholderTextColor={colors.muted}
           editable={!completed}
           style={[
             styles.input,
             {
-              color: colors.foreground,
-              backgroundColor: completed ? "transparent" : colors.background,
-              fontFamily: "Inter_600SemiBold",
+              color: colors.ink,
+              backgroundColor: cellBg,
+              borderColor: cellBorder,
             },
           ]}
         />
@@ -121,19 +182,34 @@ export function SetRow({
             onChangeText={setRpe}
             keyboardType="decimal-pad"
             placeholder="—"
-            placeholderTextColor={colors.mutedForeground}
+            placeholderTextColor={colors.muted}
             editable={!completed}
             style={[
               styles.input,
               {
-                color: colors.mutedForeground,
-                backgroundColor: completed ? "transparent" : colors.background,
-                fontFamily: "Inter_500Medium",
+                color: colors.ink,
+                backgroundColor: cellBg,
+                borderColor: cellBorder,
               },
             ]}
           />
         ) : (
-          <View style={styles.input} />
+          <View
+            style={[
+              styles.input,
+              {
+                backgroundColor: cellBg,
+                borderColor: cellBorder,
+                opacity: 0.4,
+                alignItems: "center",
+                justifyContent: "center",
+              },
+            ]}
+          >
+            <Text variant="mono" color={colors.muted}>
+              —
+            </Text>
+          </View>
         )}
       </View>
 
@@ -143,16 +219,16 @@ export function SetRow({
         style={({ pressed }) => [
           styles.checkBtn,
           {
-            backgroundColor: completed ? colors.primary : colors.background,
-            borderColor: completed ? colors.primary : colors.border,
+            backgroundColor: checkBg,
+            borderColor: checkBorder,
             opacity: pressed ? 0.7 : 1,
           },
         ]}
       >
         <Feather
-          name={completed ? "check" : "check"}
-          size={18}
-          color={completed ? colors.primaryForeground : colors.mutedForeground}
+          name="check"
+          size={14}
+          color={completed ? colors.accentInk : colors.muted}
         />
       </Pressable>
     </View>
@@ -163,20 +239,18 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    borderRadius: 12,
-    gap: 8,
+    gap: 6,
+    borderRadius: 10,
   },
   setBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
   },
   previousContainer: {
-    width: 64,
+    width: 56,
   },
   inputsContainer: {
     flex: 1,
@@ -187,14 +261,17 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 36,
     borderRadius: 8,
-    paddingHorizontal: 8,
-    fontSize: 15,
+    paddingHorizontal: 6,
+    fontSize: 14,
     textAlign: "center",
+    fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }),
+    fontWeight: "600",
+    borderWidth: 1,
   },
   checkBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 28,
+    height: 28,
+    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,

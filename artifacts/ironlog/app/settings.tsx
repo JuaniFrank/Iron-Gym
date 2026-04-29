@@ -9,6 +9,7 @@ import { Header } from "@/components/ui/Header";
 import { Input } from "@/components/ui/Input";
 import { Screen } from "@/components/ui/Screen";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
@@ -39,11 +40,15 @@ export default function SettingsScreen() {
 
   return (
     <Screen noPadding>
-      <Header title="Ajustes" back />
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }}>
-        <Card>
-          <Text variant="title" style={{ marginBottom: 12 }}>
-            Apariencia
+      <Header title="" back compact />
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}>
+        <Text variant="h1" style={{ marginBottom: 18, paddingHorizontal: 4 }}>
+          Ajustes
+        </Text>
+
+        <Card style={{ marginBottom: 12 }}>
+          <Text variant="tiny" color={colors.muted} style={{ marginBottom: 10 }}>
+            APARIENCIA
           </Text>
           <SegmentedControl
             options={[
@@ -56,9 +61,9 @@ export default function SettingsScreen() {
           />
         </Card>
 
-        <Card>
-          <Text variant="title" style={{ marginBottom: 12 }}>
-            Unidades
+        <Card style={{ marginBottom: 12 }}>
+          <Text variant="tiny" color={colors.muted} style={{ marginBottom: 10 }}>
+            UNIDADES
           </Text>
           <SegmentedControl
             options={[
@@ -70,11 +75,12 @@ export default function SettingsScreen() {
           />
         </Card>
 
-        <Card>
-          <Text variant="title" style={{ marginBottom: 12 }}>
-            Descanso por defecto
+        <Card style={{ marginBottom: 12 }}>
+          <Text variant="tiny" color={colors.muted} style={{ marginBottom: 6 }}>
+            DESCANSO POR DEFECTO
           </Text>
           <Input
+            fieldLabel=""
             value={rest}
             onChangeText={(v) => {
               setRest(v);
@@ -82,87 +88,109 @@ export default function SettingsScreen() {
               if (!isNaN(n) && n > 0) setDefaultRest(n);
             }}
             keyboardType="number-pad"
-            rightAdornment={
-              <Text variant="caption" muted>
-                seg
-              </Text>
-            }
-            hint="Tiempo de descanso entre series cuando creas un nuevo ejercicio"
+            suffix="seg"
           />
+          <Text variant="caption" muted style={{ marginTop: 8 }}>
+            Tiempo entre series cuando no se especifica.
+          </Text>
         </Card>
 
-        <Card>
-          <Text variant="title" style={{ marginBottom: 6 }}>
-            Metas nutricionales
+        <Card style={{ marginBottom: 12 }}>
+          <Text variant="tiny" color={colors.muted} style={{ marginBottom: 4 }}>
+            METAS NUTRICIONALES
           </Text>
           <Text variant="caption" muted style={{ marginBottom: 12 }}>
-            Sugerido: {defaultCal} kcal · {defaultMacros.protein}P / {defaultMacros.carbs}C / {defaultMacros.fat}G
+            Sugeridas: {defaultCal.toLocaleString()} kcal · {defaultMacros.protein}g P · {defaultMacros.carbs}g C · {defaultMacros.fat}g G
           </Text>
-          <View style={{ gap: 10 }}>
-            <Input label="Calorías (kcal)" value={calGoal} onChangeText={setCalGoal} keyboardType="number-pad" />
-            <View style={{ flexDirection: "row", gap: 8 }}>
+          <Col gap={8}>
+            <Input
+              fieldLabel="CALORÍAS"
+              value={calGoal}
+              onChangeText={setCalGoal}
+              keyboardType="number-pad"
+              suffix="kcal"
+            />
+            <Row gap={8}>
               <View style={{ flex: 1 }}>
-                <Input label="Prot (g)" value={proGoal} onChangeText={setProGoal} keyboardType="number-pad" />
+                <Input
+                  fieldLabel="PROT"
+                  value={proGoal}
+                  onChangeText={setProGoal}
+                  keyboardType="number-pad"
+                  suffix="g"
+                />
               </View>
               <View style={{ flex: 1 }}>
-                <Input label="Carb (g)" value={carGoal} onChangeText={setCarGoal} keyboardType="number-pad" />
+                <Input
+                  fieldLabel="CARB"
+                  value={carGoal}
+                  onChangeText={setCarGoal}
+                  keyboardType="number-pad"
+                  suffix="g"
+                />
               </View>
               <View style={{ flex: 1 }}>
-                <Input label="Grasa (g)" value={fatGoal} onChangeText={setFatGoal} keyboardType="number-pad" />
+                <Input
+                  fieldLabel="GRASA"
+                  value={fatGoal}
+                  onChangeText={setFatGoal}
+                  keyboardType="number-pad"
+                  suffix="g"
+                />
               </View>
-            </View>
-            <Button label="Guardar metas" icon="check" onPress={saveNutrition} />
-          </View>
+            </Row>
+            <Button label="Guardar metas" icon="check" variant="dark" onPress={saveNutrition} />
+          </Col>
         </Card>
 
-        <Card>
-          <Pressable
-            onPress={() =>
-              Alert.alert(
-                "Borrar todos los datos",
-                "Esto eliminará todas tus rutinas, sesiones, comidas y registros corporales. No se puede deshacer.",
-                [
-                  { text: "Cancelar", style: "cancel" },
-                  {
-                    text: "Borrar todo",
-                    style: "destructive",
-                    onPress: async () => {
-                      await resetAll();
-                      router.replace("/");
-                    },
+        <Pressable
+          onPress={() =>
+            Alert.alert(
+              "Borrar todos los datos",
+              "Esto eliminará todas tus rutinas, sesiones, comidas y registros corporales. No se puede deshacer.",
+              [
+                { text: "Cancelar", style: "cancel" },
+                {
+                  text: "Borrar todo",
+                  style: "destructive",
+                  onPress: async () => {
+                    await resetAll();
+                    router.replace("/");
                   },
-                ],
-              )
-            }
-            style={({ pressed }) => ({
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 12,
-              opacity: pressed ? 0.7 : 1,
-            })}
-          >
-            <View
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 18,
-                backgroundColor: colors.destructive + "20",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Feather name="trash-2" size={16} color={colors.destructive} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text variant="title" color={colors.destructive}>
-                Borrar todos los datos
-              </Text>
-              <Text variant="caption" muted>
-                Restablecer la app a estado inicial
-              </Text>
-            </View>
-          </Pressable>
-        </Card>
+                },
+              ],
+            )
+          }
+          style={({ pressed }) => ({
+            opacity: pressed ? 0.85 : 1,
+          })}
+        >
+          <Card style={{ borderColor: colors.danger, marginBottom: 14 }}>
+            <Row gap={12}>
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 12,
+                  backgroundColor: "rgba(197,68,58,0.1)",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Feather name="trash-2" size={16} color={colors.danger} />
+              </View>
+              <Col gap={2} flex={1}>
+                <Text variant="title" color={colors.danger}>
+                  Borrar todos los datos
+                </Text>
+                <Text variant="caption" muted>
+                  Restablecer la app a estado inicial
+                </Text>
+              </Col>
+              <Feather name="chevron-right" size={14} color={colors.muted} />
+            </Row>
+          </Card>
+        </Pressable>
       </ScrollView>
     </Screen>
   );

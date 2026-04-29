@@ -71,6 +71,10 @@ export interface WorkoutSession {
   endedAt?: number;
   sets: CompletedSet[];
   exerciseOrder: string[];
+  /** Subset of exerciseOrder marked as "saltado" in this session.
+   *  The exercise stays in the order (so it can be un-skipped) but its sets
+   *  don't count for volume / completion. */
+  skippedExerciseIds?: string[];
   totalVolumeKg: number;
   prsAchieved: PRRecord[];
   notes?: string;
@@ -135,6 +139,15 @@ export interface FoodEntry {
   grams: number;
 }
 
+export interface VolumeTarget {
+  /** Minimum effective volume — sets/week below this don't drive growth. */
+  mev: number;
+  /** Maximum adaptive volume — typical productive range upper bound. */
+  mav: number;
+  /** Maximum recoverable volume — exceeding it tends to break recovery. */
+  mrv: number;
+}
+
 export interface UserProfile {
   name: string;
   age: number;
@@ -149,6 +162,9 @@ export interface UserProfile {
   proteinGoalG?: number;
   carbsGoalG?: number;
   fatGoalG?: number;
+  /** Per-muscle weekly volume targets (sets/week). When undefined, defaults
+   *  from `constants/volumeTargets.ts` are used. */
+  volumeTargets?: Partial<Record<MuscleGroup, VolumeTarget>>;
 }
 
 export interface FitnessGoal {
@@ -167,6 +183,66 @@ export interface ScheduledRoutine {
   routineId: string;
   routineDayId: string;
 }
+
+/**
+ * Per-date plan override — wins over the weekly `ScheduledRoutine` for that
+ * single calendar date. `routineId == null` is an explicit rest override
+ * (e.g. user converted a planned training day into rest for one date).
+ *
+ * Keyed by `dateKey` (YYYY-MM-DD) so it maps cleanly to a future DB table:
+ * `schedule_overrides(date_key TEXT PK, routine_id, routine_day_id, created_at)`.
+ */
+export interface ScheduleOverride {
+  dateKey: string;
+  routineId: string | null;
+  routineDayId: string | null;
+  createdAt: number;
+}
+
+/**
+ * Pre-defined values for one set, before the user actually performs it.
+ * Any field can be omitted: the user may want to plan only reps but leave
+ * the weight to feel out, etc.
+ */
+export interface PlannedSet {
+  weight?: number;
+  reps?: number;
+  rpe?: number;
+  isWarmup: boolean;
+}
+
+export interface PlannedExercise {
+  exerciseId: string;
+  sets: PlannedSet[];
+  notes?: string;
+}
+
+/**
+ * A pre-defined plan for a specific calendar date and routine day. When a
+ * workout starts and a matching plan exists, its values pre-fill the
+ * `SetRow` inputs in the active screen.
+ *
+ * Keyed by `dateKey + routineId + routineDayId` — a single date can have
+ * at most one plan (matching its resolved schedule). DB shape:
+ * `session_plans(date_key TEXT, routine_id TEXT, routine_day_id TEXT,
+ *  exercises JSONB, updated_at, PRIMARY KEY(date_key))`.
+ */
+export interface SessionPlan {
+  dateKey: string;
+  routineId: string;
+  routineDayId: string;
+  exercises: PlannedExercise[];
+  updatedAt: number;
+}
+
+export type ResolvedPlan =
+  | {
+      kind: "training";
+      routineId: string;
+      routineDayId: string;
+      isOverride: boolean;
+    }
+  | { kind: "rest"; isOverride: boolean };
 
 export interface AchievementUnlock {
   id: string;

@@ -1,8 +1,8 @@
 import React from "react";
-import { Platform, ScrollView, StyleSheet, View, ViewStyle, StatusBar } from "react-native";
+import { Platform, RefreshControlProps, ScrollView, StatusBar, StyleSheet, View, ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useThemeColors } from "@/contexts/ThemeContext";
+import { useTheme } from "@/contexts/ThemeContext";
 
 interface ScreenProps {
   children: React.ReactNode;
@@ -10,8 +10,10 @@ interface ScreenProps {
   noPadding?: boolean;
   style?: ViewStyle;
   contentStyle?: ViewStyle;
-  refreshControl?: React.ReactElement;
+  refreshControl?: React.ReactElement<RefreshControlProps>;
   edges?: { top?: boolean; bottom?: boolean };
+  /** Extra bottom padding to clear the floating tab bar. */
+  tabBarSpacing?: boolean;
 }
 
 export function Screen({
@@ -22,35 +24,41 @@ export function Screen({
   contentStyle,
   refreshControl,
   edges = { top: true, bottom: true },
+  tabBarSpacing = false,
 }: ScreenProps) {
-  const colors = useThemeColors();
+  const { colors, scheme } = useTheme();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
 
-  const topInset = edges.top ? (isWeb ? Math.max(insets.top, 67) : insets.top) : 0;
-  const bottomInset = edges.bottom ? (isWeb ? Math.max(insets.bottom, 100) : insets.bottom + 84) : 0;
+  // When `noPadding` is set, the caller is responsible for ALL spacing
+  // (horizontal, vertical, AND top safe area). Typical case: a `<Header>` or a
+  // custom in-screen header is rendered as the first child and handles the
+  // notch. Doing it here too would double the inset.
+  const topInset = edges.top && !noPadding
+    ? (isWeb ? Math.max(insets.top, 16) : insets.top)
+    : 0;
+  const baseBottom = edges.bottom ? (isWeb ? Math.max(insets.bottom, 16) : insets.bottom) : 0;
+  const bottomInset = baseBottom + (tabBarSpacing ? 110 : 16);
 
-  const padding = noPadding ? 0 : 16;
+  const horizontalPadding = noPadding ? 0 : 20;
 
   const containerStyle: ViewStyle = {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.bg,
     ...style,
   };
 
   const innerStyle: ViewStyle = {
     paddingTop: topInset + (noPadding ? 0 : 8),
     paddingBottom: bottomInset,
-    paddingHorizontal: padding,
+    paddingHorizontal: horizontalPadding,
     ...contentStyle,
   };
 
   if (scroll) {
     return (
       <View style={containerStyle}>
-        <StatusBar
-          barStyle={colors.background === "#0A0A0A" ? "light-content" : "dark-content"}
-        />
+        <StatusBar barStyle={scheme === "dark" ? "light-content" : "dark-content"} />
         <ScrollView
           style={styles.flex}
           contentContainerStyle={innerStyle}
@@ -65,9 +73,7 @@ export function Screen({
 
   return (
     <View style={containerStyle}>
-      <StatusBar
-        barStyle={colors.background === "#0A0A0A" ? "light-content" : "dark-content"}
-      />
+      <StatusBar barStyle={scheme === "dark" ? "light-content" : "dark-content"} />
       <View style={[styles.flex, innerStyle]}>{children}</View>
     </View>
   );
