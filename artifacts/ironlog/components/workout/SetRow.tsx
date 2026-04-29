@@ -23,9 +23,16 @@ interface SetRowProps {
   isPr?: boolean;
   /** Highlights the row as the active/next set. */
   isActive?: boolean;
+  /** Si este set ya tiene 1+ notas. Muestra badge "•" en el check. */
+  hasNotes?: boolean;
   onComplete: (weight: number, reps: number, rpe?: number) => void;
   onUncomplete: () => void;
   onRemove: () => void;
+  /** Tap en el ícono edit-2 al lado del check. Abre NoteSheet. */
+  onNotePress?: () => void;
+  /** Long-press en el botón check. Si se omite, fallback al onRemove
+   *  (preserva comportamiento legacy). */
+  onCheckLongPress?: () => void;
 }
 
 export function SetRow({
@@ -41,9 +48,12 @@ export function SetRow({
   completed,
   isPr,
   isActive,
+  hasNotes,
   onComplete,
   onUncomplete,
   onRemove,
+  onNotePress,
+  onCheckLongPress,
 }: SetRowProps) {
   const colors = useThemeColors();
   // Pre-fill priority for not-yet-completed sets: plan > previous > empty.
@@ -94,20 +104,28 @@ export function SetRow({
       ? colors.mHombros
       : colors.muted;
 
+  // Cell visuals — orden de prioridad:
+  // 1. completed → fondo gris atenuado (ya está, atrás)
+  // 2. active (próximo a hacer) → fondo neutro + border ink fuerte (presencia)
+  // 3. planned (futuro con valores prefijados) → bg transparente, solo border
+  //    accentEdge sutil para señalar "valor sugerido". Esto evita que se
+  //    confunda con el active/PR styling, que también es lima.
+  // 4. blank → border default.
   const cellBg = completed
     ? colors.surfaceAlt
-    : isPlanned
-      ? colors.accentSoft
-      : "transparent";
+    : "transparent";
   const cellBorder = isActive
     ? colors.ink
     : isPlanned
       ? colors.accentEdge
       : colors.border;
+  const cellBorderWidth = isActive ? 1.5 : 1;
 
   const checkBg = completed ? colors.accent : "transparent";
   const checkBorder = completed ? colors.accentEdge : colors.border;
 
+  // Wrapper highlight — solo PR. El active row se distingue por borders más
+  // fuertes en los inputs, no por wrapper, para no chocar con el PR styling.
   return (
     <View
       style={[
@@ -157,6 +175,7 @@ export function SetRow({
               color: colors.ink,
               backgroundColor: cellBg,
               borderColor: cellBorder,
+              borderWidth: cellBorderWidth,
             },
           ]}
         />
@@ -173,6 +192,7 @@ export function SetRow({
               color: colors.ink,
               backgroundColor: cellBg,
               borderColor: cellBorder,
+              borderWidth: cellBorderWidth,
             },
           ]}
         />
@@ -200,6 +220,7 @@ export function SetRow({
               {
                 backgroundColor: cellBg,
                 borderColor: cellBorder,
+                borderWidth: cellBorderWidth,
                 opacity: 0.4,
                 alignItems: "center",
                 justifyContent: "center",
@@ -213,9 +234,29 @@ export function SetRow({
         )}
       </View>
 
+      {onNotePress ? (
+        <Pressable
+          onPress={onNotePress}
+          hitSlop={6}
+          style={({ pressed }) => ({
+            width: 22,
+            height: 28,
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: pressed ? 0.5 : hasNotes ? 1 : 0.55,
+          })}
+        >
+          <Feather
+            name="edit-2"
+            size={12}
+            color={hasNotes ? colors.accentEdge : colors.muted}
+          />
+        </Pressable>
+      ) : null}
+
       <Pressable
         onPress={completed ? onUncomplete : handleComplete}
-        onLongPress={onRemove}
+        onLongPress={onCheckLongPress ?? onRemove}
         style={({ pressed }) => [
           styles.checkBtn,
           {
@@ -230,6 +271,19 @@ export function SetRow({
           size={14}
           color={completed ? colors.accentInk : colors.muted}
         />
+        {hasNotes ? (
+          <View
+            style={{
+              position: "absolute",
+              top: 2,
+              right: 2,
+              width: 6,
+              height: 6,
+              borderRadius: 3,
+              backgroundColor: colors.accentEdge,
+            }}
+          />
+        ) : null}
       </Pressable>
     </View>
   );

@@ -6,6 +6,11 @@ import { Platform, Pressable, View } from "react-native";
 
 import { Heatmap } from "@/components/charts/Heatmap";
 import { DaySwapSheet } from "@/components/home/DaySwapSheet";
+import { FeatureDiscoveryPrompt } from "@/components/notes/FeatureDiscoveryPrompt";
+import {
+  getEligibleDiscoveries,
+  isFeatureActive,
+} from "@/services/featureDiscovery";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Divider } from "@/components/ui/Divider";
@@ -31,9 +36,15 @@ export default function HomeScreen() {
     getPlanForDate,
     getSessionPlan,
     getNextTrainingDay,
+    setDiscoveryStatus,
+    notes,
   } = useIronLog();
 
   const [swapOpen, setSwapOpen] = useState(false);
+  const [preflightOffer, setPreflightOffer] = useState<{
+    routineId: string;
+    dayId: string;
+  } | null>(null);
 
   const streak = getStreak();
   const todayKey = dateKey(Date.now());
@@ -205,6 +216,26 @@ export default function HomeScreen() {
     }
     if (!isRest && todayRoutine && todayDay) {
       triggerHaptic();
+
+      // Discovery / preflight branching — usa el helper centralizado
+      // (cf. FX-4 + D-11). Single source of truth: featureCatalog.ts.
+      const preflightActive = isFeatureActive(profile, "preflight");
+      const preflightOffered = getEligibleDiscoveries(
+        profile,
+        sessions,
+        notes,
+      ).some((d) => d.featureId === "preflight");
+
+      if (preflightActive) {
+        router.push(
+          `/workout/preflight?routineId=${todayRoutine.id}&dayId=${todayDay.id}` as never,
+        );
+        return;
+      }
+      if (preflightOffered) {
+        setPreflightOffer({ routineId: todayRoutine.id, dayId: todayDay.id });
+        return;
+      }
       router.push(
         `/workout/active?routineId=${todayRoutine.id}&dayId=${todayDay.id}`,
       );
@@ -515,6 +546,42 @@ export default function HomeScreen() {
       ) : null}
 
       <DaySwapSheet visible={swapOpen} onClose={() => setSwapOpen(false)} />
+
+      {/* Discovery prompt: preflight (cf. D-11). Aparece después de la 5ta
+          sesión cuando el user toca Empezar. */}
+      <FeatureDiscoveryPrompt
+        visible={preflightOffer != null}
+        featureId="preflight"
+        onActivate={() => {
+          setDiscoveryStatus("preflight", "activated");
+          if (preflightOffer) {
+            router.push(
+              `/workout/preflight?routineId=${preflightOffer.routineId}&dayId=${preflightOffer.dayId}` as never,
+            );
+          }
+          setPreflightOffer(null);
+        }}
+        onLater={() => {
+          setDiscoveryStatus("preflight", "snoozed", {
+            snoozeUntil: Date.now() + 7 * 24 * 60 * 60 * 1000,
+          });
+          if (preflightOffer) {
+            router.push(
+              `/workout/active?routineId=${preflightOffer.routineId}&dayId=${preflightOffer.dayId}`,
+            );
+          }
+          setPreflightOffer(null);
+        }}
+        onDismiss={() => {
+          setDiscoveryStatus("preflight", "dismissed");
+          if (preflightOffer) {
+            router.push(
+              `/workout/active?routineId=${preflightOffer.routineId}&dayId=${preflightOffer.dayId}`,
+            );
+          }
+          setPreflightOffer(null);
+        }}
+      />
     </Screen>
   );
 }

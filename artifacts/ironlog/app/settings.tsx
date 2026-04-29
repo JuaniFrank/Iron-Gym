@@ -17,7 +17,17 @@ import { calorieGoalForGoal, calculateTDEE, macroSplitForGoal } from "@/utils/ca
 
 export default function SettingsScreen() {
   const colors = useThemeColors();
-  const { profile, updateProfile, defaultRestSeconds, setDefaultRest, resetAll } = useIronLog();
+  const {
+    profile,
+    updateProfile,
+    defaultRestSeconds,
+    setDefaultRest,
+    resetAll,
+    setDiscoveryStatus,
+    resetAllDiscoveries,
+    clearAllNotes,
+    notes,
+  } = useIronLog();
 
   const tdee = calculateTDEE(profile);
   const defaultCal = calorieGoalForGoal(tdee, profile.goal);
@@ -143,6 +153,96 @@ export default function SettingsScreen() {
           </Col>
         </Card>
 
+        {/* NOTAS Y REFLEXIÓN */}
+        <Card style={{ marginBottom: 12 }}>
+          <Text variant="tiny" color={colors.muted} style={{ marginBottom: 12 }}>
+            NOTAS Y REFLEXIÓN
+          </Text>
+          <Col gap={4}>
+            <FeatureToggleRow
+              label="Reflexión post-entreno"
+              hint="3 preguntas rápidas al cerrar la sesión"
+              activated={
+                profile.featureDiscoveries?.find((d) => d.featureId === "recap")
+                  ?.status === "activated"
+              }
+              onToggle={(on) =>
+                setDiscoveryStatus("recap", on ? "activated" : "dismissed")
+              }
+            />
+            <FeatureToggleRow
+              label="Factor X pre-entreno"
+              hint="Sueño, energía y contexto antes de empezar"
+              activated={
+                profile.featureDiscoveries?.find((d) => d.featureId === "preflight")
+                  ?.status === "activated"
+              }
+              onToggle={(on) =>
+                setDiscoveryStatus("preflight", on ? "activated" : "dismissed")
+              }
+            />
+          </Col>
+
+          <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 12 }} />
+
+          <Pressable
+            onPress={() =>
+              Alert.alert(
+                "Resetear descubrimientos",
+                "Las features opt-in volverán a aparecer cuando se cumplan sus condiciones. No afecta a tus notas guardadas.",
+                [
+                  { text: "Cancelar", style: "cancel" },
+                  {
+                    text: "Resetear",
+                    onPress: () => resetAllDiscoveries(),
+                  },
+                ],
+              )
+            }
+            style={({ pressed }) => ({
+              paddingVertical: 10,
+              opacity: pressed ? 0.6 : 1,
+            })}
+          >
+            <Text variant="label" color={colors.accentEdge}>
+              Resetear descubrimientos
+            </Text>
+            <Text variant="caption" muted>
+              Volver a ofrecer features opt-in
+            </Text>
+          </Pressable>
+
+          <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 6 }} />
+
+          <Pressable
+            onPress={() =>
+              Alert.alert(
+                "Borrar todas las notas",
+                `Vas a eliminar ${notes.length} ${notes.length === 1 ? "nota" : "notas"}. No se puede deshacer.`,
+                [
+                  { text: "Cancelar", style: "cancel" },
+                  {
+                    text: "Borrar",
+                    style: "destructive",
+                    onPress: () => clearAllNotes(),
+                  },
+                ],
+              )
+            }
+            style={({ pressed }) => ({
+              paddingVertical: 10,
+              opacity: pressed ? 0.6 : 1,
+            })}
+          >
+            <Text variant="label" color={colors.danger}>
+              Borrar todas las notas
+            </Text>
+            <Text variant="caption" muted>
+              {notes.length} {notes.length === 1 ? "nota guardada" : "notas guardadas"}
+            </Text>
+          </Pressable>
+        </Card>
+
         <Pressable
           onPress={() =>
             Alert.alert(
@@ -193,5 +293,65 @@ export default function SettingsScreen() {
         </Pressable>
       </ScrollView>
     </Screen>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Toggle row para activar/desactivar features opt-in.
+
+function FeatureToggleRow({
+  label,
+  hint,
+  activated,
+  onToggle,
+}: {
+  label: string;
+  hint: string;
+  activated: boolean;
+  onToggle: (activated: boolean) => void;
+}) {
+  const colors = useThemeColors();
+  return (
+    <Pressable
+      onPress={() => onToggle(!activated)}
+      style={({ pressed }) => ({
+        paddingVertical: 10,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+        opacity: pressed ? 0.7 : 1,
+      })}
+    >
+      <Col flex={1} gap={2}>
+        <Text variant="label" weight="medium">
+          {label}
+        </Text>
+        <Text variant="caption" muted>
+          {hint}
+        </Text>
+      </Col>
+      <View
+        style={{
+          width: 44,
+          height: 26,
+          borderRadius: 13,
+          backgroundColor: activated ? colors.accent : colors.surfaceAlt,
+          borderWidth: 1,
+          borderColor: activated ? colors.accentEdge : colors.border,
+          padding: 2,
+          justifyContent: "center",
+        }}
+      >
+        <View
+          style={{
+            width: 20,
+            height: 20,
+            borderRadius: 10,
+            backgroundColor: activated ? colors.accentInk : colors.muted,
+            alignSelf: activated ? "flex-end" : "flex-start",
+          }}
+        />
+      </View>
+    </Pressable>
   );
 }
