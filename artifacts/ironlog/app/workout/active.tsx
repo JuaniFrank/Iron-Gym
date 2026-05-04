@@ -20,34 +20,56 @@ import { ExerciseActionSheet } from "@/components/workout/ExerciseActionSheet";
 import { RestTimer } from "@/components/workout/RestTimer";
 import { SetRow } from "@/components/workout/SetRow";
 import { TermHint } from "@/components/workout/TermHint";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { useAllExercises } from "@/domains/exercises/queries";
+import { useAllNotes } from "@/domains/notes/queries";
+import {
+  useDefaultRestSeconds,
+} from "@/domains/profile/queries";
+import { useRoutineById } from "@/domains/routines/queries";
+import { useSessionPlan } from "@/domains/schedule/queries";
+import {
+  getLastSetsForExercise,
+  getMaxWeightForExercise,
+} from "@/domains/workout/helpers";
+import {
+  cancelWorkout,
+  finishWorkout,
+  logSet,
+  removeSessionExercise,
+  removeSet,
+  reorderSessionExercises,
+  setSessionExerciseSkipped,
+  startWorkout,
+} from "@/domains/workout/mutators";
+import {
+  useActiveSession,
+  useActiveWorkoutId,
+  useSessions,
+} from "@/domains/workout/queries";
 import { dateKey, formatDuration } from "@/utils/date";
 
 export default function ActiveWorkoutScreen() {
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ routineId?: string; dayId?: string }>();
-  const {
-    sessions,
-    activeWorkoutId,
-    startWorkout,
-    logSet,
-    removeSet,
-    finishWorkout,
-    cancelWorkout,
-    getExerciseById,
-    getRoutineById,
-    getLastSetsForExercise,
-    getMaxWeightForExercise,
-    defaultRestSeconds,
-    reorderSessionExercises,
-    setSessionExerciseSkipped,
-    removeSessionExercise,
-    getSessionPlan,
-    notes,
-  } = useIronLog();
-
+  const sessions = useSessions();
+  const activeWorkoutId = useActiveWorkoutId();
+  const session = useActiveSession();
+  const allExercises = useAllExercises();
+  const exerciseById = useMemo(
+    () => new Map(allExercises.map((e) => [e.id, e])),
+    [allExercises],
+  );
+  const getExerciseById = (id: string) => exerciseById.get(id);
+  const routine = useRoutineById(session?.routineId ?? null);
+  const defaultRestSeconds = useDefaultRestSeconds();
+  const notes = useAllNotes();
+  const sessionPlan = useSessionPlan(
+    session ? dateKey(session.startedAt) : null,
+    session?.routineId,
+    session?.routineDayId,
+  );
   // Which exercise card has its action sheet open (null = closed).
   const [actionForExId, setActionForExId] = useState<string | null>(null);
 
@@ -74,8 +96,6 @@ export default function ActiveWorkoutScreen() {
     }
   }, [activeWorkoutId, params.routineId, params.dayId, startWorkout]);
 
-  const session = sessions.find((s) => s.id === activeWorkoutId);
-  const routine = session?.routineId ? getRoutineById(session.routineId) : null;
   const day = routine?.days.find((d) => d.id === session?.routineDayId) ?? null;
 
   const [now, setNow] = useState(Date.now());
@@ -91,19 +111,6 @@ export default function ActiveWorkoutScreen() {
     () => new Set(session?.skippedExerciseIds ?? []),
     [session?.skippedExerciseIds],
   );
-  const sessionPlan = useMemo(() => {
-    if (!session?.routineId || !session?.routineDayId) return undefined;
-    return getSessionPlan(
-      dateKey(session.startedAt),
-      session.routineId,
-      session.routineDayId,
-    );
-  }, [
-    session?.routineId,
-    session?.routineDayId,
-    session?.startedAt,
-    getSessionPlan,
-  ]);
 
   if (!session) {
     return (
@@ -151,13 +158,14 @@ export default function ActiveWorkoutScreen() {
       { text: "Cancelar", style: "cancel" },
       {
         text: "Terminar",
-        onPress: () => {
+        onPress: async () => {
           if (Platform.OS !== "web") {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           }
-          const result = finishWorkout(session.id);
+          const result = await finishWorkout(session.id);
+          const achievementIds = result.newAchievements.map((a) => a.id);
           router.replace(
-            `/workout/summary?sessionId=${result.session.id}&prs=${result.prs.length}&achievements=${result.newAchievements.join(",")}`,
+            `/workout/summary?sessionId=${result.session.id}&prs=${result.prs.length}&achievements=${achievementIds.join(",")}`,
           );
         },
       },
@@ -173,8 +181,8 @@ export default function ActiveWorkoutScreen() {
         {
           text: "Descartar",
           style: "destructive",
-          onPress: () => {
-            cancelWorkout(session.id);
+          onPress: async () => {
+            await cancelWorkout(session.id);
             router.replace("/workout");
           },
         },
@@ -340,10 +348,14 @@ export default function ActiveWorkoutScreen() {
               : null;
 
             const completedForExercise = session.sets.filter((s) => s.exerciseId === exId);
-            const lastSets = getLastSetsForExercise(exId, session.id);
+            const lastSets = getLastSetsForExercise(sessions, exId, session.id);
             // Excluir la sesión en curso — el max es histórico, no incluye
             // los sets que el usuario está logueando ahora mismo.
-            const exerciseMax = getMaxWeightForExercise(exId, session.id);
+            const exerciseMax = getMaxWeightForExercise(
+              sessions,
+              exId,
+              session.id,
+            );
 
             // Effective row counts: plan wins over routine defaults; we still
             // grow if the user logged more sets than planned.

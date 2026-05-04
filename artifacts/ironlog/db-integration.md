@@ -90,11 +90,11 @@ export const prRecords = sqliteTable("pr_records", {
   achievedAt: integer("achieved_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
-}, (t) => ({
-  byExercise: index("pr_by_exercise").on(t.exerciseId, t.type, t.value),
-  bySession: index("pr_by_session").on(t.sessionId),
-  uniqPerSessionExType: unique().on(t.sessionId, t.exerciseId, t.type),
-}));
+}, (t) => [
+  index("pr_by_exercise").on(t.exerciseId, t.type, t.value),
+  index("pr_by_session").on(t.sessionId),
+  unique().on(t.sessionId, t.exerciseId, t.type),
+]);
 ```
 
 `workoutSessions.prsAchieved` no existe. La pantalla `summary.tsx` consulta `SELECT * FROM pr_records WHERE session_id = ?`.
@@ -1007,13 +1007,13 @@ Críticos:
 
 ## 9. Tracker
 
-- [ ] Step 0 · Preparativos (deps, estructura, drizzle config, `utils/id.ts`)
-- [ ] Step 1 · Schema mínimo (validar pipeline)
-- [ ] Step 2 · Schema completo (18 tablas con FKs e índices)
-- [ ] Step 3 · Seed data con `seed_version` gating
-- [ ] Step 4 · Lecturas reactivas (24 pantallas/componentes)
-- [ ] Step 5 · Mutators tipados (35 mutations)
-- [ ] Step 6 · Eliminar IronLogContext
-- [ ] Step 7 · Tests (Vitest + better-sqlite3)
-- [ ] Step 8 · Cleanup deps (AsyncStorage)
-- [ ] Step 9 · Verificaciones finales (typecheck, perf, smoke)
+- [x] Step 0 · Preparativos (deps, estructura, drizzle config, `utils/id.ts`)
+- [x] Step 1 · Schema mínimo (validar pipeline)
+- [x] Step 2 · Schema completo (22 tablas con FKs e índices)
+- [x] Step 3 · Seed data con `seed_version` gating
+- [x] Step 4 · Lecturas reactivas (24 pantallas/componentes)
+- [x] Step 5 · Mutators tipados (~50 mutations)
+- [x] Step 6 · Eliminar IronLogContext
+- [x] Step 7 · Tests (Vitest + better-sqlite3)
+- [x] Step 8 · Cleanup deps (AsyncStorage + `@stardazed/streams-text-encoding`)
+- [x] Step 9 · Verificaciones finales (typecheck OK, 33 tests OK, schema diff no-op)

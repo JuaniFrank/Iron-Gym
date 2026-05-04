@@ -11,13 +11,14 @@ import { Input } from "@/components/ui/Input";
 import { Screen } from "@/components/ui/Screen";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { addGoal, deleteGoal, toggleGoal } from "@/domains/goals/mutators";
+import { useGoals } from "@/domains/goals/queries";
 import { formatRelativeDate } from "@/utils/date";
 
 export default function GoalsScreen() {
   const colors = useThemeColors();
-  const { goals, addGoal, toggleGoal, deleteGoal } = useIronLog();
+  const goals = useGoals();
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");

@@ -14,15 +14,16 @@ import { Screen } from "@/components/ui/Screen";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { logFood } from "@/domains/nutrition/mutators";
+import { useAllFoods } from "@/domains/nutrition/queries";
 import type { FoodItem, MealType } from "@/types";
 
 export default function FoodAddScreen() {
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ date?: string; meal?: MealType }>();
-  const { allFoods, logFood } = useIronLog();
+  const allFoods = useAllFoods();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<FoodItem | null>(null);
   const [grams, setGrams] = useState("100");
@@ -158,9 +159,9 @@ export default function FoodAddScreen() {
             icon="check"
             fullWidth
             size="lg"
-            onPress={() => {
+            onPress={async () => {
               if (gramsNum <= 0) return;
-              logFood({
+              await logFood({
                 date: targetDate,
                 mealType: meal,
                 foodItemId: selected.id,

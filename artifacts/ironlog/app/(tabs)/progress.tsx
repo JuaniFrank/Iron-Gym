@@ -16,8 +16,11 @@ import { Stat } from "@/components/ui/Stat";
 import { Text } from "@/components/ui/Text";
 import { MUSCLE_GROUPS } from "@/constants/exercises";
 import { resolveVolumeTarget } from "@/constants/volumeTargets";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { useBodyWeights } from "@/domains/body/queries";
+import { useAllExercises } from "@/domains/exercises/queries";
+import { useUserProfile } from "@/domains/profile/queries";
+import { useSessions } from "@/domains/workout/queries";
 import type { MuscleGroup } from "@/types";
 import { bmiCategory, calculateBMI, formatWeight } from "@/utils/calculations";
 import { formatRelativeDate } from "@/utils/date";
@@ -25,7 +28,10 @@ import { currentWeekRange, volumeByMuscle, volumeZone } from "@/utils/volume";
 
 export default function ProgressScreen() {
   const colors = useThemeColors();
-  const { sessions, bodyWeights, profile, allExercises } = useIronLog();
+  const sessions = useSessions();
+  const bodyWeights = useBodyWeights();
+  const profile = useUserProfile();
+  const allExercises = useAllExercises();
   const [tab, setTab] = useState<"overview" | "exercises" | "body">("overview");
   const [volumeInfoOpen, setVolumeInfoOpen] = useState(false);
 

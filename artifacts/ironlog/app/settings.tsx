@@ -11,23 +11,26 @@ import { Screen } from "@/components/ui/Screen";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { resetAll } from "@/domains/admin/mutators";
+import {
+  resetAllDiscoveries,
+  setDiscoveryStatus,
+} from "@/domains/discovery/mutators";
+import { useFeatureDiscoveries } from "@/domains/discovery/queries";
+import { clearAllNotes } from "@/domains/notes/mutators";
+import { useAllNotes } from "@/domains/notes/queries";
+import { updateProfile } from "@/domains/profile/mutators";
+import { useDefaultRestSeconds, useUserProfile } from "@/domains/profile/queries";
+import { setDefaultRest } from "@/domains/workout/mutators";
 import { calorieGoalForGoal, calculateTDEE, macroSplitForGoal } from "@/utils/calculations";
 
 export default function SettingsScreen() {
   const colors = useThemeColors();
-  const {
-    profile,
-    updateProfile,
-    defaultRestSeconds,
-    setDefaultRest,
-    resetAll,
-    setDiscoveryStatus,
-    resetAllDiscoveries,
-    clearAllNotes,
-    notes,
-  } = useIronLog();
+  const profile = useUserProfile();
+  const defaultRestSeconds = useDefaultRestSeconds();
+  const featureDiscoveries = useFeatureDiscoveries();
+  const notes = useAllNotes();
 
   const tdee = calculateTDEE(profile);
   const defaultCal = calorieGoalForGoal(tdee, profile.goal);
@@ -163,7 +166,7 @@ export default function SettingsScreen() {
               label="Reflexión post-entreno"
               hint="3 preguntas rápidas al cerrar la sesión"
               activated={
-                profile.featureDiscoveries?.find((d) => d.featureId === "recap")
+                featureDiscoveries.find((d) => d.featureId === "recap")
                   ?.status === "activated"
               }
               onToggle={(on) =>
@@ -174,7 +177,7 @@ export default function SettingsScreen() {
               label="Factor X pre-entreno"
               hint="Sueño, energía y contexto antes de empezar"
               activated={
-                profile.featureDiscoveries?.find((d) => d.featureId === "preflight")
+                featureDiscoveries.find((d) => d.featureId === "preflight")
                   ?.status === "activated"
               }
               onToggle={(on) =>

@@ -27,8 +27,20 @@ import {
   type BulkField,
 } from "@/components/workout/BulkColumnSheet";
 import { MUSCLE_GROUP_LABELS } from "@/constants/exercises";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { useAllExercises } from "@/domains/exercises/queries";
+import { useRoutineById } from "@/domains/routines/queries";
+import {
+  deleteSessionPlan,
+  upsertSessionPlan,
+} from "@/domains/schedule/mutators";
+import { useSessionPlan } from "@/domains/schedule/queries";
+import { getLastSetsForExercise } from "@/domains/workout/helpers";
+import { startWorkout } from "@/domains/workout/mutators";
+import {
+  useActiveWorkoutId,
+  useSessions,
+} from "@/domains/workout/queries";
 import type {
   CompletedSet,
   PlannedExercise,
@@ -45,32 +57,27 @@ export default function PlanWorkoutScreen() {
   }>();
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
-  const {
-    sessions,
-    getRoutineById,
-    getSessionPlan,
-    upsertSessionPlan,
-    deleteSessionPlan,
-    getLastSetsForExercise,
-    getExerciseById,
-    activeWorkoutId,
-    startWorkout,
-  } = useIronLog();
+  const sessions = useSessions();
+  const routine = useRoutineById(params.routineId ?? null);
+  const allExercises = useAllExercises();
+  const exerciseById = useMemo(
+    () => new Map(allExercises.map((e) => [e.id, e])),
+    [allExercises],
+  );
+  const getExerciseById = (id: string) => exerciseById.get(id);
+  const existing = useSessionPlan(
+    params.dateKey ?? null,
+    params.routineId,
+    params.dayId,
+  );
+  const activeWorkoutId = useActiveWorkoutId();
 
-  const routine = params.routineId ? getRoutineById(params.routineId) : undefined;
   const day = useMemo(
     () =>
       routine && params.dayId
         ? routine.days.find((d) => d.id === params.dayId)
         : undefined,
     [routine, params.dayId],
-  );
-  const existing = useMemo(
-    () =>
-      params.dateKey && params.routineId && params.dayId
-        ? getSessionPlan(params.dateKey, params.routineId, params.dayId)
-        : undefined,
-    [getSessionPlan, params.dateKey, params.routineId, params.dayId],
   );
 
   // Local state of the plan — auto-saves on each change.
@@ -79,7 +86,7 @@ export default function PlanWorkoutScreen() {
     if (!day) return [];
     return day.exercises.map((re) => ({
       exerciseId: re.exerciseId,
-      sets: buildInitialSets(re, getLastSetsForExercise(re.exerciseId)),
+      sets: buildInitialSets(re, getLastSetsForExercise(sessions, re.exerciseId)),
     }));
   });
 
@@ -93,7 +100,7 @@ export default function PlanWorkoutScreen() {
     }
     if (!params.dateKey || !params.routineId || !params.dayId) return;
     if (!day) return;
-    upsertSessionPlan({
+    void upsertSessionPlan({
       dateKey: params.dateKey,
       routineId: params.routineId,
       routineDayId: params.dayId,
@@ -105,7 +112,6 @@ export default function PlanWorkoutScreen() {
     params.routineId,
     params.dayId,
     day,
-    upsertSessionPlan,
   ]);
 
   if (!routine || !day || !params.dateKey || !params.routineId || !params.dayId) {
@@ -131,12 +137,12 @@ export default function PlanWorkoutScreen() {
     );
   };
 
-  const handleStartNow = () => {
+  const handleStartNow = async () => {
     if (Platform.OS !== "web") {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
     if (!activeWorkoutId) {
-      startWorkout(params.routineId!, params.dayId!);
+      await startWorkout(params.routineId!, params.dayId!);
     }
     router.replace("/workout/active");
   };
@@ -150,8 +156,8 @@ export default function PlanWorkoutScreen() {
         {
           text: "Borrar plan",
           style: "destructive",
-          onPress: () => {
-            deleteSessionPlan(params.dateKey!);
+          onPress: async () => {
+            await deleteSessionPlan(params.dateKey!);
             router.back();
           },
         },
@@ -232,7 +238,7 @@ export default function PlanWorkoutScreen() {
               const ex = getExerciseById(pe.exerciseId);
               if (!ex) return null;
               const re = day.exercises.find((x) => x.exerciseId === pe.exerciseId);
-              const lastSets = getLastSetsForExercise(pe.exerciseId);
+              const lastSets = getLastSetsForExercise(sessions, pe.exerciseId);
               const exerciseHistory = computeExerciseHistory(pe.exerciseId, sessions);
               return (
                 <PlanExerciseCard

@@ -23,8 +23,10 @@ import { Screen } from "@/components/ui/Screen";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { BODY_PART_SHORT_LABEL } from "@/constants/bodyParts";
-import { useIronLog } from "@/contexts/IronLogContext";
+import { addNote } from "@/domains/notes/mutators";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { useAllNotes } from "@/domains/notes/queries";
+import { useSessionById } from "@/domains/workout/queries";
 import type { BodyPart } from "@/types";
 import { canStillRecap } from "@/utils/notes";
 
@@ -34,9 +36,8 @@ export default function RecapScreen() {
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ sessionId?: string }>();
-  const { sessions, notes, addNote } = useIronLog();
-
-  const session = sessions.find((s) => s.id === params.sessionId);
+  const notes = useAllNotes();
+  const session = useSessionById(params.sessionId);
   const isReopened = session?.endedAt != null && session.endedAt < Date.now() - 30_000;
 
   const [mood, setMood] = useState<number | undefined>(undefined);
@@ -116,7 +117,7 @@ export default function RecapScreen() {
     });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (saving) return;
     setSaving(true);
     if (Platform.OS !== "web") {
@@ -125,7 +126,7 @@ export default function RecapScreen() {
 
     // Mood note
     if (mood != null) {
-      addNote({
+      await addNote({
         sessionId: session.id,
         category: "mood",
         severity: mood,
@@ -135,8 +136,8 @@ export default function RecapScreen() {
     }
 
     // Pain notes por zona seleccionada
-    selectedParts.forEach((part) => {
-      addNote({
+    for (const part of selectedParts) {
+      await addNote({
         sessionId: session.id,
         category: "pain",
         bodyPart: part,
@@ -144,11 +145,11 @@ export default function RecapScreen() {
         text: textByPart[part] ?? "",
         source: "recap",
       });
-    });
+    }
 
     // Free text general
     if (generalText.trim()) {
-      addNote({
+      await addNote({
         sessionId: session.id,
         category: "other",
         text: generalText.trim(),

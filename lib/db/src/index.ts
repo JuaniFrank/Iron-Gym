@@ -1,16 +1,11 @@
-import { drizzle } from "drizzle-orm/node-postgres";
-import pg from "pg";
-import * as schema from "./schema";
+// Public barrel for `@workspace/db`.
+//
+// Default surface is the SQLite client (local-first IronLog runtime).
+// Postgres lives under the `./postgres` sub-path export — opt-in for
+// server-side callers — so Metro/Expo never follows `pg` (Node-only,
+// requires `events` built-in not available in React Native).
 
-const { Pool } = pg;
-
-if (!process.env.DATABASE_URL) {
-  throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
-  );
-}
-
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-export const db = drizzle(pool, { schema });
-
-export * from "./schema";
+export * from "./client/sqlite";
+export * from "./migrations";
+export * from "./seed";
+export * as schema from "./schema";

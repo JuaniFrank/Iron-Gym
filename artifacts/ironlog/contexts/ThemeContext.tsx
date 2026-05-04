@@ -2,7 +2,7 @@ import React, { createContext, useContext, useMemo } from "react";
 import { useColorScheme } from "react-native";
 
 import colors, { type ThemePalette } from "@/constants/colors";
-import { useIronLog } from "@/contexts/IronLogContext";
+import { useUserProfile } from "@/domains/profile/queries";
 
 type ColorScheme = "light" | "dark";
 
@@ -15,7 +15,7 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const systemScheme = useColorScheme();
-  const { profile } = useIronLog();
+  const profile = useUserProfile();
 
   const scheme: ColorScheme = useMemo(() => {
     if (profile.theme === "light") return "light";

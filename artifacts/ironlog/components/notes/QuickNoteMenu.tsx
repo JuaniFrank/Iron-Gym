@@ -4,8 +4,10 @@ import { Modal, Platform, Pressable, View } from "react-native";
 
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { addNote } from "@/domains/notes/mutators";
+import { useAllNotes } from "@/domains/notes/queries";
+import { useSessions } from "@/domains/workout/queries";
 import { frequentChips } from "@/utils/notes";
 
 interface QuickNoteMenuProps {
@@ -37,15 +39,16 @@ export function QuickNoteMenu({
   onMoreOptions,
 }: QuickNoteMenuProps) {
   const colors = useThemeColors();
-  const { addNote, notes, sessions } = useIronLog();
+  const notes = useAllNotes();
+  const sessions = useSessions();
 
   const chips = useMemo(() => {
     return frequentChips(notes, sessions, "effort", { cap: 4 });
   }, [notes, sessions]);
 
-  const handleChipTap = (chip: string) => {
+  const handleChipTap = async (chip: string) => {
     if (Platform.OS !== "web") Haptics.selectionAsync();
-    addNote({
+    await addNote({
       sessionId,
       setId,
       exerciseId,

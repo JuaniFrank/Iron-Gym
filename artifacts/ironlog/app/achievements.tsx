@@ -8,12 +8,12 @@ import { Screen } from "@/components/ui/Screen";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { ACHIEVEMENTS } from "@/constants/achievements";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { useAchievements } from "@/domains/achievements/queries";
 
 export default function AchievementsScreen() {
   const colors = useThemeColors();
-  const { achievements } = useIronLog();
+  const achievements = useAchievements();
   const unlockedSet = new Set(achievements.map((a) => a.id));
 
   const unlockedCount = achievements.length;
