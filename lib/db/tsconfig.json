@@ -6,7 +6,9 @@
     "emitDeclarationOnly": true,
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node"]
+    "types": ["node"],
+    "allowJs": true,
+    "resolveJsonModule": true
   },
-  "include": ["src"]
+  "include": ["src/**/*.ts", "src/**/*.js", "src/**/*.json"]
 }

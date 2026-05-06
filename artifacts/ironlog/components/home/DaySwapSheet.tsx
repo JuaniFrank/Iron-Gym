@@ -10,8 +10,23 @@ import { IconButton } from "@/components/ui/IconButton";
 import { Screen } from "@/components/ui/Screen";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { useAllRoutines } from "@/domains/routines/queries";
+import {
+  clearOverrideForDate,
+  setOverrideForDate,
+  swapDates,
+} from "@/domains/schedule/mutators";
+import {
+  resolvePlanFor,
+  useSchedule,
+  useScheduleOverrides,
+} from "@/domains/schedule/queries";
+import {
+  startEmptyWorkout,
+  startWorkout,
+} from "@/domains/workout/mutators";
+import { useActiveWorkoutId } from "@/domains/workout/queries";
 import type { ResolvedPlan, Routine } from "@/types";
 import { DAY_LABELS_FULL, dateKey, getDayOfWeek, startOfDay } from "@/utils/date";
 
@@ -22,17 +37,15 @@ interface DaySwapSheetProps {
 
 export function DaySwapSheet({ visible, onClose }: DaySwapSheetProps) {
   const colors = useThemeColors();
-  const {
-    allRoutines,
-    activeWorkoutId,
-    scheduleOverrides,
-    startEmptyWorkout,
-    startWorkout,
-    swapDates,
-    setOverrideForDate,
-    clearOverrideForDate,
-    getPlanForDate,
-  } = useIronLog();
+  const allRoutines = useAllRoutines();
+  const activeWorkoutId = useActiveWorkoutId();
+  const scheduleOverrides = useScheduleOverrides();
+  const schedule = useSchedule();
+
+  const getPlanForDate = useMemo(
+    () => (ts: number) => resolvePlanFor(ts, scheduleOverrides, schedule),
+    [scheduleOverrides, schedule],
+  );
 
   const todayTs = useMemo(() => startOfDay(Date.now()), [visible]);
   const todayPlan = getPlanForDate(todayTs);
@@ -59,19 +72,19 @@ export function DaySwapSheet({ visible, onClose }: DaySwapSheetProps) {
     else Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
-  const handleFreestyle = () => {
+  const handleFreestyle = async () => {
     if (activeWorkoutId) {
       onClose();
       router.push("/workout/active");
       return;
     }
     haptic();
-    startEmptyWorkout();
+    await startEmptyWorkout();
     onClose();
     router.push("/workout/active");
   };
 
-  const handlePickDay = (targetTs: number) => {
+  const handlePickDay = async (targetTs: number) => {
     if (activeWorkoutId) {
       onClose();
       router.push("/workout/active");
@@ -81,7 +94,7 @@ export function DaySwapSheet({ visible, onClose }: DaySwapSheetProps) {
       // Tapping today: if we have an override, this is the "reset" path.
       if (todayHasOverride) {
         haptic("select");
-        clearOverrideForDate(todayTs);
+        await clearOverrideForDate(todayTs);
       }
       onClose();
       return;
@@ -93,22 +106,22 @@ export function DaySwapSheet({ visible, onClose }: DaySwapSheetProps) {
     haptic();
     if (targetTs > todayTs) {
       // Future training day → swap (today ⇄ target)
-      swapDates(todayTs, targetTs);
+      await swapDates(todayTs, targetTs);
     } else {
       // Past training day → only override today (don't rewrite history)
-      setOverrideForDate(todayTs, {
+      await setOverrideForDate(todayTs, {
         routineId: targetPlan.routineId,
         routineDayId: targetPlan.routineDayId,
       });
     }
-    startWorkout(targetPlan.routineId, targetPlan.routineDayId);
+    await startWorkout(targetPlan.routineId, targetPlan.routineDayId);
     onClose();
     router.push("/workout/active");
   };
 
-  const handleResetToday = () => {
+  const handleResetToday = async () => {
     haptic("select");
-    clearOverrideForDate(todayTs);
+    await clearOverrideForDate(todayTs);
     onClose();
   };
 

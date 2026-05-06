@@ -19,8 +19,14 @@ import { SeveritySlider } from "@/components/notes/SeveritySlider";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { CATEGORY_LABEL, DEFAULT_CHIPS } from "@/constants/noteChips";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import {
+  addNote,
+  deleteNote,
+  updateNote,
+} from "@/domains/notes/mutators";
+import { useAllNotes } from "@/domains/notes/queries";
+import { useSessions } from "@/domains/workout/queries";
 import type {
   BodyPart,
   NoteCategory,
@@ -71,7 +77,8 @@ export function NoteSheet({
 }: NoteSheetProps) {
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
-  const { addNote, updateNote, deleteNote, notes, sessions } = useIronLog();
+  const notes = useAllNotes();
+  const sessions = useSessions();
 
   // Modo del sheet: "list" (vista de notas existentes), "edit" (modificar
   // una nota), "create" (nueva nota). Determinado al abrir el sheet.
@@ -156,21 +163,21 @@ export function NoteSheet({
     Haptics.selectionAsync();
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!category) return;
     if (!text.trim() && severity == null && !bodyPart && !showSeverity) return;
 
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     if (activeEditingNote) {
-      updateNote(activeEditingNote.id, {
+      await updateNote(activeEditingNote.id, {
         category,
         bodyPart: showBodyPart ? bodyPart ?? undefined : undefined,
         severity: showSeverity ? severity : undefined,
         text: text.trim(),
       });
     } else {
-      addNote({
+      await addNote({
         sessionId,
         setId,
         exerciseId,
@@ -184,10 +191,10 @@ export function NoteSheet({
     backToList();
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!activeEditingNote) return;
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    deleteNote(activeEditingNote.id);
+    await deleteNote(activeEditingNote.id);
     backToList();
   };
 

@@ -17,28 +17,36 @@ import { Divider } from "@/components/ui/Divider";
 import { Screen } from "@/components/ui/Screen";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { setDiscoveryStatus } from "@/domains/discovery/mutators";
+import { useAllNotes } from "@/domains/notes/queries";
+import { useAllFoods, useFoodEntries } from "@/domains/nutrition/queries";
+import { useUserProfile } from "@/domains/profile/queries";
+import { useAllRoutines } from "@/domains/routines/queries";
+import {
+  useNextTrainingDay,
+  usePlanForDate,
+  useSessionPlan,
+} from "@/domains/schedule/queries";
+import {
+  useActiveWorkoutId,
+  useSessions,
+  useStreak,
+} from "@/domains/workout/queries";
 import type { WorkoutSession } from "@/types";
 import { calorieGoalForGoal, calculateTDEE } from "@/utils/calculations";
 import { dateKey, formatDuration, startOfDay } from "@/utils/date";
 
 export default function HomeScreen() {
   const colors = useThemeColors();
-  const {
-    profile,
-    sessions,
-    foodEntries,
-    activeWorkoutId,
-    getStreak,
-    allFoods,
-    allRoutines,
-    getPlanForDate,
-    getSessionPlan,
-    getNextTrainingDay,
-    setDiscoveryStatus,
-    notes,
-  } = useIronLog();
+  const profile = useUserProfile();
+  const sessions = useSessions();
+  const foodEntries = useFoodEntries();
+  const activeWorkoutId = useActiveWorkoutId();
+  const allFoods = useAllFoods();
+  const allRoutines = useAllRoutines();
+  const notes = useAllNotes();
+  const streak = useStreak();
 
   const [swapOpen, setSwapOpen] = useState(false);
   const [preflightOffer, setPreflightOffer] = useState<{
@@ -46,11 +54,10 @@ export default function HomeScreen() {
     dayId: string;
   } | null>(null);
 
-  const streak = getStreak();
   const todayKey = dateKey(Date.now());
   const today = useMemo(() => new Date(), []);
   const todayTs = useMemo(() => startOfDay(Date.now()), []);
-  const todayPlan = getPlanForDate(todayTs);
+  const todayPlan = usePlanForDate(todayTs);
 
   const todayRoutine =
     todayPlan.kind === "training"
@@ -107,14 +114,22 @@ export default function HomeScreen() {
     (!completedToday && !isRest && !!todayRoutine && !!todayDay);
 
   // Plan-of-the-day & next training context for the planning entry-point card.
-  const todaySessionPlan =
-    !isRest && todayRoutine && todayDay
-      ? getSessionPlan(todayKey, todayRoutine.id, todayDay.id)
-      : undefined;
+  // Hooks must be called unconditionally; the schedule-pin check happens
+  // inside `useSessionPlan` (returns null when pinned ids mismatch).
+  const todaySessionPlan = useSessionPlan(
+    todayKey,
+    !isRest && todayRoutine ? todayRoutine.id : undefined,
+    !isRest && todayDay ? todayDay.id : undefined,
+  );
   // If today already trained, look for next training day starting tomorrow.
-  const nextTrainingDay = useMemo(
-    () => getNextTrainingDay(14, completedToday ? 1 : 0),
-    [getNextTrainingDay, completedToday],
+  const nextTrainingDay = useNextTrainingDay({
+    daysAhead: 14,
+    startOffsetDays: completedToday ? 1 : 0,
+  });
+  const nextSessionPlan = useSessionPlan(
+    nextTrainingDay?.dateKey ?? null,
+    nextTrainingDay?.routineId,
+    nextTrainingDay?.routineDayId,
   );
   // Suggestion priority:
   //  1. Today still pending → plan today.
@@ -138,11 +153,6 @@ export default function HomeScreen() {
       const r = allRoutines.find((x) => x.id === nextTrainingDay.routineId);
       const d = r?.days.find((x) => x.id === nextTrainingDay.routineDayId);
       if (!r || !d) return null;
-      const planForNext = getSessionPlan(
-        nextTrainingDay.dateKey,
-        nextTrainingDay.routineId,
-        nextTrainingDay.routineDayId,
-      );
       return {
         timestamp: nextTrainingDay.timestamp,
         dateKey: nextTrainingDay.dateKey,
@@ -152,7 +162,7 @@ export default function HomeScreen() {
         routineName: r.name,
         exercisesCount: d.exercises.length,
         isToday: false,
-        hasPlan: !!planForNext,
+        hasPlan: !!nextSessionPlan,
       };
     }
     return null;
@@ -166,8 +176,8 @@ export default function HomeScreen() {
     todayKey,
     todaySessionPlan,
     nextTrainingDay,
+    nextSessionPlan,
     allRoutines,
-    getSessionPlan,
   ]);
 
   // Hero copy reacts to: active session > completed today > today plan > rest.

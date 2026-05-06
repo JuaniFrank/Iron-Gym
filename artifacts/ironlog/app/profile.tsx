@@ -12,14 +12,15 @@ import { Screen } from "@/components/ui/Screen";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { updateProfile } from "@/domains/profile/mutators";
+import { useUserProfile } from "@/domains/profile/queries";
 import type { UserProfile } from "@/types";
 import { calculateBMR, calculateTDEE } from "@/utils/calculations";
 
 export default function ProfileScreen() {
   const colors = useThemeColors();
-  const { profile, updateProfile } = useIronLog();
+  const profile = useUserProfile();
   const [draft, setDraft] = useState<UserProfile>(profile);
 
   const tdee = calculateTDEE(draft);
@@ -188,8 +189,8 @@ export default function ProfileScreen() {
           variant="dark"
           fullWidth
           size="lg"
-          onPress={() => {
-            updateProfile(draft);
+          onPress={async () => {
+            await updateProfile(draft);
             router.back();
           }}
         />

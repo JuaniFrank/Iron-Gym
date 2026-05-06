@@ -8,13 +8,21 @@ import { IconButton } from "@/components/ui/IconButton";
 import { Screen } from "@/components/ui/Screen";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { useAllRoutines } from "@/domains/routines/queries";
+import {
+  scheduleRoutine,
+  unscheduleDay,
+} from "@/domains/schedule/mutators";
+import { useSchedule } from "@/domains/schedule/queries";
+import { useSessions } from "@/domains/workout/queries";
 import { DAY_LABELS, DAY_LABELS_FULL, MONTH_LABELS, dateKey } from "@/utils/date";
 
 export default function PlanningScreen() {
   const colors = useThemeColors();
-  const { schedule, allRoutines, scheduleRoutine, unscheduleDay, sessions } = useIronLog();
+  const schedule = useSchedule();
+  const allRoutines = useAllRoutines();
+  const sessions = useSessions();
   const [editingDay, setEditingDay] = useState<number | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const d = new Date();
@@ -235,9 +243,9 @@ export default function PlanningScreen() {
             </Text>
             <Col gap={8}>
               <Pressable
-                onPress={() => {
+                onPress={async () => {
                   if (editingDay !== null) {
-                    unscheduleDay(editingDay);
+                    await unscheduleDay(editingDay);
                     setEditingDay(null);
                   }
                 }}
@@ -267,9 +275,9 @@ export default function PlanningScreen() {
                 r.days.map((d) => (
                   <Pressable
                     key={`${r.id}-${d.id}`}
-                    onPress={() => {
+                    onPress={async () => {
                       if (editingDay !== null) {
-                        scheduleRoutine({
+                        await scheduleRoutine({
                           dayOfWeek: editingDay,
                           routineId: r.id,
                           routineDayId: d.id,

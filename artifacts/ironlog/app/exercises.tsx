@@ -14,8 +14,17 @@ import { Screen } from "@/components/ui/Screen";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { EXERCISE_TYPE_LABELS, MUSCLE_GROUPS, MUSCLE_GROUP_LABELS } from "@/constants/exercises";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { createCustomExercise } from "@/domains/exercises/mutators";
+import {
+  useAllExercises,
+  useExerciseById,
+} from "@/domains/exercises/queries";
+import { addExerciseToDay } from "@/domains/routines/mutators";
+import {
+  addExerciseToActiveWorkout,
+  replaceSessionExercise,
+} from "@/domains/workout/mutators";
 import type { Exercise, MuscleGroup } from "@/types";
 
 export default function ExercisesScreen() {
@@ -28,19 +37,12 @@ export default function ExercisesScreen() {
     replaceSessionId?: string;
     replaceExerciseId?: string;
   }>();
-  const {
-    allExercises,
-    addExerciseToDay,
-    addExerciseToActiveWorkout,
-    replaceSessionExercise,
-    getExerciseById,
-    createCustomExercise,
-  } = useIronLog();
+  const allExercises = useAllExercises();
 
   const isReplaceMode = !!(params.replaceSessionId && params.replaceExerciseId);
-  const sourceExercise = isReplaceMode
-    ? getExerciseById(params.replaceExerciseId!)
-    : undefined;
+  const sourceExercise =
+    useExerciseById(isReplaceMode ? params.replaceExerciseId : null) ??
+    undefined;
 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<MuscleGroup | "all">(
@@ -69,22 +71,26 @@ export default function ExercisesScreen() {
     });
   }, [allExercises, search, filter]);
 
-  const handlePick = (exId: string) => {
+  const handlePick = async (exId: string) => {
     if (isReplaceMode && params.replaceSessionId && params.replaceExerciseId) {
       if (exId === params.replaceExerciseId) {
         // No-op — same exercise picked.
         router.back();
         return;
       }
-      replaceSessionExercise(params.replaceSessionId, params.replaceExerciseId, exId);
+      await replaceSessionExercise(
+        params.replaceSessionId,
+        params.replaceExerciseId,
+        exId,
+      );
       router.back();
       return;
     }
     if (params.routineId && params.dayId) {
-      addExerciseToDay(params.routineId, params.dayId, exId);
+      await addExerciseToDay(params.routineId, params.dayId, exId);
       router.back();
     } else if (params.sessionId) {
-      addExerciseToActiveWorkout(params.sessionId, exId);
+      await addExerciseToActiveWorkout(params.sessionId, exId);
       router.back();
     } else {
       router.back();
@@ -277,12 +283,12 @@ export default function ExercisesScreen() {
                   </Text>
                 </Pressable>
                 <Pressable
-                  onPress={() => {
+                  onPress={async () => {
                     if (!newName.trim()) {
                       Alert.alert("Falta nombre", "Escribe un nombre para el ejercicio.");
                       return;
                     }
-                    const ex = createCustomExercise({
+                    const ex = await createCustomExercise({
                       name: newName.trim(),
                       description: "Ejercicio personalizado",
                       primaryMuscle: newGroup,
@@ -291,7 +297,7 @@ export default function ExercisesScreen() {
                     });
                     setNewName("");
                     setShowCustom(false);
-                    handlePick(ex.id);
+                    await handlePick(ex.id);
                   }}
                   style={({ pressed }) => ({
                     flex: 1,

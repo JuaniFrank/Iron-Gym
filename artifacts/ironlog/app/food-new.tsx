@@ -8,19 +8,18 @@ import { Input } from "@/components/ui/Input";
 import { Screen } from "@/components/ui/Screen";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { createCustomFood } from "@/domains/nutrition/mutators";
 
 export default function FoodNewScreen() {
   const colors = useThemeColors();
-  const { createCustomFood } = useIronLog();
   const [name, setName] = useState("");
   const [cal, setCal] = useState("");
   const [pro, setPro] = useState("");
   const [car, setCar] = useState("");
   const [fat, setFat] = useState("");
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!name.trim()) {
       Alert.alert("Falta nombre", "Escribe el nombre del alimento.");
       return;
@@ -30,7 +29,7 @@ export default function FoodNewScreen() {
       Alert.alert("Calorías inválidas", "Introduce un valor numérico.");
       return;
     }
-    createCustomFood({
+    await createCustomFood({
       name: name.trim(),
       caloriesPer100g: calN,
       proteinPer100g: parseFloat(pro) || 0,

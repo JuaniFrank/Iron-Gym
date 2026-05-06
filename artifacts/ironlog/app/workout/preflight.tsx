@@ -22,8 +22,9 @@ import { Card } from "@/components/ui/Card";
 import { Screen } from "@/components/ui/Screen";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { addNote } from "@/domains/notes/mutators";
+import { startWorkout } from "@/domains/workout/mutators";
 
 /**
  * Pre-workout Factor X (cf. ROADMAP §4.14, notes-system.md D-18).
@@ -36,7 +37,6 @@ export default function PreflightScreen() {
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ routineId?: string; dayId?: string }>();
-  const { startWorkout, addNote } = useIronLog();
 
   const [sleep, setSleep] = useState<string | null>(null);
   const [energy, setEnergy] = useState<string | null>(null);
@@ -52,7 +52,7 @@ export default function PreflightScreen() {
     });
   };
 
-  const handleStart = () => {
+  const handleStart = async () => {
     if (!params.routineId || !params.dayId || starting) return;
     setStarting(true);
 
@@ -61,10 +61,10 @@ export default function PreflightScreen() {
     }
 
     // Crear sesión primero — necesitamos su ID para asociar las notas (D-18).
-    const session = startWorkout(params.routineId, params.dayId);
+    const session = await startWorkout(params.routineId, params.dayId);
 
     if (sleep) {
-      addNote({
+      await addNote({
         sessionId: session.id,
         category: "energy",
         severity: SLEEP_SEVERITY[sleep],
@@ -73,7 +73,7 @@ export default function PreflightScreen() {
       });
     }
     if (energy) {
-      addNote({
+      await addNote({
         sessionId: session.id,
         category: "energy",
         severity: ENERGY_SEVERITY[energy],
@@ -81,25 +81,25 @@ export default function PreflightScreen() {
         source: "preflight",
       });
     }
-    factors.forEach((factor) => {
-      addNote({
+    for (const factor of factors) {
+      await addNote({
         sessionId: session.id,
         category: "energy",
         text: FACTOR_TEXT[factor] ?? factor,
         source: "preflight",
       });
-    });
+    }
 
     router.replace("/workout/active");
   };
 
-  const handleSkip = () => {
+  const handleSkip = async () => {
     if (!params.routineId || !params.dayId) {
       router.back();
       return;
     }
     if (Platform.OS !== "web") Haptics.selectionAsync();
-    startWorkout(params.routineId, params.dayId);
+    await startWorkout(params.routineId, params.dayId);
     router.replace("/workout/active");
   };
 

@@ -5,11 +5,15 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./schema": "./src/schema/index.ts"
+    "./schema": "./src/schema/index.ts",
+    "./postgres": "./src/client/postgres.ts"
   },
   "scripts": {
     "push": "drizzle-kit push --config ./drizzle.config.ts",
-    "push-force": "drizzle-kit push --force --config ./drizzle.config.ts"
+    "push-force": "drizzle-kit push --force --config ./drizzle.config.ts",
+    "db:push:postgres": "drizzle-kit push --config ./drizzle.config.ts",
+    "db:generate:postgres": "drizzle-kit generate --config ./drizzle.config.ts",
+    "db:generate:sqlite": "drizzle-kit generate --config ./drizzle.config.sqlite.ts"
   },
   "dependencies": {
     "drizzle-orm": "catalog:",
@@ -20,6 +24,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/pg": "^8.18.0",
-    "drizzle-kit": "^0.31.9"
+    "drizzle-kit": "^0.31.9",
+    "expo-sqlite": "~16.0.10"
   }
 }

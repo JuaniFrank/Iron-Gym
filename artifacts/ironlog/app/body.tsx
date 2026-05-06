@@ -14,25 +14,30 @@ import { Screen } from "@/components/ui/Screen";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import {
+  addProgressPhoto,
+  deleteBodyWeight,
+  deleteMeasurement,
+  deleteProgressPhoto,
+  logBodyWeight,
+  logMeasurement,
+} from "@/domains/body/mutators";
+import {
+  useBodyWeights,
+  useMeasurements,
+  useProgressPhotos,
+} from "@/domains/body/queries";
+import { useUserProfile } from "@/domains/profile/queries";
 import { formatLength, formatWeight, navyBodyFat } from "@/utils/calculations";
 import { formatDateShort } from "@/utils/date";
 
 export default function BodyScreen() {
   const colors = useThemeColors();
-  const {
-    profile,
-    bodyWeights,
-    measurements,
-    photos,
-    logBodyWeight,
-    deleteBodyWeight,
-    logMeasurement,
-    deleteMeasurement,
-    addProgressPhoto,
-    deleteProgressPhoto,
-  } = useIronLog();
+  const profile = useUserProfile();
+  const bodyWeights = useBodyWeights();
+  const measurements = useMeasurements();
+  const photos = useProgressPhotos();
 
   const [tab, setTab] = useState<"weight" | "measurements" | "photos">("weight");
   const [showWeightForm, setShowWeightForm] = useState(false);
@@ -60,7 +65,7 @@ export default function BodyScreen() {
       allowsEditing: false,
     });
     if (!result.canceled && result.assets[0]) {
-      addProgressPhoto(result.assets[0].uri);
+      await addProgressPhoto({ uri: result.assets[0].uri });
     }
   };
 
@@ -72,7 +77,7 @@ export default function BodyScreen() {
     }
     const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
     if (!result.canceled && result.assets[0]) {
-      addProgressPhoto(result.assets[0].uri);
+      await addProgressPhoto({ uri: result.assets[0].uri });
     }
   };
 

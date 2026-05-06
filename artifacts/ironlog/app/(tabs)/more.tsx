@@ -10,12 +10,16 @@ import { Screen } from "@/components/ui/Screen";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { ACHIEVEMENTS } from "@/constants/achievements";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { useAchievements } from "@/domains/achievements/queries";
+import { useGoals } from "@/domains/goals/queries";
+import { useUserProfile } from "@/domains/profile/queries";
 
 export default function MoreScreen() {
   const colors = useThemeColors();
-  const { profile, achievements, goals } = useIronLog();
+  const profile = useUserProfile();
+  const achievements = useAchievements();
+  const goals = useGoals();
   const initials = profile.name.trim().slice(0, 1).toUpperCase() || "A";
   const activeGoals = goals.filter((g) => !g.completed).length;
   const totalAchievements = ACHIEVEMENTS.length;
