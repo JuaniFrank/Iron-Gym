@@ -12,7 +12,11 @@
     "serve": "node server/serve.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "sideload": "bash scripts/update-ipa.sh",
+    "sideload:full": "bash scripts/update-ipa.sh --full"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
@@ -70,6 +74,9 @@
     "expo-file-system": "~19.0.21",
     "expo-sqlite": "~16.0.10",
     "react-native-get-random-values": "~1.11.0",
-    "uuid": "^14.0.0"
+    "uuid": "^14.0.0",
+    "expo": "~54.0.33",
+    "react": "19.1.0",
+    "react-native": "0.81.5"
   }
 }
