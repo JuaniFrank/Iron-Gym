@@ -23,9 +23,7 @@ import { TermHint } from "@/components/workout/TermHint";
 import { useThemeColors } from "@/contexts/ThemeContext";
 import { useAllExercises } from "@/domains/exercises/queries";
 import { useAllNotes } from "@/domains/notes/queries";
-import {
-  useDefaultRestSeconds,
-} from "@/domains/profile/queries";
+import { useDefaultRestSeconds } from "@/domains/profile/queries";
 import { useRoutineById } from "@/domains/routines/queries";
 import { useSessionPlan } from "@/domains/schedule/queries";
 import {
@@ -65,7 +63,7 @@ export default function ActiveWorkoutScreen() {
   const routine = useRoutineById(session?.routineId ?? null);
   const defaultRestSeconds = useDefaultRestSeconds();
   const notes = useAllNotes();
-  const sessionPlan = useSessionPlan(
+  const { plan: sessionPlan } = useSessionPlan(
     session ? dateKey(session.startedAt) : null,
     session?.routineId,
     session?.routineDayId,
@@ -90,7 +88,12 @@ export default function ActiveWorkoutScreen() {
 
   const startedRef = useRef(false);
   useEffect(() => {
-    if (!activeWorkoutId && params.routineId && params.dayId && !startedRef.current) {
+    if (
+      !activeWorkoutId &&
+      params.routineId &&
+      params.dayId &&
+      !startedRef.current
+    ) {
       startedRef.current = true;
       startWorkout(params.routineId, params.dayId);
     }
@@ -230,10 +233,18 @@ export default function ActiveWorkoutScreen() {
             <SummaryCol
               label="SETS"
               value={
-                <Text variant="mono" color={colors.ink} style={{ fontSize: 18, fontWeight: "600" }}>
+                <Text
+                  variant="mono"
+                  color={colors.ink}
+                  style={{ fontSize: 18, fontWeight: "600" }}
+                >
                   {completedSetsCount}
                   {targetTotal > 0 ? (
-                    <Text variant="mono" color={colors.muted} style={{ fontSize: 18 }}>
+                    <Text
+                      variant="mono"
+                      color={colors.muted}
+                      style={{ fontSize: 18 }}
+                    >
                       /{targetTotal}
                     </Text>
                   ) : null}
@@ -244,9 +255,17 @@ export default function ActiveWorkoutScreen() {
             <SummaryCol
               label="VOLUMEN"
               value={
-                <Text variant="mono" color={colors.ink} style={{ fontSize: 18, fontWeight: "600" }}>
+                <Text
+                  variant="mono"
+                  color={colors.ink}
+                  style={{ fontSize: 18, fontWeight: "600" }}
+                >
                   {Math.round(totalVolume).toLocaleString()}
-                  <Text variant="mono" color={colors.muted} style={{ fontSize: 11 }}>
+                  <Text
+                    variant="mono"
+                    color={colors.muted}
+                    style={{ fontSize: 11 }}
+                  >
                     kg
                   </Text>
                 </Text>
@@ -291,10 +310,18 @@ export default function ActiveWorkoutScreen() {
                           justifyContent: "center",
                         }}
                       >
-                        <Feather name="skip-forward" size={14} color={colors.muted} />
+                        <Feather
+                          name="skip-forward"
+                          size={14}
+                          color={colors.muted}
+                        />
                       </View>
                       <Col flex={1} gap={2}>
-                        <Text variant="title" color={colors.muted} numberOfLines={1}>
+                        <Text
+                          variant="title"
+                          color={colors.muted}
+                          numberOfLines={1}
+                        >
                           {ex.name}
                         </Text>
                         <Text variant="tiny" color={colors.muted}>
@@ -321,7 +348,11 @@ export default function ActiveWorkoutScreen() {
                         opacity: pressed ? 0.6 : 1,
                       })}
                     >
-                      <Feather name="rotate-ccw" size={11} color={colors.accentEdge} />
+                      <Feather
+                        name="rotate-ccw"
+                        size={11}
+                        color={colors.accentEdge}
+                      />
                       <Text variant="label" color={colors.accentEdge}>
                         Volver a hacer
                       </Text>
@@ -347,7 +378,9 @@ export default function ActiveWorkoutScreen() {
               ? plannedExercise.sets.filter((s) => !s.isWarmup)
               : null;
 
-            const completedForExercise = session.sets.filter((s) => s.exerciseId === exId);
+            const completedForExercise = session.sets.filter(
+              (s) => s.exerciseId === exId,
+            );
             const lastSets = getLastSetsForExercise(sessions, exId, session.id);
             // Excluir la sesión en curso — el max es histórico, no incluye
             // los sets que el usuario está logueando ahora mismo.
@@ -377,9 +410,9 @@ export default function ActiveWorkoutScreen() {
 
             // First incomplete row → active.
             const firstIncomplete = rows.findIndex((row) => {
-              const c = completedForExercise.filter((s) => s.isWarmup === row.isWarmup)[
-                row.index - 1
-              ];
+              const c = completedForExercise.filter(
+                (s) => s.isWarmup === row.isWarmup,
+              )[row.index - 1];
               return !c;
             });
 
@@ -397,7 +430,11 @@ export default function ActiveWorkoutScreen() {
                         justifyContent: "center",
                       }}
                     >
-                      <Feather name="activity" size={16} color={colors.accentEdge} />
+                      <Feather
+                        name="activity"
+                        size={16}
+                        color={colors.accentEdge}
+                      />
                     </View>
                     <Col gap={2} flex={1}>
                       <Text variant="title" numberOfLines={1}>
@@ -422,11 +459,17 @@ export default function ActiveWorkoutScreen() {
                       borderRadius: 16,
                       alignItems: "center",
                       justifyContent: "center",
-                      backgroundColor: pressed ? colors.surfaceAlt : "transparent",
+                      backgroundColor: pressed
+                        ? colors.surfaceAlt
+                        : "transparent",
                       opacity: pressed ? 0.8 : 1,
                     })}
                   >
-                    <Feather name="more-horizontal" size={16} color={colors.muted} />
+                    <Feather
+                      name="more-horizontal"
+                      size={16}
+                      color={colors.muted}
+                    />
                   </Pressable>
                 </Row>
 
@@ -454,7 +497,9 @@ export default function ActiveWorkoutScreen() {
                     const completedSet = completedForExercise.filter(
                       (s) => s.isWarmup === row.isWarmup,
                     )[row.index - 1];
-                    const previous = row.isWarmup ? undefined : lastSets[row.index - 1];
+                    const previous = row.isWarmup
+                      ? undefined
+                      : lastSets[row.index - 1];
                     const plannedSet = plannedExercise
                       ? (row.isWarmup ? plannedWarmupSets : plannedWorkSets)?.[
                           row.index - 1
@@ -520,7 +565,8 @@ export default function ActiveWorkoutScreen() {
                           }
                         }}
                         onUncomplete={() => {
-                          if (completedSet) removeSet(session.id, completedSet.id);
+                          if (completedSet)
+                            removeSet(session.id, completedSet.id);
                         }}
                         onRemove={() => {
                           if (completedSet) {
@@ -529,7 +575,8 @@ export default function ActiveWorkoutScreen() {
                               {
                                 text: "Eliminar",
                                 style: "destructive",
-                                onPress: () => removeSet(session.id, completedSet.id),
+                                onPress: () =>
+                                  removeSet(session.id, completedSet.id),
                               },
                             ]);
                           }
@@ -602,7 +649,9 @@ export default function ActiveWorkoutScreen() {
         if (idx === -1) return null;
         const ex = getExerciseById(actionForExId);
         if (!ex) return null;
-        const hasLoggedSets = session.sets.some((s) => s.exerciseId === actionForExId);
+        const hasLoggedSets = session.sets.some(
+          (s) => s.exerciseId === actionForExId,
+        );
         const isSkipped = skippedSet.has(actionForExId);
         return (
           <ExerciseActionSheet
@@ -638,7 +687,8 @@ export default function ActiveWorkoutScreen() {
                   {
                     text: "Quitar",
                     style: "destructive",
-                    onPress: () => removeSessionExercise(session.id, actionForExId),
+                    onPress: () =>
+                      removeSessionExercise(session.id, actionForExId),
                   },
                 ],
               );
@@ -686,7 +736,13 @@ export default function ActiveWorkoutScreen() {
   );
 }
 
-function SummaryCol({ label, value }: { label: string; value: React.ReactNode }) {
+function SummaryCol({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
   const colors = useThemeColors();
   return (
     <Col gap={4} ai="center" flex={1}>
@@ -694,7 +750,11 @@ function SummaryCol({ label, value }: { label: string; value: React.ReactNode })
         {label}
       </Text>
       {typeof value === "string" ? (
-        <Text variant="mono" color={colors.ink} style={{ fontSize: 18, fontWeight: "600" }}>
+        <Text
+          variant="mono"
+          color={colors.ink}
+          style={{ fontSize: 18, fontWeight: "600" }}
+        >
           {value}
         </Text>
       ) : (

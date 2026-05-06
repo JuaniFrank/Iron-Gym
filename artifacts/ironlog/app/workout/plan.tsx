@@ -175,7 +175,10 @@ function PlanEditor({
   const dateObj = parseDateKey(dateKey);
   const isToday = isSameDayKey(dateKey, todayDateKey());
 
-  const updateExercise = (exId: string, updater: (ex: PlannedExercise) => PlannedExercise) => {
+  const updateExercise = (
+    exId: string,
+    updater: (ex: PlannedExercise) => PlannedExercise,
+  ) => {
     setExercises((prev) =>
       prev.map((ex) => (ex.exerciseId === exId ? updater(ex) : ex)),
     );
@@ -255,7 +258,9 @@ function PlanEditor({
             <Text variant="tiny" color={colors.accent}>
               {isToday
                 ? "HOY"
-                : DAY_LABELS_FULL[(dateObj.getDay() + 6) % 7].toUpperCase()}{" "}
+                : DAY_LABELS_FULL[
+                    (dateObj.getDay() + 6) % 7
+                  ].toUpperCase()}{" "}
               · {formatDateLong(dateObj.getTime())}
             </Text>
             <Text variant="h2" color={colors.bg}>
@@ -264,7 +269,11 @@ function PlanEditor({
             <Text variant="caption" color="rgba(242,240,232,0.65)">
               {routine.name} · {day.exercises.length} ejercicios
             </Text>
-            <Text variant="caption" color="rgba(242,240,232,0.55)" style={{ marginTop: 4 }}>
+            <Text
+              variant="caption"
+              color="rgba(242,240,232,0.55)"
+              style={{ marginTop: 4 }}
+            >
               Los cambios se guardan automáticamente.
             </Text>
           </Col>
@@ -281,9 +290,14 @@ function PlanEditor({
             {exercises.map((pe) => {
               const ex = getExerciseById(pe.exerciseId);
               if (!ex) return null;
-              const re = day.exercises.find((x) => x.exerciseId === pe.exerciseId);
+              const re = day.exercises.find(
+                (x) => x.exerciseId === pe.exerciseId,
+              );
               const lastSets = getLastSetsForExercise(sessions, pe.exerciseId);
-              const exerciseHistory = computeExerciseHistory(pe.exerciseId, sessions);
+              const exerciseHistory = computeExerciseHistory(
+                pe.exerciseId,
+                sessions,
+              );
               return (
                 <PlanExerciseCard
                   key={pe.exerciseId}
@@ -469,7 +483,8 @@ function PlanExerciseCard({
         if (kind === "plus2_5") {
           return {
             ...s,
-            weight: baseWeight != null ? roundQuarter(baseWeight + 2.5) : undefined,
+            weight:
+              baseWeight != null ? roundQuarter(baseWeight + 2.5) : undefined,
             reps: baseReps,
           };
         }
@@ -505,7 +520,8 @@ function PlanExerciseCard({
               {exerciseName}
             </Text>
             <Text variant="caption" muted numberOfLines={1}>
-              {(MUSCLE_GROUP_LABELS as Record<string, string>)[muscle] ?? muscle}
+              {(MUSCLE_GROUP_LABELS as Record<string, string>)[muscle] ??
+                muscle}
               {routineExercise
                 ? ` · ${routineExercise.targetSets} × ${routineExercise.targetReps}`
                 : ""}
@@ -560,10 +576,7 @@ function PlanExerciseCard({
         ) : (
           <Text variant="mono" color={colors.ink} style={{ fontSize: 12 }}>
             {lastSets
-              .map(
-                (s) =>
-                  `${s.weight}×${s.reps}${s.rpe ? ` @${s.rpe}` : ""}`,
-              )
+              .map((s) => `${s.weight}×${s.reps}${s.rpe ? ` @${s.rpe}` : ""}`)
               .join("  ·  ")}
           </Text>
         )}
@@ -587,7 +600,11 @@ function PlanExerciseCard({
         >
           {history.length >= 2 ? (
             <>
-              <Text variant="tiny" color={colors.muted} style={{ marginBottom: 6 }}>
+              <Text
+                variant="tiny"
+                color={colors.muted}
+                style={{ marginBottom: 6 }}
+              >
                 PESO MÁX · ÚLTIMAS {history.length} SESIONES
               </Text>
               <LineChart
@@ -643,7 +660,8 @@ function PlanExerciseCard({
       {/* Set rows */}
       <Col gap={6}>
         {planned.sets.map((s, i) => {
-          const workIndex = countWorkBefore(planned.sets, i) + (s.isWarmup ? 0 : 1);
+          const workIndex =
+            countWorkBefore(planned.sets, i) + (s.isWarmup ? 0 : 1);
           return (
             <PlanSetRow
               key={i}
@@ -980,7 +998,9 @@ function buildInitialSets(
 
 function buildRecommendation(lastSets: CompletedSet[]): string | null {
   if (lastSets.length === 0) return "Empezá liviano y observá cómo va.";
-  const rpeValues = lastSets.map((s) => s.rpe).filter((x): x is number => x != null);
+  const rpeValues = lastSets
+    .map((s) => s.rpe)
+    .filter((x): x is number => x != null);
   if (rpeValues.length === 0) return null;
   const avg = rpeValues.reduce((a, b) => a + b, 0) / rpeValues.length;
   if (avg >= 9) return "Última fue dura — repetí o bajá un poco.";
