@@ -76,6 +76,17 @@ export function useScheduleOverrides(): ScheduleOverride[] {
   return useMemo(() => (data ?? []).map(rowToOverride), [data]);
 }
 
+export interface SessionPlanResult {
+  plan: SessionPlan | null;
+  /**
+   * `false` while the underlying `useLiveQuery` hasn't returned its first
+   * result yet. Consumers that care about the "loading vs. no plan saved"
+   * distinction (e.g. screens that initialize local state from the plan)
+   * should gate on this flag — `plan === null` alone conflates the two.
+   */
+  isLoaded: boolean;
+}
+
 /**
  * Per-date `SessionPlan`. The legacy `getSessionPlan(dateKey, routineId?,
  * routineDayId?)` returns `undefined` when the plan exists but its routine
@@ -86,7 +97,7 @@ export function useSessionPlan(
   date: string | null | undefined,
   routineId?: string,
   routineDayId?: string,
-): SessionPlan | null {
+): SessionPlanResult {
   const query = useMemo(
     () =>
       db
@@ -98,12 +109,17 @@ export function useSessionPlan(
   );
   const { data } = useLiveQuery(query, [date]);
   return useMemo(() => {
-    if (!date) return null;
-    const row = data?.[0];
-    if (!row) return null;
-    if (routineId && row.routineId !== routineId) return null;
-    if (routineDayId && row.routineDayId !== routineDayId) return null;
-    return rowToPlan(row);
+    if (!date) return { plan: null, isLoaded: true };
+    if (data === undefined) return { plan: null, isLoaded: false };
+    const row = data[0];
+    if (!row) return { plan: null, isLoaded: true };
+    if (routineId && row.routineId !== routineId) {
+      return { plan: null, isLoaded: true };
+    }
+    if (routineDayId && row.routineDayId !== routineDayId) {
+      return { plan: null, isLoaded: true };
+    }
+    return { plan: rowToPlan(row), isLoaded: true };
   }, [data, date, routineId, routineDayId]);
 }
 

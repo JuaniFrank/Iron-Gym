@@ -116,7 +116,7 @@ export default function HomeScreen() {
   // Plan-of-the-day & next training context for the planning entry-point card.
   // Hooks must be called unconditionally; the schedule-pin check happens
   // inside `useSessionPlan` (returns null when pinned ids mismatch).
-  const todaySessionPlan = useSessionPlan(
+  const { plan: todaySessionPlan } = useSessionPlan(
     todayKey,
     !isRest && todayRoutine ? todayRoutine.id : undefined,
     !isRest && todayDay ? todayDay.id : undefined,
@@ -126,7 +126,7 @@ export default function HomeScreen() {
     daysAhead: 14,
     startOffsetDays: completedToday ? 1 : 0,
   });
-  const nextSessionPlan = useSessionPlan(
+  const { plan: nextSessionPlan } = useSessionPlan(
     nextTrainingDay?.dateKey ?? null,
     nextTrainingDay?.routineId,
     nextTrainingDay?.routineDayId,

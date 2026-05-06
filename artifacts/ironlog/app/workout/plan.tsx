@@ -37,84 +37,40 @@ import {
 import { useSessionPlan } from "@/domains/schedule/queries";
 import { getLastSetsForExercise } from "@/domains/workout/helpers";
 import { startWorkout } from "@/domains/workout/mutators";
-import {
-  useActiveWorkoutId,
-  useSessions,
-} from "@/domains/workout/queries";
+import { useActiveWorkoutId, useSessions } from "@/domains/workout/queries";
 import type {
   CompletedSet,
   PlannedExercise,
   PlannedSet,
+  Routine,
+  RoutineDay,
   RoutineExercise,
+  SessionPlan,
 } from "@/types";
 import { DAY_LABELS_FULL, formatDateLong } from "@/utils/date";
 
+/**
+ * Thin loader. `useRoutineById` and `useSessionPlan` resolve asynchronously
+ * via `useLiveQuery` — they return `null` on the first render and settle a
+ * tick later. We only mount `PlanEditor` once both have settled so its
+ * `useState` lazy initializer captures real values (a previous bug had it
+ * locking in `[]` from the still-loading first render and ignoring the data
+ * that arrived afterwards).
+ */
 export default function PlanWorkoutScreen() {
   const params = useLocalSearchParams<{
     routineId?: string;
     dayId?: string;
     dateKey?: string;
   }>();
-  const colors = useThemeColors();
-  const insets = useSafeAreaInsets();
-  const sessions = useSessions();
   const routine = useRoutineById(params.routineId ?? null);
-  const allExercises = useAllExercises();
-  const exerciseById = useMemo(
-    () => new Map(allExercises.map((e) => [e.id, e])),
-    [allExercises],
-  );
-  const getExerciseById = (id: string) => exerciseById.get(id);
-  const existing = useSessionPlan(
+  const { plan: existing, isLoaded: existingLoaded } = useSessionPlan(
     params.dateKey ?? null,
     params.routineId,
     params.dayId,
   );
-  const activeWorkoutId = useActiveWorkoutId();
 
-  const day = useMemo(
-    () =>
-      routine && params.dayId
-        ? routine.days.find((d) => d.id === params.dayId)
-        : undefined,
-    [routine, params.dayId],
-  );
-
-  // Local state of the plan — auto-saves on each change.
-  const [exercises, setExercises] = useState<PlannedExercise[]>(() => {
-    if (existing) return existing.exercises;
-    if (!day) return [];
-    return day.exercises.map((re) => ({
-      exerciseId: re.exerciseId,
-      sets: buildInitialSets(re, getLastSetsForExercise(sessions, re.exerciseId)),
-    }));
-  });
-
-  // Auto-save on each user edit (skip the initial mount so a quick "look and
-  // leave" doesn't persist a plan).
-  const skipNextSaveRef = useRef(true);
-  useEffect(() => {
-    if (skipNextSaveRef.current) {
-      skipNextSaveRef.current = false;
-      return;
-    }
-    if (!params.dateKey || !params.routineId || !params.dayId) return;
-    if (!day) return;
-    void upsertSessionPlan({
-      dateKey: params.dateKey,
-      routineId: params.routineId,
-      routineDayId: params.dayId,
-      exercises,
-    });
-  }, [
-    exercises,
-    params.dateKey,
-    params.routineId,
-    params.dayId,
-    day,
-  ]);
-
-  if (!routine || !day || !params.dateKey || !params.routineId || !params.dayId) {
+  if (!params.dateKey || !params.routineId || !params.dayId) {
     return (
       <Screen>
         <EmptyState
@@ -128,8 +84,96 @@ export default function PlanWorkoutScreen() {
     );
   }
 
-  const dateObj = parseDateKey(params.dateKey);
-  const isToday = isSameDayKey(params.dateKey, todayDateKey());
+  if (!routine || !existingLoaded) {
+    return <Screen>{null}</Screen>;
+  }
+
+  const day = routine.days.find((d) => d.id === params.dayId);
+  if (!day) {
+    return (
+      <Screen>
+        <EmptyState
+          icon="alert-circle"
+          title="Día no encontrado"
+          description="Esta rutina ya no tiene este día."
+          actionLabel="Volver"
+          onAction={() => router.back()}
+        />
+      </Screen>
+    );
+  }
+
+  return (
+    <PlanEditor
+      routine={routine}
+      day={day}
+      dateKey={params.dateKey}
+      routineId={params.routineId}
+      routineDayId={params.dayId}
+      existing={existing}
+    />
+  );
+}
+
+interface PlanEditorProps {
+  routine: Routine;
+  day: RoutineDay;
+  dateKey: string;
+  routineId: string;
+  routineDayId: string;
+  existing: SessionPlan | null;
+}
+
+function PlanEditor({
+  routine,
+  day,
+  dateKey,
+  routineId,
+  routineDayId,
+  existing,
+}: PlanEditorProps) {
+  const colors = useThemeColors();
+  const insets = useSafeAreaInsets();
+  const sessions = useSessions();
+  const allExercises = useAllExercises();
+  const exerciseById = useMemo(
+    () => new Map(allExercises.map((e) => [e.id, e])),
+    [allExercises],
+  );
+  const getExerciseById = (id: string) => exerciseById.get(id);
+  const activeWorkoutId = useActiveWorkoutId();
+
+  const [exercises, setExercises] = useState<PlannedExercise[]>(() => {
+    if (existing) return existing.exercises;
+    return day.exercises.map((re) => ({
+      exerciseId: re.exerciseId,
+      sets: buildInitialSets(
+        re,
+        getLastSetsForExercise(sessions, re.exerciseId),
+      ),
+    }));
+  });
+
+  // Auto-save on each user edit (skip the initial mount so a quick "look and
+  // leave" doesn't persist a plan).
+  const skipNextSaveRef = useRef(true);
+  useEffect(() => {
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+    void upsertSessionPlan({
+      dateKey,
+      routineId,
+      routineDayId,
+      exercises,
+    });
+  }, [exercises, dateKey, routineId, routineDayId]);
+
+  console.log(`JSON.stringify(exercises): ${JSON.stringify(routine)}`);
+
+  const dateObj = parseDateKey(dateKey);
+  const isToday = isSameDayKey(dateKey, todayDateKey());
 
   const updateExercise = (exId: string, updater: (ex: PlannedExercise) => PlannedExercise) => {
     setExercises((prev) =>
@@ -142,7 +186,7 @@ export default function PlanWorkoutScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
     if (!activeWorkoutId) {
-      await startWorkout(params.routineId!, params.dayId!);
+      await startWorkout(routineId, routineDayId);
     }
     router.replace("/workout/active");
   };
@@ -157,7 +201,7 @@ export default function PlanWorkoutScreen() {
           text: "Borrar plan",
           style: "destructive",
           onPress: async () => {
-            await deleteSessionPlan(params.dateKey!);
+            await deleteSessionPlan(dateKey);
             router.back();
           },
         },
