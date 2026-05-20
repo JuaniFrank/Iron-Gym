@@ -65,11 +65,13 @@ export default function HomeScreen() {
       : null;
   const todayDay =
     todayRoutine && todayPlan.kind === "training"
-      ? todayRoutine.days.find((d) => d.id === todayPlan.routineDayId) ?? null
+      ? (todayRoutine.days.find((d) => d.id === todayPlan.routineDayId) ?? null)
       : null;
 
   const finishedSessions = sessions.filter((s) => s.endedAt);
-  const todaySessions = finishedSessions.filter((s) => dateKey(s.endedAt!) === todayKey);
+  const todaySessions = finishedSessions.filter(
+    (s) => dateKey(s.endedAt!) === todayKey,
+  );
   const completedToday = todaySessions.length > 0;
   const latestTodaySession = useMemo(
     () =>
@@ -80,9 +82,12 @@ export default function HomeScreen() {
   );
 
   const tdee = calculateTDEE(profile);
-  const calorieGoal = profile.caloriesGoal ?? calorieGoalForGoal(tdee, profile.goal);
+  const calorieGoal =
+    profile.caloriesGoal ?? calorieGoalForGoal(tdee, profile.goal);
 
-  const todayFoodEntries = foodEntries.filter((e) => dateKey(e.date) === todayKey);
+  const todayFoodEntries = foodEntries.filter(
+    (e) => dateKey(e.date) === todayKey,
+  );
   const consumedCalories = todayFoodEntries.reduce((sum, e) => {
     const food = allFoods.find((f) => f.id === e.foodItemId);
     if (!food) return sum;
@@ -95,7 +100,9 @@ export default function HomeScreen() {
   const weekVolume = last7Sessions.reduce((sum, s) => sum + s.totalVolumeKg, 0);
 
   const trainedDates = finishedSessions.map((s) => s.endedAt!);
-  const dayName = today.toLocaleDateString("es-ES", { weekday: "long" }).toUpperCase();
+  const dayName = today
+    .toLocaleDateString("es-ES", { weekday: "long" })
+    .toUpperCase();
 
   const greeting = (() => {
     const h = today.getHours();
@@ -264,7 +271,11 @@ export default function HomeScreen() {
   return (
     <Screen scroll tabBarSpacing>
       {/* Greeting */}
-      <Row jc="space-between" ai="flex-start" style={{ marginBottom: 28, paddingTop: 12 }}>
+      <Row
+        jc="space-between"
+        ai="flex-start"
+        style={{ marginBottom: 28, paddingTop: 12 }}
+      >
         <Col gap={6}>
           <Text variant="tiny" color={colors.muted}>
             {greeting}
@@ -315,7 +326,9 @@ export default function HomeScreen() {
               width: 200,
               height: 200,
               borderRadius: 999,
-              backgroundColor: isRest ? "rgba(242,240,232,0.06)" : colors.accent,
+              backgroundColor: isRest
+                ? "rgba(242,240,232,0.06)"
+                : colors.accent,
               opacity: isRest ? 1 : 0.18,
             }}
           />
@@ -323,7 +336,11 @@ export default function HomeScreen() {
             <Row gap={6} ai="center">
               <Text
                 variant="tiny"
-                color={isRest && !activeWorkoutId ? "rgba(242,240,232,0.55)" : colors.accent}
+                color={
+                  isRest && !activeWorkoutId
+                    ? "rgba(242,240,232,0.55)"
+                    : colors.accent
+                }
               >
                 {activeWorkoutId ? "EN CURSO" : `HOY · ${dayName}`}
               </Text>
@@ -383,17 +400,18 @@ export default function HomeScreen() {
                   justifyContent: "center",
                 }}
               >
-                <Feather
-                  name="moon"
-                  size={18}
-                  color="rgba(242,240,232,0.55)"
-                />
+                <Feather name="moon" size={18} color="rgba(242,240,232,0.55)" />
               </View>
             )}
           </Row>
           <Text variant="hero" color={colors.bg}>
             {heroTitle}{" "}
-            <Text variant="hero" color={colors.bg} italic style={{ fontWeight: "300" }}>
+            <Text
+              variant="hero"
+              color={colors.bg}
+              italic
+              style={{ fontWeight: "300" }}
+            >
               {heroItalic}
             </Text>
           </Text>
@@ -428,7 +446,10 @@ export default function HomeScreen() {
           })}
         >
           <Card variant={planTarget.hasPlan ? "default" : "accent"} padding={0}>
-            <Row gap={12} style={{ paddingVertical: 14, paddingHorizontal: 16 }}>
+            <Row
+              gap={12}
+              style={{ paddingVertical: 14, paddingHorizontal: 16 }}
+            >
               <View
                 style={{
                   width: 40,
@@ -465,11 +486,7 @@ export default function HomeScreen() {
                     : `${formatPlanWhen(planTarget.timestamp)} · ${planTarget.dayName}`}
                 </Text>
               </Col>
-              <Feather
-                name="chevron-right"
-                size={16}
-                color={colors.muted}
-              />
+              <Feather name="chevron-right" size={16} color={colors.muted} />
             </Row>
           </Card>
         </Pressable>
@@ -477,10 +494,17 @@ export default function HomeScreen() {
 
       {/* Metrics rail */}
       <Card padding={0} style={{ marginBottom: 14 }}>
-        <Row jc="space-between" style={{ paddingVertical: 16, paddingHorizontal: 4 }}>
+        <Row
+          jc="space-between"
+          style={{ paddingVertical: 16, paddingHorizontal: 4 }}
+        >
           <MetricCell label="RACHA" value={String(streak)} sub="días" />
           <Divider vertical />
-          <MetricCell label="SESIONES" value={String(finishedSessions.length)} sub="totales" />
+          <MetricCell
+            label="SESIONES"
+            value={String(finishedSessions.length)}
+            sub="totales"
+          />
           <Divider vertical />
           <MetricCell
             label="VOL · 7D"
@@ -526,7 +550,10 @@ export default function HomeScreen() {
           <Col gap={8}>
             {recent.map((s) => (
               <Card key={s.id} padding={0}>
-                <Row jc="space-between" style={{ paddingVertical: 14, paddingHorizontal: 16 }}>
+                <Row
+                  jc="space-between"
+                  style={{ paddingVertical: 14, paddingHorizontal: 16 }}
+                >
                   <Row gap={12} flex={1}>
                     <View
                       style={{
@@ -541,7 +568,8 @@ export default function HomeScreen() {
                         {s.dayName}
                       </Text>
                       <Text variant="caption" muted numberOfLines={1}>
-                        {s.sets.length} sets · {(s.totalVolumeKg / 1000).toFixed(1)}t
+                        {s.sets.length} sets ·{" "}
+                        {(s.totalVolumeKg / 1000).toFixed(1)}t
                       </Text>
                     </Col>
                   </Row>
@@ -620,11 +648,21 @@ function formatPlanWhen(timestamp: number): string {
   today.setHours(0, 0, 0, 0);
   const target = new Date(timestamp);
   target.setHours(0, 0, 0, 0);
-  const diffDays = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const diffDays = Math.round(
+    (target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+  );
   if (diffDays === 0) return "Hoy";
   if (diffDays === 1) return "Mañana";
   if (diffDays > 0 && diffDays < 7) {
-    const labels = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+    const labels = [
+      "Lunes",
+      "Martes",
+      "Miércoles",
+      "Jueves",
+      "Viernes",
+      "Sábado",
+      "Domingo",
+    ];
     return labels[(target.getDay() + 6) % 7];
   }
   if (diffDays > 0) return `En ${diffDays} días`;

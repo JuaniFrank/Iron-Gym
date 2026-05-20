@@ -109,6 +109,34 @@ export default function ActiveWorkoutScreen() {
 
   const [restingFor, setRestingFor] = useState<number | null>(null);
 
+  // Filas de trabajo extra añadidas manualmente por el usuario (botón "Añadir
+  // set"). Cada entrada es el contador de filas vacías extra para ese ejercicio
+  // por encima del plan; los sets ya completados crecen las filas por sí solos.
+  const [extraWorkSetsByExercise, setExtraWorkSetsByExercise] = useState<
+    Record<string, number>
+  >({});
+
+  // Acordeón por ejercicio: pulsar "Finalizar serie" (sólo visible cuando
+  // todos los work sets están completados) colapsa la card a un header
+  // compacto. Tap en el header (o en el chevron) la vuelve a expandir.
+  const [collapsedByExercise, setCollapsedByExercise] = useState<
+    Record<string, boolean>
+  >({});
+
+  const handleFinishSet = (exId: string) => {
+    if (Platform.OS !== "web") {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+    setCollapsedByExercise((prev) => ({ ...prev, [exId]: true }));
+  };
+
+  const expandExercise = (exId: string) => {
+    if (Platform.OS !== "web") {
+      Haptics.selectionAsync();
+    }
+    setCollapsedByExercise((prev) => ({ ...prev, [exId]: false }));
+  };
+
   // Hooks must run unconditionally — keep these before the early return below.
   const skippedSet = useMemo(
     () => new Set(session?.skippedExerciseIds ?? []),
@@ -368,6 +396,69 @@ export default function ActiveWorkoutScreen() {
             const warmupSets = re?.warmupSets ?? 0;
             const restSeconds = re?.restSeconds ?? defaultRestSeconds;
 
+            // Card colapsada (acordeón). Mismo header que la card expandida
+            // — avatar accent + nombre + targetSets × targetReps · rest — y un
+            // chevron-down que invita a desplegar. Toda la card es pressable
+            // para máximo tap target.
+            const isCollapsed = collapsedByExercise[exId] ?? false;
+            if (isCollapsed) {
+              return (
+                <Card key={exId}>
+                  <Pressable
+                    onPress={() => expandExercise(exId)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Expandir ${ex.name}`}
+                    style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+                  >
+                    <Row jc="space-between" ai="center">
+                      <Row gap={10} flex={1}>
+                        <View
+                          style={{
+                            width: 36,
+                            height: 36,
+                            borderRadius: 10,
+                            backgroundColor: colors.accentSoft,
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <Feather
+                            name="check"
+                            size={16}
+                            color={colors.accentEdge}
+                          />
+                        </View>
+                        <Col gap={2} flex={1}>
+                          <Text variant="title" numberOfLines={1}>
+                            {ex.name}
+                          </Text>
+                          <Text variant="caption" muted>
+                            {targetSets} × {targetReps} · {restSeconds}s
+                          </Text>
+                        </Col>
+                      </Row>
+                      <View
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 16,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: colors.surfaceAlt,
+                        }}
+                      >
+                        <Feather
+                          name="chevron-down"
+                          size={16}
+                          color={colors.muted}
+                        />
+                      </View>
+                    </Row>
+                  </Pressable>
+                </Card>
+              );
+            }
+
             const plannedExercise = sessionPlan?.exercises.find(
               (p) => p.exerciseId === exId,
             );
@@ -390,22 +481,33 @@ export default function ActiveWorkoutScreen() {
               session.id,
             );
 
-            // Effective row counts: plan wins over routine defaults; we still
-            // grow if the user logged more sets than planned.
+            // Effective row counts: plan wins over routine defaults; warmup y
+            // work crecen de forma independiente solo si el usuario logueó más
+            // de lo planificado, o si pulsó "Añadir set" (extraWork manual).
             const effectiveWarmup = plannedWarmupSets?.length ?? warmupSets;
             const effectiveWork = plannedWorkSets?.length ?? targetSets;
-            const totalRows = Math.max(
-              effectiveWarmup + effectiveWork,
-              completedForExercise.length + 1,
+            const completedWarmupCount = completedForExercise.filter(
+              (s) => s.isWarmup,
+            ).length;
+            const completedWorkCount =
+              completedForExercise.length - completedWarmupCount;
+            const extraWork = extraWorkSetsByExercise[exId] ?? 0;
+            const warmupRows = Math.max(effectiveWarmup, completedWarmupCount);
+            const workRows = Math.max(
+              effectiveWork + extraWork,
+              completedWorkCount,
             );
+            // El botón "Finalizar serie" sólo aparece cuando no quedan filas
+            // de trabajo vacías. Los warmups son opcionales, así que no
+            // entran en el chequeo (lo pidió explícitamente el usuario).
+            const allWorkSetsDone =
+              completedWorkCount > 0 && completedWorkCount >= workRows;
             const rows: { isWarmup: boolean; index: number }[] = [];
-            for (let i = 0; i < effectiveWarmup; i++) {
+            for (let i = 0; i < warmupRows; i++) {
               rows.push({ isWarmup: true, index: i + 1 });
             }
-            let workIndex = 0;
-            for (let i = effectiveWarmup; i < totalRows; i++) {
-              workIndex++;
-              rows.push({ isWarmup: false, index: workIndex });
+            for (let i = 0; i < workRows; i++) {
+              rows.push({ isWarmup: false, index: i + 1 });
             }
 
             // First incomplete row → active.
@@ -586,7 +688,41 @@ export default function ActiveWorkoutScreen() {
                   })}
                 </Col>
 
+                {allWorkSetsDone ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Finalizar serie de ${ex.name}`}
+                    style={({ pressed }) => ({
+                      marginTop: 12,
+                      height: 44,
+                      borderRadius: 12,
+                      backgroundColor: colors.accent,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      opacity: pressed ? 0.85 : 1,
+                    })}
+                    onPress={() => handleFinishSet(exId)}
+                  >
+                    <Feather
+                      name="check-circle"
+                      size={16}
+                      color={colors.accentInk}
+                    />
+                    <Text
+                      variant="label"
+                      weight="semibold"
+                      color={colors.accentInk}
+                    >
+                      Finalizar serie
+                    </Text>
+                  </Pressable>
+                ) : null}
+
                 <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Añadir set a ${ex.name}`}
                   style={({ pressed }) => ({
                     marginTop: 10,
                     height: 38,
@@ -601,8 +737,13 @@ export default function ActiveWorkoutScreen() {
                     opacity: pressed ? 0.6 : 1,
                   })}
                   onPress={() => {
-                    // Adding a set is just allowing the existing extra row to be filled —
-                    // nothing to do here unless we want to scroll/focus the next input.
+                    if (Platform.OS !== "web") {
+                      Haptics.selectionAsync();
+                    }
+                    setExtraWorkSetsByExercise((prev) => ({
+                      ...prev,
+                      [exId]: (prev[exId] ?? 0) + 1,
+                    }));
                   }}
                 >
                   <Feather name="plus" size={12} color={colors.muted} />

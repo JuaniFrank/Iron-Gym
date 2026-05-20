@@ -170,8 +170,6 @@ function PlanEditor({
     });
   }, [exercises, dateKey, routineId, routineDayId]);
 
-  console.log(`JSON.stringify(exercises): ${JSON.stringify(routine)}`);
-
   const dateObj = parseDateKey(dateKey);
   const isToday = isSameDayKey(dateKey, todayDateKey());
 
@@ -645,14 +643,6 @@ function PlanExerciseCard({
           >
             REPS
           </Text>
-          <Text
-            variant="tiny"
-            color={bulk?.field === "rpe" ? colors.accentEdge : colors.muted}
-            weight={bulk?.field === "rpe" ? "semibold" : undefined}
-            style={{ flex: 1, textAlign: "center" }}
-          >
-            RPE
-          </Text>
         </View>
         <View style={{ width: 28 }} />
       </Row>
@@ -716,6 +706,7 @@ function PlanExerciseCard({
             label="Repetir última"
             active={false}
             onPress={() => applyAutofill("repeat")}
+            style={!history.length ? { opacity: 0.5 } : {}}
           />
           <Chip
             label="+ 2,5 kg"
@@ -833,34 +824,6 @@ function PlanSetRow({
           }
           highlight={!set.isWarmup && highlightField === "reps"}
         />
-        {set.isWarmup ? (
-          <View
-            style={{
-              flex: 1,
-              height: 36,
-              borderRadius: 8,
-              borderWidth: 1,
-              borderColor: colors.border,
-              backgroundColor: "transparent",
-              alignItems: "center",
-              justifyContent: "center",
-              opacity: 0.4,
-            }}
-          >
-            <Text variant="mono" color={colors.muted}>
-              —
-            </Text>
-          </View>
-        ) : (
-          <NumericCell
-            value={set.rpe}
-            placeholder="rpe"
-            onChange={(n) => onChange({ rpe: n })}
-            onLongPress={() => cellLongPress("rpe", set.rpe)}
-            highlight={highlightField === "rpe"}
-            decimal
-          />
-        )}
       </View>
 
       <Pressable

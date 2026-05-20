@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Platform, Pressable, StyleSheet, TextInput, View } from "react-native";
 
 import { Text } from "@/components/ui/Text";
@@ -79,6 +79,24 @@ export function SetRow({
   const [rpe, setRpe] = useState<string>(
     plannedRpe != null && !completed ? String(plannedRpe) : "",
   );
+
+  // El SessionPlan se carga vía useLiveQuery; los `plannedX` llegan después
+  // del primer render. El useState lazy initializer solo corre una vez, así
+  // que sin esto la fila quedaría vacía pese a tener un plan. Solo rellenamos
+  // campos vacíos (no pisamos lo que el usuario haya tocado) y solo mientras
+  // el set no esté completado.
+  useEffect(() => {
+    if (completed || plannedWeight == null) return;
+    setWeight((prev) => (prev === "" ? String(plannedWeight) : prev));
+  }, [plannedWeight, completed]);
+  useEffect(() => {
+    if (completed || plannedReps == null) return;
+    setReps((prev) => (prev === "" ? String(plannedReps) : prev));
+  }, [plannedReps, completed]);
+  useEffect(() => {
+    if (completed || plannedRpe == null) return;
+    setRpe((prev) => (prev === "" ? String(plannedRpe) : prev));
+  }, [plannedRpe, completed]);
 
   const isPlanned =
     !completed &&
