@@ -175,4 +175,17 @@ log "✓ Done in ${ELAPSED}s. IronLog.ipa ($SIZE)"
 log "  Local:  $IPA_OUT"
 [ -d "$ICLOUD_DEFAULT" ] && log "  iCloud: $ICLOUD_DEFAULT/IronLog.ipa"
 echo
+
+# AltStore on the phone needs AltServer running on this Mac to discover it
+# over WiFi. Ensure it's up so the "+" import doesn't fail with "no server
+# found".
+if pgrep -x AltServer >/dev/null 2>&1; then
+  log "AltServer ya está corriendo."
+elif [ -d "/Applications/AltServer.app" ]; then
+  log "Abriendo AltServer..."
+  open -ga AltServer
+else
+  warn "AltServer.app no está en /Applications. Instalalo desde https://altstore.io o el sideload va a fallar con 'no server found'."
+fi
+
 log "Next: AltStore on iPhone → My Apps → '+' → select IronLog.ipa"
