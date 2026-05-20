@@ -39,10 +39,13 @@ import {
   reorderSessionExercises,
   setSessionExerciseSkipped,
   startWorkout,
+  upsertSessionSetDraft,
 } from "@/domains/workout/mutators";
 import {
+  buildDraftKey,
   useActiveSession,
   useActiveWorkoutId,
+  useDraftsBySession,
   useSessions,
 } from "@/domains/workout/queries";
 import { dateKey, formatDuration } from "@/utils/date";
@@ -63,6 +66,7 @@ export default function ActiveWorkoutScreen() {
   const routine = useRoutineById(session?.routineId ?? null);
   const defaultRestSeconds = useDefaultRestSeconds();
   const notes = useAllNotes();
+  const drafts = useDraftsBySession(session?.id);
   const { plan: sessionPlan } = useSessionPlan(
     session ? dateKey(session.startedAt) : null,
     session?.routineId,
@@ -617,13 +621,22 @@ export default function ActiveWorkoutScreen() {
                     const setNotesCount = completedSet
                       ? notes.filter((n) => n.setId === completedSet.id).length
                       : 0;
+                    // Draft autosaved (kg/reps/rpe) para slots no-completados.
+                    // Si el set está completed, completedSet manda; si no,
+                    // caemos al draft persistido para sobrevivir background → kill.
+                    const draft = drafts.get(
+                      buildDraftKey(exId, row.index, row.isWarmup),
+                    );
                     return (
                       <SetRow
                         key={`${exId}-${i}`}
                         index={row.index}
                         isWarmup={row.isWarmup}
-                        initialWeight={completedSet?.weight}
-                        initialReps={completedSet?.reps}
+                        initialWeight={completedSet?.weight ?? draft?.weight}
+                        initialReps={completedSet?.reps ?? draft?.reps}
+                        initialRpe={
+                          completedSet?.rpe ?? draft?.rpe ?? undefined
+                        }
                         previousWeight={previous?.weight}
                         previousReps={previous?.reps}
                         plannedWeight={plannedSet?.weight}
@@ -665,6 +678,17 @@ export default function ActiveWorkoutScreen() {
                           if (!row.isWarmup) {
                             setRestingFor(restSeconds);
                           }
+                        }}
+                        onDraftChange={(patch) => {
+                          void upsertSessionSetDraft(
+                            {
+                              sessionId: session.id,
+                              exerciseId: exId,
+                              setIndex: row.index,
+                              isWarmup: row.isWarmup,
+                            },
+                            patch,
+                          );
                         }}
                         onUncomplete={() => {
                           if (completedSet)

@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/Button";
 import { Text } from "@/components/ui/Text";
 import { useThemeColors } from "@/contexts/ThemeContext";
 
-export type TermKey = "SET" | "PREVIO" | "KG" | "REPS" | "RPE";
+export type TermKey = "SET" | "PREVIO" | "KG" | "REPS" | "RPE" | "PR";
 
 interface TermInfo {
   label: string;
@@ -58,6 +58,13 @@ const TERMS: Record<TermKey, TermInfo> = {
       "Rate of Perceived Exertion. Escala 1-10 de qué tan dura sentiste la serie. RPE 10 = al fallo; 9 = quedaba 1 rep; 8 = quedaban 2; 7 = quedaban 3. Sirve para autoregular el peso.",
     icon: "activity",
   },
+  PR: {
+    label: "PR",
+    title: "Récord personal",
+    description:
+      "Personal Record. Esta serie superó el peso máximo histórico para este ejercicio. Igualar el récord no cuenta — solo superarlo. La app marca el set con un trofeo y fondo verde para que sepas que vas mejorando.",
+    icon: "award",
+  },
 };
 
 interface TermHintProps {
@@ -66,6 +73,9 @@ interface TermHintProps {
   width?: number;
   flex?: number;
   style?: ViewStyle;
+  /** Si se pasa, reemplaza el label de texto default por el trigger custom
+   *  (ej. un ícono). El tap sigue abriendo el mismo modal de info. */
+  children?: React.ReactNode;
 }
 
 export function TermHint({
@@ -74,6 +84,7 @@ export function TermHint({
   width,
   flex,
   style,
+  children,
 }: TermHintProps) {
   const colors = useThemeColors();
   const [open, setOpen] = useState(false);
@@ -103,9 +114,11 @@ export function TermHint({
           style,
         ]}
       >
-        <Text variant="tiny" color={colors.muted} style={{ textAlign: align }}>
-          {info.label}
-        </Text>
+        {children ?? (
+          <Text variant="tiny" color={colors.muted} style={{ textAlign: align }}>
+            {info.label}
+          </Text>
+        )}
       </Pressable>
 
       <TermHintModal

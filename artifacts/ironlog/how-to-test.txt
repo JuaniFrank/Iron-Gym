@@ -1,0 +1,44 @@
+Tests para mañana en el gym
+============================
+
+1. Reflexionar
+   - Inicio → Entrenamiento de hoy → Terminar sesión → Reflexionar
+   - Tocar un emoji + Listo. No debe crashear, debe volver al home.
+   - Mirar que los 5 emojis se vean enteros (no cortados arriba).
+
+2. RPE en serie ya hecha
+   - Completar 1 serie con RPE escrito.
+   - Salir hacia atrás de la sesión activa, después volver.
+   - El RPE tiene que seguir ahí, no "—".
+
+3. Nombre del día editable
+   - En una rutina (no preset), tap en el nombre del día activo.
+   - Tiene que volverse un input. Cambiarlo, Guardar, persistir.
+
+4. PR badge
+   - Hacer una serie con peso mayor al histórico para ese ejercicio.
+   - Debe aparecer un trofeo en lugar del número del set + fondo verde.
+   - Tap al trofeo → modal explicativo (como el de KG / REPS / RPE).
+
+5. Search bar de Ejercicios
+   - Abrir el picker de ejercicios.
+   - Una sola caja con una sola lupa, no anidada.
+
+6. Decimales en una línea
+   - Completar una serie con 42.5 kg (o cualquier decimal).
+   - El número debe quedar en una sola línea, con el lápiz al lado.
+   - Si todavía se va a dos líneas, anotar en qué device pasa.
+
+7. Modal de notas — botón Guardar visible
+   - Tap al lápiz de una serie → Dolor / molestia → seleccionar zona (Ver todas).
+   - El botón Guardar debe seguir visible al final, no tapado por el CTA negro.
+
+8. Drafts — decimales que sobreviven cerrar la app
+   - En una sesión activa, escribir 42.5 en un set sin tappear ✓.
+   - Force-quit la app (swipe up en el app switcher).
+   - Reabrir. El 42.5 debe seguir en el input.
+   - Después tappear ✓ → guardarlo con decimales en el historial.
+
+9. Sanity general
+   - Hacer una sesión entera de principio a fin para asegurar que nada
+     se rompió en el flujo principal (logueo de sets, descanso, finalizar).

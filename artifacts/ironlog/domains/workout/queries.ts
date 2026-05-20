@@ -4,6 +4,7 @@ import {
   completedSets,
   keyValue,
   prRecords,
+  sessionSetDrafts,
   workoutSessions,
 } from "@workspace/db/schema";
 import { useMemo } from "react";
@@ -443,6 +444,65 @@ export function usePRsForSession(
  * Synthetic `activeWorkoutId` slice — replaces `useIronLog().activeWorkoutId`
  * for screens that only need the id (not the hydrated session).
  */
+/**
+ * Drafts (kg/reps/rpe autosaved) de los slots no-completados de la sesión
+ * activa. Devuelve un Map con clave `${exerciseId}::${setIndex}::${isWarmup}`
+ * para lookup O(1) desde el render del SetRow.
+ *
+ * Si `sessionId` es null/undefined → Map vacío estable (referencia se mantiene
+ * mientras `data` no cambie, sirve para `useMemo` deps en el caller).
+ */
+export interface DraftValues {
+  weight?: number;
+  reps?: number;
+  rpe?: number;
+}
+
+function draftKey(
+  exerciseId: string,
+  setIndex: number,
+  isWarmup: boolean,
+): string {
+  return `${exerciseId}::${setIndex}::${isWarmup ? 1 : 0}`;
+}
+
+export function buildDraftKey(
+  exerciseId: string,
+  setIndex: number,
+  isWarmup: boolean,
+): string {
+  return draftKey(exerciseId, setIndex, isWarmup);
+}
+
+export function useDraftsBySession(
+  sessionId: string | null | undefined,
+): Map<string, DraftValues> {
+  const query = useMemo(
+    () =>
+      db
+        .select()
+        .from(sessionSetDrafts)
+        .where(eq(sessionSetDrafts.sessionId, sessionId ?? "")),
+    [sessionId],
+  );
+  const { data } = useLiveQuery(query, [sessionId]);
+  return useMemo(() => {
+    const map = new Map<string, DraftValues>();
+    if (!sessionId) return map;
+    for (const row of data ?? []) {
+      map.set(
+        draftKey(row.exerciseId, row.setIndex, row.isWarmup),
+        {
+          weight: row.weight ?? undefined,
+          reps: row.reps ?? undefined,
+          rpe: row.rpe ?? undefined,
+        },
+      );
+    }
+    return map;
+  }, [data, sessionId]);
+}
+
 export function useActiveWorkoutId(): string | null {
   const { data } = useLiveQuery(
     db

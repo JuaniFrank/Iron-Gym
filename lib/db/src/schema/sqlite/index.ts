@@ -20,6 +20,7 @@ export * from "./routine_exercises";
 // --- sessions ---
 export * from "./workout_sessions";
 export * from "./completed_sets";
+export * from "./session_set_drafts";
 export * from "./pr_records";
 
 // --- body / progress ---

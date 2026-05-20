@@ -15,6 +15,13 @@
       "when": 1777600994898,
       "tag": "0001_full_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1779242242000,
+      "tag": "0002_dapper_frank_castle",
+      "breakpoints": true
     }
   ]
 }

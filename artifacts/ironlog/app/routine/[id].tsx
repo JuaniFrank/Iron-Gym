@@ -70,12 +70,20 @@ export default function RoutineDetailScreen() {
   const [activeDayId, setActiveDayId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const [editingDayName, setEditingDayName] = useState(false);
+  const [dayNameInput, setDayNameInput] = useState("");
 
   useEffect(() => {
     if (routine && !activeDayId && routine.days[0]) {
       setActiveDayId(routine.days[0].id);
     }
   }, [routine, activeDayId]);
+
+  // Si el user cambia de día con el editor abierto, cerrarlo para no aplicar
+  // el nuevo nombre al día que ya no está activo.
+  useEffect(() => {
+    setEditingDayName(false);
+  }, [activeDayId]);
 
   if (!routine) {
     return (
@@ -259,13 +267,45 @@ export default function RoutineDetailScreen() {
         {activeDay ? (
           <>
             <Row jc="space-between" style={{ paddingVertical: 6 }}>
-              <Col gap={2}>
-                <Text variant="h3">{activeDay.name}</Text>
-                <Text variant="caption" muted>
-                  {activeDay.exercises.length}{" "}
-                  {activeDay.exercises.length === 1 ? "ejercicio" : "ejercicios"}
-                </Text>
-              </Col>
+              {!isPreset && editingDayName ? (
+                <Row gap={8} style={{ flex: 1 }}>
+                  <View style={{ flex: 1 }}>
+                    <Input
+                      value={dayNameInput}
+                      onChangeText={setDayNameInput}
+                      autoFocus
+                    />
+                  </View>
+                  <Button
+                    label="Guardar"
+                    onPress={() => {
+                      const trimmed = dayNameInput.trim();
+                      if (trimmed) {
+                        updateRoutineDay(routine.id, activeDay.id, {
+                          name: trimmed,
+                        });
+                      }
+                      setEditingDayName(false);
+                    }}
+                  />
+                </Row>
+              ) : (
+                <Col gap={2} flex={1}>
+                  <Pressable
+                    disabled={isPreset}
+                    onPress={() => {
+                      setDayNameInput(activeDay.name);
+                      setEditingDayName(true);
+                    }}
+                  >
+                    <Text variant="h3">{activeDay.name}</Text>
+                  </Pressable>
+                  <Text variant="caption" muted>
+                    {activeDay.exercises.length}{" "}
+                    {activeDay.exercises.length === 1 ? "ejercicio" : "ejercicios"}
+                  </Text>
+                </Col>
+              )}
             </Row>
 
             <Col gap={8} style={{ marginTop: 8 }}>

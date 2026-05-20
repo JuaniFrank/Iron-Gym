@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, View } from "react-native";
+import { Alert, Pressable, ScrollView, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Card } from "@/components/ui/Card";
@@ -152,7 +152,9 @@ export default function ExercisesScreen() {
       ) : null}
 
       <View style={{ paddingHorizontal: 20 }}>
-        {/* Search */}
+        {/* Search — TextInput plano dentro del wrapper visual (el `Input`
+            component aplica su propio chrome de border/bg, lo que resultaba
+            en doble caja anidada). */}
         <View
           style={{
             backgroundColor: colors.surface,
@@ -168,12 +170,18 @@ export default function ExercisesScreen() {
           }}
         >
           <Feather name="search" size={16} color={colors.muted} />
-          <Input
+          <TextInput
             placeholder="Buscar ejercicio…"
+            placeholderTextColor={colors.muted}
             value={search}
             onChangeText={setSearch}
-            containerStyle={{ flex: 1 }}
-            style={{ paddingVertical: 0 }}
+            returnKeyType="search"
+            style={{
+              flex: 1,
+              fontSize: 15,
+              color: colors.ink,
+              paddingVertical: 0,
+            }}
           />
         </View>
 

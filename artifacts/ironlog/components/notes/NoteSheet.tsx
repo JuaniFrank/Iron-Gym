@@ -7,6 +7,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   TextInput,
   View,
 } from "react-native";
@@ -325,7 +326,16 @@ export function NoteSheet({
               </View>
             ) : (
               <>
-              <View style={{ paddingHorizontal: 22, paddingTop: 14, paddingBottom: 14, gap: 16 }}>
+              {/* Scroll interno — sin esto, expandir "Dolor + Ver todas" zonas
+                  empuja el footer fuera del 92% maxHeight del sheet y los
+                  botones Guardar/Cancelar quedan ocultos detrás del CTA
+                  "Terminar sesión" del active screen. */}
+              <ScrollView
+                style={{ flexShrink: 1 }}
+                contentContainerStyle={{ paddingHorizontal: 22, paddingTop: 14, paddingBottom: 14, gap: 16 }}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
               {/* Categoría */}
               <View style={{ gap: 8 }}>
                 <Text variant="tiny" color={colors.muted}>
@@ -428,7 +438,7 @@ export function NoteSheet({
                   />
                 </View>
               ) : null}
-            </View>
+            </ScrollView>
 
             <View style={{ height: 1, backgroundColor: colors.border }} />
 

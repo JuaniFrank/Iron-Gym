@@ -1,9 +1,17 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React, { useEffect, useState } from "react";
-import { Platform, Pressable, StyleSheet, TextInput, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  TextInput,
+  useWindowDimensions,
+  View,
+} from "react-native";
 
 import { Text } from "@/components/ui/Text";
+import { TermHint } from "@/components/workout/TermHint";
 import { useThemeColors } from "@/contexts/ThemeContext";
 
 interface SetRowProps {
@@ -11,6 +19,7 @@ interface SetRowProps {
   isWarmup?: boolean;
   initialWeight?: number;
   initialReps?: number;
+  initialRpe?: number;
   previousWeight?: number;
   previousReps?: number;
   /** Pre-defined target values from a SessionPlan. Used to pre-fill the
@@ -33,6 +42,15 @@ interface SetRowProps {
   /** Long-press en el botón check. Si se omite, fallback al onRemove
    *  (preserva comportamiento legacy). */
   onCheckLongPress?: () => void;
+  /** Autosave debounced de inputs no-completados. Si se omite, el SetRow no
+   *  persiste drafts (modo legacy). Sólo se llama después de que el user
+   *  efectivamente tipea (no en mount), para no contaminar la tabla de
+   *  drafts con valores que vinieron del plan/previous. */
+  onDraftChange?: (patch: {
+    weight: number | null;
+    reps: number | null;
+    rpe: number | null;
+  }) => void;
 }
 
 export function SetRow({
@@ -40,6 +58,7 @@ export function SetRow({
   isWarmup,
   initialWeight,
   initialReps,
+  initialRpe,
   previousWeight,
   previousReps,
   plannedWeight,
@@ -54,8 +73,18 @@ export function SetRow({
   onRemove,
   onNotePress,
   onCheckLongPress,
+  onDraftChange,
 }: SetRowProps) {
   const colors = useThemeColors();
+  // Pantallas chicas (iPhone 13 Pro = 390pt y abajo): los inputs mono no
+  // entran un "42.5" en una sola línea una vez que aparece el lápiz al
+  // completarse. Solo en esos devices encogemos padding y font; los Pro Max
+  // (430pt) y tablets no necesitan el shrink.
+  const { width: windowWidth } = useWindowDimensions();
+  const compact = windowWidth < 400;
+  const inputFontSize = compact ? 13 : 14;
+  const inputPaddingH = compact ? 4 : 6;
+  const inputsGap = compact ? 4 : 6;
   // Pre-fill priority for not-yet-completed sets: plan > previous > empty.
   // When completed, we always show the actual value (`initialX`).
   const [weight, setWeight] = useState<string>(
@@ -77,7 +106,11 @@ export function SetRow({
           : "",
   );
   const [rpe, setRpe] = useState<string>(
-    plannedRpe != null && !completed ? String(plannedRpe) : "",
+    initialRpe != null
+      ? String(initialRpe)
+      : plannedRpe != null && !completed
+        ? String(plannedRpe)
+        : "",
   );
 
   // El SessionPlan se carga vía useLiveQuery; los `plannedX` llegan después
@@ -97,6 +130,75 @@ export function SetRow({
     if (completed || plannedRpe == null) return;
     setRpe((prev) => (prev === "" ? String(plannedRpe) : prev));
   }, [plannedRpe, completed]);
+
+  // initial* puede llegar tarde porque useLiveQuery retorna `undefined` en el
+  // primer render y luego se hidrata. Necesitamos sincronizar el state local
+  // cuando aparece. Para sets completed → sync siempre (DB es la verdad,
+  // input es read-only). Para sets no-completed → solo fill cuando state está
+  // vacío, para no pisar lo que el user está typeando.
+  useEffect(() => {
+    if (initialWeight == null) return;
+    if (completed) {
+      setWeight(String(initialWeight));
+    } else {
+      setWeight((prev) => (prev === "" ? String(initialWeight) : prev));
+    }
+  }, [initialWeight, completed]);
+  useEffect(() => {
+    if (initialReps == null) return;
+    if (completed) {
+      setReps(String(initialReps));
+    } else {
+      setReps((prev) => (prev === "" ? String(initialReps) : prev));
+    }
+  }, [initialReps, completed]);
+  useEffect(() => {
+    if (initialRpe == null) return;
+    if (completed) {
+      setRpe(String(initialRpe));
+    } else {
+      setRpe((prev) => (prev === "" ? String(initialRpe) : prev));
+    }
+  }, [initialRpe, completed]);
+
+  // Autosave de drafts: solo cuando el user efectivamente tipeó (no cuando
+  // el state se hidrata desde initial/planned/previous). El ref se flipea a
+  // true en el primer onChangeText del user; recién ahí el effect debounced
+  // dispara saves.
+  const userTouchedRef = useRef(false);
+  const draftTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!onDraftChange) return;
+    if (completed) return;
+    if (!userTouchedRef.current) return;
+    if (draftTimeoutRef.current) clearTimeout(draftTimeoutRef.current);
+    draftTimeoutRef.current = setTimeout(() => {
+      const w = weight === "" ? null : parseFloat(weight);
+      const r = reps === "" ? null : parseInt(reps, 10);
+      const rp = rpe === "" ? null : parseFloat(rpe);
+      onDraftChange({
+        weight: Number.isFinite(w as number) ? (w as number) : null,
+        reps: Number.isFinite(r as number) ? (r as number) : null,
+        rpe: Number.isFinite(rp as number) ? (rp as number) : null,
+      });
+    }, 300);
+    return () => {
+      if (draftTimeoutRef.current) clearTimeout(draftTimeoutRef.current);
+    };
+  }, [weight, reps, rpe, completed, onDraftChange]);
+
+  const touchAndSetWeight = (text: string) => {
+    userTouchedRef.current = true;
+    setWeight(text);
+  };
+  const touchAndSetReps = (text: string) => {
+    userTouchedRef.current = true;
+    setReps(text);
+  };
+  const touchAndSetRpe = (text: string) => {
+    userTouchedRef.current = true;
+    setRpe(text);
+  };
 
   const isPlanned =
     !completed &&
@@ -166,9 +268,19 @@ export function SetRow({
           },
         ]}
       >
-        <Text variant="label" weight="bold" color={badgeText}>
-          {setLabel}
-        </Text>
+        {isPr ? (
+          // Trofeo tappable — abre el TermHint modal explicando qué es un PR.
+          // Mantiene el visual de "set completado" (badge verde) y reemplaza
+          // el número por el ícono trofeo; el contexto de cuál set es se
+          // sigue infiriendo del orden de filas dentro del card.
+          <TermHint term="PR">
+            <Feather name="award" size={14} color={colors.accentInk} />
+          </TermHint>
+        ) : (
+          <Text variant="label" weight="bold" color={badgeText}>
+            {setLabel}
+          </Text>
+        )}
       </View>
 
       <View style={styles.previousContainer}>
@@ -179,10 +291,10 @@ export function SetRow({
         </Text>
       </View>
 
-      <View style={styles.inputsContainer}>
+      <View style={[styles.inputsContainer, { gap: inputsGap }]}>
         <TextInput
           value={weight}
-          onChangeText={setWeight}
+          onChangeText={touchAndSetWeight}
           keyboardType="decimal-pad"
           placeholder="—"
           placeholderTextColor={colors.muted}
@@ -194,12 +306,14 @@ export function SetRow({
               backgroundColor: cellBg,
               borderColor: cellBorder,
               borderWidth: cellBorderWidth,
+              fontSize: inputFontSize,
+              paddingHorizontal: inputPaddingH,
             },
           ]}
         />
         <TextInput
           value={reps}
-          onChangeText={setReps}
+          onChangeText={touchAndSetReps}
           keyboardType="number-pad"
           placeholder="—"
           placeholderTextColor={colors.muted}
@@ -211,13 +325,15 @@ export function SetRow({
               backgroundColor: cellBg,
               borderColor: cellBorder,
               borderWidth: cellBorderWidth,
+              fontSize: inputFontSize,
+              paddingHorizontal: inputPaddingH,
             },
           ]}
         />
         {!isWarmup ? (
           <TextInput
             value={rpe}
-            onChangeText={setRpe}
+            onChangeText={touchAndSetRpe}
             keyboardType="decimal-pad"
             placeholder="—"
             placeholderTextColor={colors.muted}
@@ -228,6 +344,8 @@ export function SetRow({
                 color: colors.ink,
                 backgroundColor: cellBg,
                 borderColor: cellBorder,
+                fontSize: inputFontSize,
+                paddingHorizontal: inputPaddingH,
               },
             ]}
           />
@@ -242,6 +360,7 @@ export function SetRow({
                 opacity: 0.4,
                 alignItems: "center",
                 justifyContent: "center",
+                paddingHorizontal: inputPaddingH,
               },
             ]}
           >
@@ -333,8 +452,6 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 36,
     borderRadius: 8,
-    paddingHorizontal: 6,
-    fontSize: 14,
     textAlign: "center",
     fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }),
     fontWeight: "600",

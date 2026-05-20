@@ -9,6 +9,7 @@ import {
   routineDays as routineDaysTable,
   routineExercises as routineExercisesTable,
   routines as routinesTable,
+  sessionSetDrafts,
   workoutSessions,
 } from "@workspace/db/schema";
 import { z } from "zod";
@@ -260,6 +261,17 @@ export async function logSet(
       completedAt: now,
       updatedAt: now,
     });
+    // El draft de este slot ya no aplica — el set quedó committeado al historial.
+    await tx
+      .delete(sessionSetDrafts)
+      .where(
+        and(
+          eq(sessionSetDrafts.sessionId, sessionId),
+          eq(sessionSetDrafts.exerciseId, validated.exerciseId),
+          eq(sessionSetDrafts.setIndex, validated.setIndex),
+          eq(sessionSetDrafts.isWarmup, validated.isWarmup),
+        ),
+      );
     // Append to exerciseOrder if missing.
     const session = await tx
       .select({
@@ -841,10 +853,136 @@ export async function finishWorkout(
       prsAchieved: detectedPrs,
     };
 
+    // Borrar drafts pendientes — la sesión cerró, no aplican más.
+    await tx
+      .delete(sessionSetDrafts)
+      .where(eq(sessionSetDrafts.sessionId, sessionId));
+
     return {
       session: finalSession,
       prs: detectedPrs,
       newAchievements: newUnlocks,
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Session set drafts — autosaved kg/reps/rpe per slot mientras la serie
+// todavía no está completada (cf. session_set_drafts.ts).
+// ---------------------------------------------------------------------------
+
+const DraftSlotSchema = z.object({
+  sessionId: z.string().min(1),
+  exerciseId: z.string().min(1),
+  setIndex: z.number().int().min(1),
+  isWarmup: z.boolean(),
+});
+
+const DraftPatchSchema = z.object({
+  weight: z.number().nullable().optional(),
+  reps: z.number().int().nullable().optional(),
+  rpe: z.number().nullable().optional(),
+});
+
+export interface DraftSlotKey {
+  sessionId: string;
+  exerciseId: string;
+  setIndex: number;
+  isWarmup: boolean;
+}
+
+export interface DraftPatch {
+  weight?: number | null;
+  reps?: number | null;
+  rpe?: number | null;
+}
+
+/**
+ * Upsert por slot. Si todos los campos quedan null/undefined → no graba
+ * (evita rows huérfanos cuando el user borra todos los inputs). Si el row
+ * ya existía, los campos no presentes en `patch` se preservan; sólo se
+ * sobreescriben los que vienen en `patch`.
+ */
+export async function upsertSessionSetDraft(
+  slot: DraftSlotKey,
+  patch: DraftPatch,
+): Promise<void> {
+  const validatedSlot = DraftSlotSchema.parse(slot);
+  const validatedPatch = DraftPatchSchema.parse(patch);
+  const allEmpty =
+    (validatedPatch.weight == null || Number.isNaN(validatedPatch.weight)) &&
+    (validatedPatch.reps == null || Number.isNaN(validatedPatch.reps)) &&
+    (validatedPatch.rpe == null || Number.isNaN(validatedPatch.rpe));
+
+  const now = new Date();
+
+  await db.transaction(async (tx) => {
+    const existing = await tx
+      .select()
+      .from(sessionSetDrafts)
+      .where(
+        and(
+          eq(sessionSetDrafts.sessionId, validatedSlot.sessionId),
+          eq(sessionSetDrafts.exerciseId, validatedSlot.exerciseId),
+          eq(sessionSetDrafts.setIndex, validatedSlot.setIndex),
+          eq(sessionSetDrafts.isWarmup, validatedSlot.isWarmup),
+        ),
+      )
+      .get();
+
+    if (allEmpty) {
+      // El user limpió todos los inputs — borramos el draft si existía.
+      if (existing) {
+        await tx
+          .delete(sessionSetDrafts)
+          .where(eq(sessionSetDrafts.id, existing.id));
+      }
+      return;
+    }
+
+    if (existing) {
+      const updates: Record<string, unknown> = { updatedAt: now };
+      if ("weight" in validatedPatch) updates.weight = validatedPatch.weight ?? null;
+      if ("reps" in validatedPatch) updates.reps = validatedPatch.reps ?? null;
+      if ("rpe" in validatedPatch) updates.rpe = validatedPatch.rpe ?? null;
+      await tx
+        .update(sessionSetDrafts)
+        .set(updates)
+        .where(eq(sessionSetDrafts.id, existing.id));
+      return;
+    }
+
+    await tx.insert(sessionSetDrafts).values({
+      id: uid(),
+      sessionId: validatedSlot.sessionId,
+      exerciseId: validatedSlot.exerciseId,
+      setIndex: validatedSlot.setIndex,
+      isWarmup: validatedSlot.isWarmup,
+      weight: validatedPatch.weight ?? null,
+      reps: validatedPatch.reps ?? null,
+      rpe: validatedPatch.rpe ?? null,
+      updatedAt: now,
+    });
+  });
+}
+
+/** Borrar un draft puntual (e.g. el user descomplete un set y vuelve a borrar). */
+export async function clearSessionSetDraft(slot: DraftSlotKey): Promise<void> {
+  const validated = DraftSlotSchema.parse(slot);
+  await db
+    .delete(sessionSetDrafts)
+    .where(
+      and(
+        eq(sessionSetDrafts.sessionId, validated.sessionId),
+        eq(sessionSetDrafts.exerciseId, validated.exerciseId),
+        eq(sessionSetDrafts.setIndex, validated.setIndex),
+        eq(sessionSetDrafts.isWarmup, validated.isWarmup),
+      ),
+    );
+}
+
+/** Borrar todos los drafts de una sesión (e.g. cancelWorkout fallback). */
+export async function clearDraftsForSession(sessionId: string): Promise<void> {
+  z.string().min(1).parse(sessionId);
+  await db.delete(sessionSetDrafts).where(eq(sessionSetDrafts.sessionId, sessionId));
 }
