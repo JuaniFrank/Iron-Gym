@@ -1,5 +1,6 @@
 import { and, asc, eq, isNull, max } from "drizzle-orm";
 import {
+  keyValue,
   routineDays as routineDaysTable,
   routineExercises as routineExercisesTable,
   routines as routinesTable,
@@ -393,6 +394,7 @@ export async function addExerciseToDay(
   z.string().min(1).parse(exerciseId);
   const id = uid();
   const now = new Date();
+  let restSeconds = DEFAULT_REST_SECONDS;
   await db.transaction(async (tx) => {
     const row = await tx
       .select({ p: max(routineExercisesTable.position) })
@@ -400,6 +402,21 @@ export async function addExerciseToDay(
       .where(eq(routineExercisesTable.routineDayId, dayId))
       .get();
     const position = (row?.p ?? -1) + 1;
+    // Pickear el default del user (Settings → Descanso por defecto) en
+    // lugar del 90s hardcoded. Fallback a 90 si no existe la row de
+    // key_value todavía (primer boot, antes del seed o del primer set).
+    const restRow = await tx
+      .select({ value: keyValue.value })
+      .from(keyValue)
+      .where(eq(keyValue.key, "default_rest_seconds"))
+      .get();
+    if (restRow) {
+      if (typeof restRow.value === "number") restSeconds = restRow.value;
+      else if (typeof restRow.value === "string") {
+        const n = parseInt(restRow.value, 10);
+        if (Number.isFinite(n) && n > 0) restSeconds = n;
+      }
+    }
     await tx.insert(routineExercisesTable).values({
       id,
       routineDayId: dayId,
@@ -409,7 +426,7 @@ export async function addExerciseToDay(
       targetReps: 10,
       warmupSets: 0,
       supersetWith: null,
-      restSeconds: DEFAULT_REST_SECONDS,
+      restSeconds,
       notes: null,
       updatedAt: now,
     });
@@ -420,7 +437,7 @@ export async function addExerciseToDay(
     targetSets: 3,
     targetReps: 10,
     warmupSets: 0,
-    restSeconds: DEFAULT_REST_SECONDS,
+    restSeconds,
   };
 }
 

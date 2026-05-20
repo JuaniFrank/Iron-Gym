@@ -402,6 +402,19 @@ export default function RoutineDetailScreen() {
                                 min={0}
                                 max={5}
                               />
+                              <SmallStepper
+                                label="Desc."
+                                value={re.restSeconds}
+                                onChange={(v) =>
+                                  updateRoutineExercise(routine.id, activeDay.id, re.id, {
+                                    restSeconds: v,
+                                  })
+                                }
+                                min={0}
+                                max={600}
+                                step={15}
+                                formatValue={formatRestSeconds}
+                              />
                             </Row>
                           ) : null}
                         </Col>
@@ -498,12 +511,18 @@ function SmallStepper({
   onChange,
   min,
   max,
+  step = 1,
+  formatValue,
 }: {
   label: string;
   value: number;
   onChange: (v: number) => void;
   min: number;
   max: number;
+  step?: number;
+  /** Custom display formatter (ej. segundos → "1:30"). Si se omite, muestra
+   *  el número crudo. */
+  formatValue?: (v: number) => string;
 }) {
   const colors = useThemeColors();
   return (
@@ -523,7 +542,7 @@ function SmallStepper({
         <Pressable
           onPress={() => {
             if (Platform.OS !== "web") Haptics.selectionAsync();
-            onChange(Math.max(min, value - 1));
+            onChange(Math.max(min, value - step));
           }}
           style={({ pressed }) => ({
             width: 24,
@@ -537,12 +556,12 @@ function SmallStepper({
           <Feather name="minus" size={12} color={colors.ink} />
         </Pressable>
         <Text variant="label" weight="semibold" style={{ flex: 1, textAlign: "center" }}>
-          {value}
+          {formatValue ? formatValue(value) : value}
         </Text>
         <Pressable
           onPress={() => {
             if (Platform.OS !== "web") Haptics.selectionAsync();
-            onChange(Math.min(max, value + 1));
+            onChange(Math.min(max, value + step));
           }}
           style={({ pressed }) => ({
             width: 24,
@@ -558,4 +577,12 @@ function SmallStepper({
       </Row>
     </View>
   );
+}
+
+function formatRestSeconds(s: number): string {
+  if (s < 60) return `${s}s`;
+  const min = Math.floor(s / 60);
+  const sec = s % 60;
+  if (sec === 0) return `${min}m`;
+  return `${min}:${String(sec).padStart(2, "0")}`;
 }
