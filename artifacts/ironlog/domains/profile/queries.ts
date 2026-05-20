@@ -53,6 +53,37 @@ export function useUserProfile(): UserProfile {
 }
 
 /**
+ * Rest notification config — devuelve los 3 settings o defaults (true,
+ * "rich", "default") si la row no existe (primer boot antes del seed).
+ */
+export interface RestNotificationConfig {
+  enabled: boolean;
+  type: "sound_only" | "rich";
+  sound: "default" | "silent";
+}
+
+export function useRestNotificationConfig(): RestNotificationConfig {
+  const { data } = useLiveQuery(
+    db.select().from(userProfile).where(eq(userProfile.id, "singleton")),
+  );
+  const row = data?.[0];
+  return useMemo<RestNotificationConfig>(() => {
+    // Defaults sanos cuando: (a) la row todavía no se seteó (primer boot
+    // antes del seed), o (b) las columnas no existen (migration 0003 no
+    // corrió por algún edge case). En esos casos preferimos UX degradada
+    // (push activado por default) antes que crashear la pantalla.
+    if (!row) {
+      return { enabled: true, type: "rich", sound: "default" };
+    }
+    return {
+      enabled: row.restNotificationEnabled ?? true,
+      type: (row.restNotificationType ?? "rich") as "sound_only" | "rich",
+      sound: (row.restNotificationSound ?? "default") as "default" | "silent",
+    };
+  }, [row]);
+}
+
+/**
  * Default rest seconds for new routine exercises. Stored in `key_value`
  * under the key `default_rest_seconds`. Returns 90 (legacy default) when the
  * row is missing — same fallback as `DEFAULT_STATE.defaultRestSeconds` in

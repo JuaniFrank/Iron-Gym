@@ -42,6 +42,25 @@ export const userProfile = sqliteTable("user_profile", {
   volumeTargets: text("volume_targets", { mode: "json" }).$type<
     Partial<Record<MuscleGroup, VolumeTarget>>
   >(),
+  // Rest notification config — push notification al terminar el descanso
+  // entre series. Aditivos (default values cubren usuarios pre-existentes).
+  restNotificationEnabled: integer("rest_notification_enabled", {
+    mode: "boolean",
+  })
+    .default(true)
+    .notNull(),
+  /** "sound_only" → solo sonido + haptic; "rich" → banner + sonido + haptic. */
+  restNotificationType: text("rest_notification_type")
+    .$type<"sound_only" | "rich">()
+    .default("rich")
+    .notNull(),
+  /** "default" → sonido del sistema; "silent" → sin sonido (solo haptic +
+   *  pulse visual). Más opciones de sound pack en próxima iteración (cf.
+   *  push-notifications-system.md PN-Q1). */
+  restNotificationSound: text("rest_notification_sound")
+    .$type<"default" | "silent">()
+    .default("default")
+    .notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
 

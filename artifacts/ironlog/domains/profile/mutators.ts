@@ -42,6 +42,15 @@ const ProfilePatchSchema = z
   .strict()
   .partial();
 
+const RestNotificationConfigSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    type: z.enum(["sound_only", "rich"]).optional(),
+    sound: z.enum(["default", "silent"]).optional(),
+  })
+  .strict()
+  .partial();
+
 /**
  * Update the singleton profile row. `featureDiscoveries` is REJECTED here —
  * that slice lives in its own table now. Callers who used to pass it must
@@ -61,5 +70,29 @@ export async function updateProfile(
   await db
     .update(userProfile)
     .set({ ...validated, updatedAt: new Date() })
+    .where(eq(userProfile.id, "singleton"));
+}
+
+/**
+ * Patch del config de notificación del descanso. Solo escribe los campos
+ * que vienen en `patch` — el resto quedan como estaban.
+ */
+export async function updateRestNotificationConfig(patch: {
+  enabled?: boolean;
+  type?: "sound_only" | "rich";
+  sound?: "default" | "silent";
+}): Promise<void> {
+  const validated = RestNotificationConfigSchema.parse(patch);
+  if (Object.keys(validated).length === 0) return;
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
+  if (validated.enabled !== undefined)
+    updates.restNotificationEnabled = validated.enabled;
+  if (validated.type !== undefined)
+    updates.restNotificationType = validated.type;
+  if (validated.sound !== undefined)
+    updates.restNotificationSound = validated.sound;
+  await db
+    .update(userProfile)
+    .set(updates)
     .where(eq(userProfile.id, "singleton"));
 }
