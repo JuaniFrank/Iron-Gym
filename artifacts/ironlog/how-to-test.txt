@@ -42,3 +42,61 @@ Tests para mañana en el gym
 9. Sanity general
    - Hacer una sesión entera de principio a fin para asegurar que nada
      se rompió en el flujo principal (logueo de sets, descanso, finalizar).
+
+
+Tests del push-notifications-system
+====================================
+
+10. Permisos primera vez
+    - Settings → Descanso → activar "Notificación al terminar".
+    - Debe pedir permisos. Aceptar.
+
+11. Notif en background
+    - Iniciar serie con descanso (ej 90s).
+    - Cerrar/minimizar la app antes de que termine.
+    - Debe llegar un push "¡Vamos! / Toca la siguiente serie 💪" con sonido.
+
+12. Notif en foreground
+    - Iniciar serie con descanso.
+    - Dejar la app abierta y el timer visible.
+    - Cuando llega a 0: NO debe aparecer banner. Debe haber pulse animation
+      (latido verde del timer) + haptic.
+
+13. AppState background → foreground
+    - Iniciar descanso de 60s.
+    - Minimizar la app a los 10s. Esperar 30s afuera.
+    - Reabrir. El timer debe marcar ~20s restantes (no 50s).
+
+14. Pin sticky
+    - Iniciar descanso.
+    - Tap al icono de pin (al lado de la X).
+    - Scrollear los ejercicios. El timer debe seguir visible arriba.
+    - Tap de nuevo al pin para despinear.
+
+15. Pausa y ajustes ±15
+    - Iniciar descanso.
+    - Pausar. Confirmar que el countdown se freeza.
+    - Reanudar. Confirmar que sigue desde donde estaba.
+    - −15 y +15 deben ajustar el timer y el push notif debe reflejarlo
+      (si pausás+esperás+reanudás+cerrás app, el push debe llegar tarde
+      el tiempo que estuviste pausado).
+
+16. Cerrar timer cancela el push
+    - Iniciar descanso, cerrar el timer con la X antes de tiempo.
+    - Cerrar la app. NO debe llegar push (fue cancelado).
+
+17. Toggle solo sonido vs banner+sonido
+    - En Settings, cambiar tipo a "Solo sonido".
+    - Iniciar descanso → cerrar app → al terminar debe sonar pero el
+      banner debe ser mínimo ("Descanso terminado" sin body).
+    - Cambiar a "Banner + sonido" → debe verse "¡Vamos!" + "Toca la siguiente serie 💪".
+
+18. Sound silencioso
+    - En Settings, sonido = Silencioso.
+    - Iniciar descanso → cerrar app → al terminar debe llegar banner SIN sonido
+      (solo haptic si la app está en foreground).
+
+19. Permisos denegados
+    - En Settings de iOS/Android, denegar notificaciones de IronLog.
+    - Volver a la app → Settings → Descanso debe mostrar "Permisos denegados"
+      con un botón "Abrir ajustes del sistema".

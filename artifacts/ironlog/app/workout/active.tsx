@@ -23,9 +23,16 @@ import { TermHint } from "@/components/workout/TermHint";
 import { useThemeColors } from "@/contexts/ThemeContext";
 import { useAllExercises } from "@/domains/exercises/queries";
 import { useAllNotes } from "@/domains/notes/queries";
-import { useDefaultRestSeconds } from "@/domains/profile/queries";
+import {
+  useDefaultRestSeconds,
+  useRestNotificationConfig,
+} from "@/domains/profile/queries";
 import { useRoutineById } from "@/domains/routines/queries";
 import { useSessionPlan } from "@/domains/schedule/queries";
+import {
+  cancelRestNotification,
+  scheduleRestNotification,
+} from "@/services/notifications";
 import {
   getLastSetsForExercise,
   getMaxWeightForExercise,
@@ -67,6 +74,7 @@ export default function ActiveWorkoutScreen() {
   const defaultRestSeconds = useDefaultRestSeconds();
   const notes = useAllNotes();
   const drafts = useDraftsBySession(session?.id);
+  const restNotifConfig = useRestNotificationConfig();
   const { plan: sessionPlan } = useSessionPlan(
     session ? dateKey(session.startedAt) : null,
     session?.routineId,
@@ -111,7 +119,53 @@ export default function ActiveWorkoutScreen() {
     return () => clearInterval(id);
   }, []);
 
-  const [restingFor, setRestingFor] = useState<number | null>(null);
+  // RestTimer state — endsAt como source of truth (sobrevive background +
+  // foreground tick). `restingDuration` se mantiene para el arco visual.
+  // `restingNotifIdRef` guarda el id de la push notif para poder cancelarla
+  // si el user cierra el timer antes de que termine.
+  const [restingEndsAt, setRestingEndsAt] = useState<number | null>(null);
+  const [restingDuration, setRestingDuration] = useState<number>(0);
+  const [restingPinned, setRestingPinned] = useState(false);
+  const restingNotifIdRef = useRef<string | null>(null);
+
+  const startRest = (seconds: number) => {
+    console.log("[active] startRest enter", { seconds });
+    const endsAt = Date.now() + seconds * 1000;
+    setRestingEndsAt(endsAt);
+    setRestingDuration(seconds);
+    console.log("[active] startRest: state set, scheduling async push");
+    // Cancelar push anterior (si quedaron consecutivas) y schedule la nueva.
+    // Wrappeado en try/catch externo: si scheduleRestNotification tira un
+    // error nativo no catcheable adentro, al menos no propagamos al render.
+    void (async () => {
+      try {
+        await cancelRestNotification(restingNotifIdRef.current);
+        restingNotifIdRef.current = null;
+        const id = await scheduleRestNotification(endsAt, restNotifConfig);
+        restingNotifIdRef.current = id;
+        console.log("[active] startRest: scheduled ok, id=", id);
+      } catch (e) {
+        console.warn("[active] startRest async failed:", e);
+      }
+    })();
+  };
+
+  const closeRest = () => {
+    void cancelRestNotification(restingNotifIdRef.current);
+    restingNotifIdRef.current = null;
+    setRestingEndsAt(null);
+  };
+
+  const rescheduleRest = (newEndsAt: number | null) => {
+    void (async () => {
+      await cancelRestNotification(restingNotifIdRef.current);
+      restingNotifIdRef.current = null;
+      if (newEndsAt != null) {
+        const id = await scheduleRestNotification(newEndsAt, restNotifConfig);
+        restingNotifIdRef.current = id;
+      }
+    })();
+  };
 
   // Filas de trabajo extra añadidas manualmente por el usuario (botón "Añadir
   // set"). Cada entrada es el contador de filas vacías extra para ese ejercicio
@@ -250,9 +304,36 @@ export default function ActiveWorkoutScreen() {
         <IconButton icon="x" onPress={handleCancel} color={colors.danger} />
       </View>
 
+      {/* Sticky RestTimer overlay — solo cuando pinned. Queda flotando arriba
+          del scroll, fuera del flow, hasta que el user tape unpin o cierre. */}
+      {restingEndsAt != null && restingPinned ? (
+        <View
+          style={{
+            position: "absolute",
+            top: insets.top + 60,
+            left: 16,
+            right: 16,
+            zIndex: 10,
+          }}
+        >
+          <RestTimer
+            endsAt={restingEndsAt}
+            durationSeconds={restingDuration}
+            onClose={closeRest}
+            onComplete={() => {
+              restingNotifIdRef.current = null;
+            }}
+            onReschedule={rescheduleRest}
+            pinned={restingPinned}
+            onTogglePin={() => setRestingPinned((p) => !p)}
+          />
+        </View>
+      ) : null}
+
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: 20,
+          paddingTop: restingEndsAt != null && restingPinned ? 240 : 0,
           paddingBottom: 120 + insets.bottom,
         }}
         showsVerticalScrollIndicator={false}
@@ -306,12 +387,25 @@ export default function ActiveWorkoutScreen() {
           </Row>
         </Card>
 
-        {restingFor != null ? (
+        {/* RestTimer inline — solo cuando NO está pinneado. Cuando pinned,
+            se renderiza fuera del ScrollView como overlay sticky (más abajo). */}
+        {restingEndsAt != null && !restingPinned ? (
           <View style={{ marginBottom: 12 }}>
             <RestTimer
-              durationSeconds={restingFor}
-              onClose={() => setRestingFor(null)}
-              onComplete={() => setRestingFor(null)}
+              endsAt={restingEndsAt}
+              durationSeconds={restingDuration}
+              onClose={closeRest}
+              onComplete={() => {
+                // El push notif ya disparó (o no, si app en foreground +
+                // shouldPlaySound=false). Limpiamos el ref para que no
+                // intentemos cancelar un id ya consumido. Damos 800ms para
+                // que el pulse animation termine antes de ocultar el card.
+                restingNotifIdRef.current = null;
+                setTimeout(() => setRestingEndsAt(null), 800);
+              }}
+              onReschedule={rescheduleRest}
+              pinned={restingPinned}
+              onTogglePin={() => setRestingPinned((p) => !p)}
             />
           </View>
         ) : null}
@@ -676,7 +770,7 @@ export default function ActiveWorkoutScreen() {
                             setIndex: row.index,
                           });
                           if (!row.isWarmup) {
-                            setRestingFor(restSeconds);
+                            startRest(restSeconds);
                           }
                         }}
                         onDraftChange={(patch) => {

@@ -30,7 +30,14 @@
       ],
       "expo-font",
       "expo-web-browser",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#D7FF5F"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

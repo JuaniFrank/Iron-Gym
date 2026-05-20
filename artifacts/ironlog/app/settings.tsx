@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useState } from "react";
-import { Alert, Pressable, ScrollView, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import { Alert, Linking, Pressable, ScrollView, View } from "react-native";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -20,9 +20,20 @@ import {
 import { useFeatureDiscoveries } from "@/domains/discovery/queries";
 import { clearAllNotes } from "@/domains/notes/mutators";
 import { useAllNotes } from "@/domains/notes/queries";
-import { updateProfile } from "@/domains/profile/mutators";
-import { useDefaultRestSeconds, useUserProfile } from "@/domains/profile/queries";
+import {
+  updateProfile,
+  updateRestNotificationConfig,
+} from "@/domains/profile/mutators";
+import {
+  useDefaultRestSeconds,
+  useRestNotificationConfig,
+  useUserProfile,
+} from "@/domains/profile/queries";
 import { setDefaultRest } from "@/domains/workout/mutators";
+import {
+  ensureNotificationPermissions,
+  getNotificationPermissionStatus,
+} from "@/services/notifications";
 import { calorieGoalForGoal, calculateTDEE, macroSplitForGoal } from "@/utils/calculations";
 
 export default function SettingsScreen() {
@@ -31,6 +42,23 @@ export default function SettingsScreen() {
   const defaultRestSeconds = useDefaultRestSeconds();
   const featureDiscoveries = useFeatureDiscoveries();
   const notes = useAllNotes();
+  const restNotifConfig = useRestNotificationConfig();
+
+  // Permission status — re-checkeado on focus/mount. Si el user fue a Settings
+  // del OS y cambió el permiso, queremos reflejarlo cuando vuelve.
+  const [notifPermStatus, setNotifPermStatus] = useState<
+    "granted" | "denied" | "undetermined"
+  >("undetermined");
+  useEffect(() => {
+    void getNotificationPermissionStatus().then(setNotifPermStatus);
+  }, []);
+  const handleRequestPerms = async () => {
+    const granted = await ensureNotificationPermissions();
+    setNotifPermStatus(granted ? "granted" : "denied");
+  };
+  const handleOpenOSSettings = () => {
+    void Linking.openSettings();
+  };
 
   const tdee = calculateTDEE(profile);
   const defaultCal = calorieGoalForGoal(tdee, profile.goal);
@@ -106,6 +134,120 @@ export default function SettingsScreen() {
           <Text variant="caption" muted style={{ marginTop: 8 }}>
             Tiempo entre series cuando no se especifica.
           </Text>
+
+          <View
+            style={{
+              height: 1,
+              backgroundColor: colors.border,
+              marginVertical: 14,
+            }}
+          />
+
+          <Text variant="tiny" color={colors.muted} style={{ marginBottom: 8 }}>
+            NOTIFICACIÓN AL TERMINAR
+          </Text>
+
+          <FeatureToggleRow
+            label="Activar"
+            hint="Avisa cuando termina el descanso aunque la app esté cerrada."
+            activated={restNotifConfig.enabled}
+            onToggle={(on) => {
+              void updateRestNotificationConfig({ enabled: on });
+              if (on && notifPermStatus !== "granted") {
+                void handleRequestPerms();
+              }
+            }}
+          />
+
+          {restNotifConfig.enabled ? (
+            <>
+              <View style={{ height: 12 }} />
+              <Text
+                variant="tiny"
+                color={colors.muted}
+                style={{ marginBottom: 6 }}
+              >
+                TIPO
+              </Text>
+              <SegmentedControl
+                options={[
+                  { label: "Solo sonido", value: "sound_only" as const },
+                  { label: "Banner + sonido", value: "rich" as const },
+                ]}
+                value={restNotifConfig.type}
+                onChange={(v) =>
+                  void updateRestNotificationConfig({ type: v })
+                }
+              />
+
+              <View style={{ height: 12 }} />
+              <Text
+                variant="tiny"
+                color={colors.muted}
+                style={{ marginBottom: 6 }}
+              >
+                SONIDO
+              </Text>
+              <SegmentedControl
+                options={[
+                  { label: "Sistema", value: "default" as const },
+                  { label: "Silencioso", value: "silent" as const },
+                ]}
+                value={restNotifConfig.sound}
+                onChange={(v) =>
+                  void updateRestNotificationConfig({ sound: v })
+                }
+              />
+              <Text variant="caption" muted style={{ marginTop: 6 }}>
+                Más sonidos en próxima versión.
+              </Text>
+
+              {notifPermStatus === "denied" ? (
+                <View
+                  style={{
+                    marginTop: 14,
+                    padding: 12,
+                    borderRadius: 12,
+                    backgroundColor: colors.surfaceAlt,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                  }}
+                >
+                  <Row gap={10} ai="center">
+                    <Feather
+                      name="alert-circle"
+                      size={16}
+                      color={colors.danger}
+                    />
+                    <Col flex={1} gap={2}>
+                      <Text variant="label" weight="semibold">
+                        Permisos denegados
+                      </Text>
+                      <Text variant="caption" muted>
+                        No vas a recibir avisos hasta activar las notificaciones
+                        desde los ajustes del sistema.
+                      </Text>
+                    </Col>
+                  </Row>
+                  <Button
+                    label="Abrir ajustes del sistema"
+                    icon="external-link"
+                    variant="outline"
+                    onPress={handleOpenOSSettings}
+                    style={{ marginTop: 10 }}
+                  />
+                </View>
+              ) : notifPermStatus === "undetermined" ? (
+                <Button
+                  label="Pedir permisos ahora"
+                  icon="bell"
+                  variant="outline"
+                  onPress={handleRequestPerms}
+                  style={{ marginTop: 12 }}
+                />
+              ) : null}
+            </>
+          ) : null}
         </Card>
 
         <Card style={{ marginBottom: 12 }}>
