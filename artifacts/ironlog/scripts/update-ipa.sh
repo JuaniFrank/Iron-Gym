@@ -14,6 +14,10 @@
 #     capabilities, permissions strings)
 #   - You ran `expo prebuild --clean` and regenerated ios/
 #
+# --full automatically runs `expo prebuild --platform ios --no-install` +
+# `pod install` before xcodebuild. Ambos son idempotentes así que cuestan
+# casi nada cuando no hay cambios; cuando los hay, son lo que ata todo.
+#
 # After the script finishes, .ipa lands at the project root and (if iCloud
 # Drive exists) at iCloud Drive root. Sideload: AltStore → My Apps → + →
 # select IronLog.ipa.
@@ -68,6 +72,19 @@ START=$(date +%s)
 # Full native rebuild
 # ---------------------------------------------------------------------------
 if [ "$MODE" = "full" ]; then
+  # Regenerate ios/ from app.json and re-resolve pods. Ambos son idempotentes
+  # — si no cambiaron app.json ni las deps nativas, son casi instantáneos.
+  # Si SÍ cambiaron (ej. agregamos un plugin de Expo o un módulo nativo) este
+  # paso es lo único que evita un .ipa silenciosamente roto en runtime.
+  log "Regenerating ios/ via expo prebuild..."
+  ( cd "$APP_ROOT" && pnpm exec expo prebuild --platform ios --no-install ) \
+    > /tmp/ironlog-prebuild.log 2>&1 \
+    || err "expo prebuild failed. See /tmp/ironlog-prebuild.log"
+
+  log "Installing CocoaPods..."
+  ( cd "$IOS_DIR" && pod install ) > /tmp/ironlog-pod-install.log 2>&1 \
+    || err "pod install failed. See /tmp/ironlog-pod-install.log"
+
   log "Full rebuild via xcodebuild..."
   log "  Output streams to $XCODEBUILD_LOG"
 
