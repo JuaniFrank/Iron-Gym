@@ -4,9 +4,15 @@
   "license": "MIT",
   "scripts": {
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
+    "dev": "pnpm --filter @workspace/ironlog run dev",
+    "dev:ios": "pnpm --filter @workspace/ironlog run dev:ios",
+    "dev:android": "pnpm --filter @workspace/ironlog exec expo start --android",
+    "dev:tunnel": "pnpm --filter @workspace/ironlog run dev:tunnel",
+    "test": "pnpm --filter @workspace/ironlog run test",
+    "typecheck:app": "pnpm --filter @workspace/ironlog run typecheck",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./apps/**\" --if-present run typecheck"
   },
   "private": true,
   "devDependencies": {
