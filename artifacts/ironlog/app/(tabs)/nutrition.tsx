@@ -11,8 +11,10 @@ import { IconButton } from "@/components/ui/IconButton";
 import { Screen } from "@/components/ui/Screen";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { removeFoodEntry } from "@/domains/nutrition/mutators";
+import { useAllFoods, useFoodEntries } from "@/domains/nutrition/queries";
+import { useUserProfile } from "@/domains/profile/queries";
 import type { MealType } from "@/types";
 import { calorieGoalForGoal, calculateTDEE, macroSplitForGoal } from "@/utils/calculations";
 import { dateKey, formatDateLong } from "@/utils/date";
@@ -36,7 +38,9 @@ const MEAL_ICONS: Record<MealType, keyof typeof Feather.glyphMap> = {
 export default function NutritionScreen() {
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
-  const { profile, foodEntries, allFoods, removeFoodEntry } = useIronLog();
+  const profile = useUserProfile();
+  const foodEntries = useFoodEntries();
+  const allFoods = useAllFoods();
   const [dayOffset, setDayOffset] = useState(0);
 
   const targetDate = useMemo(() => {

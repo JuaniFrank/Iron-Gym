@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Alert, Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -14,8 +14,22 @@ import { Input } from "@/components/ui/Input";
 import { Screen } from "@/components/ui/Screen";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { useAllExercises } from "@/domains/exercises/queries";
+import {
+  addRoutineDay,
+  cloneRoutine,
+  createRoutine,
+  deleteRoutine,
+  deleteRoutineDay,
+  removeRoutineExercise,
+  updateRoutine,
+  updateRoutineDay,
+  updateRoutineExercise,
+} from "@/domains/routines/mutators";
+import { useAllRoutines } from "@/domains/routines/queries";
+import { startWorkout } from "@/domains/workout/mutators";
+import { useActiveWorkoutId } from "@/domains/workout/queries";
 
 const GOAL_LABELS: Record<string, string> = {
   strength: "FUERZA",
@@ -29,32 +43,29 @@ export default function RoutineDetailScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ id: string }>();
   const isNew = params.id === "new";
-  const {
-    allRoutines,
-    createRoutine,
-    updateRoutine,
-    deleteRoutine,
-    cloneRoutine,
-    addRoutineDay,
-    updateRoutineDay,
-    deleteRoutineDay,
-    removeRoutineExercise,
-    updateRoutineExercise,
-    getExerciseById,
-    startWorkout,
-    activeWorkoutId,
-  } = useIronLog();
-
+  const allRoutines = useAllRoutines();
+  const allExercises = useAllExercises();
+  const activeWorkoutId = useActiveWorkoutId();
+  const exerciseById = useMemo(
+    () => new Map(allExercises.map((e) => [e.id, e])),
+    [allExercises],
+  );
+  const getExerciseById = (id: string) => exerciseById.get(id);
   const [createdId, setCreatedId] = useState<string | null>(null);
   const routineId = isNew ? createdId : params.id;
   const routine = routineId ? allRoutines.find((r) => r.id === routineId) : null;
 
   useEffect(() => {
     if (isNew && !createdId) {
-      const r = createRoutine("Nueva rutina");
-      setCreatedId(r.id);
+      let cancelled = false;
+      void createRoutine({ name: "Nueva rutina" }).then((r) => {
+        if (!cancelled) setCreatedId(r.id);
+      });
+      return () => {
+        cancelled = true;
+      };
     }
-  }, [isNew, createdId, createRoutine]);
+  }, [isNew, createdId]);
 
   const [activeDayId, setActiveDayId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
@@ -82,7 +93,7 @@ export default function RoutineDetailScreen() {
   const goalLabel = routine.goal ? GOAL_LABELS[routine.goal] : null;
   const totalEx = routine.days.reduce((sum, d) => sum + d.exercises.length, 0);
 
-  const handleStart = () => {
+  const handleStart = async () => {
     if (activeWorkoutId) {
       Alert.alert(
         "Sesión activa",
@@ -95,7 +106,7 @@ export default function RoutineDetailScreen() {
       return;
     }
     if (!activeDay) return;
-    startWorkout(routine.id, activeDay.id);
+    await startWorkout(routine.id, activeDay.id);
     router.push("/workout/active");
   };
 
@@ -105,16 +116,16 @@ export default function RoutineDetailScreen() {
       {
         text: "Eliminar",
         style: "destructive",
-        onPress: () => {
-          deleteRoutine(routine.id);
+        onPress: async () => {
+          await deleteRoutine(routine.id);
           router.back();
         },
       },
     ]);
   };
 
-  const handleClone = () => {
-    const cloned = cloneRoutine(routine.id);
+  const handleClone = async () => {
+    const cloned = await cloneRoutine(routine.id);
     if (cloned) router.replace(`/routine/${cloned.id}`);
   };
 

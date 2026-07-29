@@ -10,8 +10,11 @@ import { Screen } from "@/components/ui/Screen";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { cloneRoutine } from "@/domains/routines/mutators";
+import { useAllRoutines, useCustomRoutines } from "@/domains/routines/queries";
+import { startEmptyWorkout } from "@/domains/workout/mutators";
+import { useActiveWorkoutId } from "@/domains/workout/queries";
 import type { Routine } from "@/types";
 
 const GOAL_LABELS: Record<string, string> = {
@@ -23,10 +26,11 @@ const GOAL_LABELS: Record<string, string> = {
 
 export default function WorkoutScreen() {
   const colors = useThemeColors();
-  const { allRoutines, routines, activeWorkoutId, startEmptyWorkout, cloneRoutine } = useIronLog();
+  const allRoutines = useAllRoutines();
+  const myRoutines = useCustomRoutines();
+  const activeWorkoutId = useActiveWorkoutId();
   const [tab, setTab] = useState<"mine" | "presets">("mine");
 
-  const myRoutines = routines;
   const presets = allRoutines.filter((r) => r.isPreset);
   const display = tab === "mine" ? myRoutines : presets;
 
@@ -100,9 +104,9 @@ export default function WorkoutScreen() {
           </Text>
           <Row gap={8}>
             <Pressable
-              onPress={() => {
+              onPress={async () => {
                 if (activeWorkoutId) return;
-                startEmptyWorkout();
+                await startEmptyWorkout();
                 router.push("/workout/active");
               }}
               disabled={!!activeWorkoutId}
@@ -178,8 +182,8 @@ export default function WorkoutScreen() {
                 onPress={() => router.push(`/routine/${r.id}`)}
                 onClone={
                   r.isPreset
-                    ? () => {
-                        const cloned = cloneRoutine(r.id);
+                    ? async () => {
+                        const cloned = await cloneRoutine(r.id);
                         if (cloned) router.push(`/routine/${cloned.id}`);
                       }
                     : undefined
@@ -206,8 +210,8 @@ export default function WorkoutScreen() {
                   goalColor={goalColor(r.goal)}
                   goalLabel={r.goal ? GOAL_LABELS[r.goal] : null}
                   onPress={() => router.push(`/routine/${r.id}`)}
-                  onClone={() => {
-                    const cloned = cloneRoutine(r.id);
+                  onClone={async () => {
+                    const cloned = await cloneRoutine(r.id);
                     if (cloned) router.push(`/routine/${cloned.id}`);
                   }}
                 />
@@ -231,7 +235,7 @@ function RoutineRow({
   goalLabel: string | null;
   goalColor: string;
   onPress: () => void;
-  onClone?: () => void;
+  onClone?: () => void | Promise<void>;
 }) {
   const colors = useThemeColors();
   const totalEx = routine.days.reduce((sum, d) => sum + d.exercises.length, 0);

@@ -19,8 +19,16 @@ import { Text } from "@/components/ui/Text";
 import { ACHIEVEMENTS } from "@/constants/achievements";
 import { CATEGORY_LABEL } from "@/constants/noteChips";
 import { getEligibleDiscoveries } from "@/services/featureDiscovery";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { setDiscoveryStatus } from "@/domains/discovery/mutators";
+import { useFeatureDiscoveries } from "@/domains/discovery/queries";
+import { useAllExercises } from "@/domains/exercises/queries";
+import {
+  useAllNotes,
+  useNotesForSession,
+} from "@/domains/notes/queries";
+import { useUserProfile } from "@/domains/profile/queries";
+import { useSessionById, useSessions } from "@/domains/workout/queries";
 import { formatDuration } from "@/utils/date";
 
 export default function WorkoutSummaryScreen() {
@@ -31,20 +39,22 @@ export default function WorkoutSummaryScreen() {
     prs?: string;
     achievements?: string;
   }>();
-  const {
-    sessions,
-    getExerciseById,
-    getNotesForSession,
-    notes,
-    profile,
-    setDiscoveryStatus,
-  } = useIronLog();
-  const session = sessions.find((s) => s.id === params.sessionId);
-  const sessionNotes = session ? getNotesForSession(session.id) : [];
+  const sessions = useSessions();
+  const session = useSessionById(params.sessionId);
+  const sessionNotes = useNotesForSession(session?.id ?? null);
+  const notes = useAllNotes();
+  const profile = useUserProfile();
+  const featureDiscoveries = useFeatureDiscoveries();
+  const allExercises = useAllExercises();
+  const exerciseById = useMemo(
+    () => new Map(allExercises.map((e) => [e.id, e])),
+    [allExercises],
+  );
+  const getExerciseById = (id: string) => exerciseById.get(id);
 
   // Discovery: lógica centralizada en helper (cf. FX-4 + D-11).
   const recapStatus =
-    profile.featureDiscoveries?.find((d) => d.featureId === "recap")?.status ??
+    featureDiscoveries.find((d) => d.featureId === "recap")?.status ??
     "unseen";
   const recapEligible = useMemo(
     () =>

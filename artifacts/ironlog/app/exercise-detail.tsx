@@ -12,21 +12,25 @@ import { Screen } from "@/components/ui/Screen";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { EXERCISE_TYPE_LABELS, MUSCLE_GROUP_LABELS } from "@/constants/exercises";
-import { useIronLog } from "@/contexts/IronLogContext";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import { useExerciseById } from "@/domains/exercises/queries";
+import { useNotesForExercise } from "@/domains/notes/queries";
+import { useUserProfile } from "@/domains/profile/queries";
+import { useSessions } from "@/domains/workout/queries";
 import { formatWeight } from "@/utils/calculations";
 import { formatDateShort, formatRelativeDate } from "@/utils/date";
 
 export default function ExerciseDetailScreen() {
   const colors = useThemeColors();
   const params = useLocalSearchParams<{ id: string }>();
-  const { sessions, getExerciseById, profile, getNotesForExercise } = useIronLog();
-  const ex = getExerciseById(params.id);
-  const exerciseNotes = ex
-    ? getNotesForExercise(ex.id)
-        .slice()
-        .sort((a, b) => b.createdAt - a.createdAt)
-    : [];
+  const sessions = useSessions();
+  const profile = useUserProfile();
+  const ex = useExerciseById(params.id);
+  const notesForEx = useNotesForExercise(ex?.id ?? null);
+  const exerciseNotes = useMemo(
+    () => notesForEx.slice().sort((a, b) => b.createdAt - a.createdAt),
+    [notesForEx],
+  );
   const screenWidth = Dimensions.get("window").width - 76;
 
   const data = useMemo(() => {
