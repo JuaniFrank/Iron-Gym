@@ -6,6 +6,8 @@ import {
   signOut as firebaseSignOut,
   sendPasswordResetEmail,
   updateProfile,
+  GoogleAuthProvider,
+  signInWithCredential,
   type User,
 } from "firebase/auth";
 import { auth, isFirebaseConfigured } from "@/services/firebase";

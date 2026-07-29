@@ -21,6 +21,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "@/components/ui/Text";
 import { useThemeColors } from "@/contexts/ThemeContext";
 import { useAuth, formatAuthError } from "@/contexts/AuthContext";
+import { useGoogleAuth } from "@/hooks/useGoogleAuth";
 
 // ─── Logo barbell ─────────────────────────────────────────────────────────────
 
@@ -192,10 +193,22 @@ function TabSwitcher({ value, onChange }: { value: Tab; onChange: (t: Tab) => vo
 
 // ─── Social button ────────────────────────────────────────────────────────────
 
-function SocialBtn({ label, logo }: { label: string; logo: React.ReactNode }) {
+function SocialBtn({
+  label,
+  logo,
+  onPress,
+  loading,
+}: {
+  label: string;
+  logo: React.ReactNode;
+  onPress?: () => void;
+  loading?: boolean;
+}) {
   const colors = useThemeColors();
   return (
     <Pressable
+      onPress={onPress}
+      disabled={loading}
       style={({ pressed }) => ({
         flex: 1,
         height: 48,
@@ -207,14 +220,20 @@ function SocialBtn({ label, logo }: { label: string; logo: React.ReactNode }) {
         borderRadius: 14,
         borderWidth: 1,
         borderColor: colors.border,
-        opacity: pressed ? 0.88 : 1,
+        opacity: pressed || loading ? 0.88 : 1,
         transform: [{ scale: pressed ? 0.975 : 1 }],
       })}
     >
-      {logo}
-      <Text variant="label" weight="semibold">
-        {label}
-      </Text>
+      {loading ? (
+        <ActivityIndicator color={colors.ink} size="small" />
+      ) : (
+        <>
+          {logo}
+          <Text variant="label" weight="semibold">
+            {label}
+          </Text>
+        </>
+      )}
     </Pressable>
   );
 }
@@ -279,6 +298,7 @@ export default function LoginScreen() {
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const { signInWithEmail, signUpWithEmail, resetPassword, isConfigured } = useAuth();
+  const { signInWithGoogle, googleLoading, googleError } = useGoogleAuth();
 
   const [tab, setTab] = useState<Tab>("login");
   const [name, setName] = useState("");
@@ -371,28 +391,28 @@ export default function LoginScreen() {
       <GridOverlay />
 
             {/* Top ambient glow */}
-      <LinearGradient
+      {/* <LinearGradient
         colors={["rgba(201,242,77,0.14)", "rgba(201,242,77,0.04)", "transparent"]}
         style={styles.glowTop}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
-      />
+      /> */}
 
       {/* Bottom ambient glow */}
-      <LinearGradient
+      {/* <LinearGradient
         colors={["transparent", "rgba(201,242,77,0.06)", "rgba(201,242,77,0.12)"]}
         style={styles.glowBottom}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
-      />
+      /> */}
 
       {/* Top accent line */}
-      <LinearGradient
+      {/* <LinearGradient
         colors={["transparent", colors.accent, "transparent"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={styles.topAccentLine}
-      />
+      /> */}
 
       {/* Scan line */}
       <Animated.View
@@ -470,7 +490,7 @@ export default function LoginScreen() {
           )}
 
           {/* Error Banner */}
-          {errorMessage && (
+          {(errorMessage || googleError) && (
             <Animated.View
               style={[
                 anim(0),
@@ -485,7 +505,7 @@ export default function LoginScreen() {
               ]}
             >
               <Text variant="caption" style={{ color: "#EF4444", textAlign: "center" }}>
-                {errorMessage}
+                {errorMessage || googleError}
               </Text>
             </Animated.View>
           )}
@@ -616,7 +636,12 @@ export default function LoginScreen() {
 
           {/* ── Social buttons ── */}
           <Animated.View style={[anim(5), styles.socialRow]}>
-            <SocialBtn label="Google" logo={<GoogleLogo />} />
+            <SocialBtn
+              label="Google"
+              logo={<GoogleLogo />}
+              onPress={signInWithGoogle}
+              loading={googleLoading}
+            />
             <SocialBtn
               label="Apple"
               logo={<Feather name="smartphone" size={16} color={colors.ink} />}

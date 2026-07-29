@@ -76,6 +76,8 @@
     "@workspace/db": "workspace:*",
     "drizzle-orm": "catalog:",
     "expo": "~54.0.33",
+    "expo-auth-session": "^7.0.11",
+    "expo-crypto": "~14.1.5",
     "expo-file-system": "~19.0.21",
     "expo-sqlite": "~16.0.10",
     "firebase": "^12.16.0",
