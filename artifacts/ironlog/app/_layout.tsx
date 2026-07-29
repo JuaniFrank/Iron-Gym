@@ -31,6 +31,7 @@ function StackNavigator() {
         animation: "slide_from_right",
       }}
     >
+      <Stack.Screen name="(auth)" options={{ animation: "fade" }} />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="routine/[id]" options={{ presentation: "card" }} />
       <Stack.Screen name="workout/active" options={{ presentation: "card", gestureEnabled: false }} />
