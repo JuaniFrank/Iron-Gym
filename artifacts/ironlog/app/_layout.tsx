@@ -25,7 +25,9 @@ import { FOOD_DATABASE } from "@/constants/foods";
 import { PRESET_ROUTINES } from "@/constants/presetRoutines";
 import { DEFAULT_PROFILE, SEED_VERSION } from "@/constants/seed";
 import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { db } from "@/services/db";
+import { useSegments, useRouter } from "expo-router";
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -129,6 +131,7 @@ function StackNavigator() {
         animation: "slide_from_right",
       }}
     >
+      <Stack.Screen name="(auth)" options={{ animation: "fade" }} />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="routine/[id]" options={{ presentation: "card" }} />
       <Stack.Screen name="workout/active" options={{ presentation: "card", gestureEnabled: false }} />
@@ -146,6 +149,29 @@ function StackNavigator() {
       <Stack.Screen name="body" />
     </Stack>
   );
+}
+
+function RouteGuard({ children }: { children: React.ReactNode }) {
+  const { user, loading, isConfigured } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (loading) return;
+
+    const inAuthGroup = segments[0] === "(auth)";
+
+    // Only redirect if Firebase is configured and user authentication state changes
+    if (isConfigured) {
+      if (!user && !inAuthGroup) {
+        router.replace("/(auth)/login");
+      } else if (user && inAuthGroup) {
+        router.replace("/(tabs)");
+      }
+    }
+  }, [user, loading, segments, isConfigured, router]);
+
+  return <>{children}</>;
 }
 
 export default function RootLayout() {
@@ -179,7 +205,11 @@ export default function RootLayout() {
           <GestureHandlerRootView style={{ flex: 1 }}>
             <QueryClientProvider client={queryClient}>
               <ThemeProvider>
-                <StackNavigator />
+                <AuthProvider>
+                  <RouteGuard>
+                    <StackNavigator />
+                  </RouteGuard>
+                </AuthProvider>
               </ThemeProvider>
             </QueryClientProvider>
           </GestureHandlerRootView>

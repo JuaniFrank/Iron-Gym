@@ -290,6 +290,13 @@ export default function HomeScreen() {
         </Pressable>
       </Row>
 
+      <Pressable
+      onPress={() => router.push("/(auth)/login")}
+      style={{height: 20, width:20, backgroundColor:"red"}}
+      >
+        
+      </Pressable>
+
       {/* Hero card */}
       <Pressable
         onPress={handleHeroPress}

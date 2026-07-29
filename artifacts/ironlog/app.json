@@ -17,7 +17,9 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.juanfrank.ironlog"
     },
-    "android": {},
+    "android": {
+      "package": "com.juanfrank.ironlog"
+    },
     "web": {
       "favicon": "./assets/images/icon.png"
     },

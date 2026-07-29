@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "EXPO_PACKAGER_PROXY_URL=https://$REPLIT_EXPO_DEV_DOMAIN EXPO_PUBLIC_DOMAIN=$REPLIT_DEV_DOMAIN EXPO_PUBLIC_REPL_ID=$REPL_ID REACT_NATIVE_PACKAGER_HOSTNAME=$REPLIT_DEV_DOMAIN pnpm exec expo start --localhost --port $PORT",
     "dev:ios": "pnpm exec expo start --ios",
+    "start": "pnpm exec expo start",
     "dev:tunnel": "expo start --tunnel",
     "dev:tunnel:ios": "expo start --tunnel --ios",
     "build": "node scripts/build.js",
@@ -20,11 +21,13 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
+    "@esbuild/win32-x64": "^0.27.3",
     "@expo-google-fonts/inter": "^0.4.0",
     "@expo/cli": "54.0.23",
     "@expo/ngrok": "^4.1.0",
     "@expo/vector-icons": "^15.0.3",
     "@rollup/rollup-darwin-x64": "4.59.0",
+    "@rollup/rollup-win32-x64-msvc": "^4.62.3",
     "@tanstack/react-query": "catalog:",
     "@types/better-sqlite3": "^7.6.13",
     "@types/react": "~19.1.10",
@@ -69,14 +72,16 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "^3.1.1",
     "@workspace/db": "workspace:*",
     "drizzle-orm": "catalog:",
+    "expo": "~54.0.33",
     "expo-file-system": "~19.0.21",
     "expo-sqlite": "~16.0.10",
-    "react-native-get-random-values": "~1.11.0",
-    "uuid": "^14.0.0",
-    "expo": "~54.0.33",
+    "firebase": "^12.16.0",
     "react": "19.1.0",
-    "react-native": "0.81.5"
+    "react-native": "0.81.5",
+    "react-native-get-random-values": "~1.11.0",
+    "uuid": "^14.0.0"
   }
 }
