@@ -1,0 +1,26 @@
+/* IronLog — "Volt Entry" auth mockup tokens */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --il-bg:        #0F0F0E;
+  --il-bg-deep:   #070706;
+  --il-surface:   #1A1A18;
+  --il-surface2:  #222220;
+  --il-border:    #2A2A26;
+  --il-border-hi: #3A3A35;
+  --il-ink:       #F2F0E8;
+  --il-ink-soft:  #D6D4CA;
+  --il-muted:     #8B8A82;
+  --il-muted-dim: #5C5B54;
+  --il-lime:      #C9F24D;
+  --il-lime-ink:  #0E0E0C;
+  --il-lime-soft: #3A4318;
+  --il-lime-edge: #9DC134;
+  --il-danger:    #E26259;
+  --il-radius:    14px;
+  --il-radius-lg: 20px;
+  --font-main:    'Inter', system-ui, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; padding: 0; background: var(--il-bg); }
