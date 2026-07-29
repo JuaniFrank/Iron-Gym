@@ -17,7 +17,7 @@ import { Divider } from "@/components/ui/Divider";
 import { Screen } from "@/components/ui/Screen";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
-import { useThemeColors } from "@/contexts/ThemeContext";
+import { useTheme, useThemeColors } from "@/contexts/ThemeContext";
 import { setDiscoveryStatus } from "@/domains/discovery/mutators";
 import { useAllNotes } from "@/domains/notes/queries";
 import { useAllFoods, useFoodEntries } from "@/domains/nutrition/queries";
@@ -39,6 +39,7 @@ import { dateKey, formatDuration, startOfDay } from "@/utils/date";
 
 export default function HomeScreen() {
   const colors = useThemeColors();
+  const {scheme: theme} = useTheme();
   const profile = useUserProfile();
   const sessions = useSessions();
   const foodEntries = useFoodEntries();
@@ -306,7 +307,7 @@ export default function HomeScreen() {
       >
         <View
           style={{
-            backgroundColor: colors.ink,
+            backgroundColor: colors.darkCard,
             borderRadius: 24,
             padding: 22,
             position: "relative",
@@ -398,9 +399,9 @@ export default function HomeScreen() {
               </View>
             )}
           </Row>
-          <Text variant="hero" color={colors.bg}>
+          <Text variant="hero" color={colors.whiteText}>
             {heroTitle}{" "}
-            <Text variant="hero" color={colors.bg} italic style={{ fontWeight: "300" }}>
+            <Text variant="hero" color={colors.whiteText} italic style={{ fontWeight: "300" }}>
               {heroItalic}
             </Text>
           </Text>

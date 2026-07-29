@@ -41,7 +41,7 @@ function BarbellIcon({ size = 32, color }: { size?: number; color: string }) {
 
 function GridOverlay() {
   return (
-    <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" opacity={0.04}>
+    <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" opacity={0.09}>
       <Defs>
         <Pattern id="grid" x={0} y={0} width={32} height={32} patternUnits="userSpaceOnUse">
           <Line x1={0} y1={0} x2={32} y2={0} stroke="#C9F24D" strokeWidth={0.6} />
@@ -175,6 +175,7 @@ function TabSwitcher({ value, onChange }: { value: Tab; onChange: (t: Tab) => vo
               justifyContent: "center",
               borderRadius: 10,
               backgroundColor: active ? colors.accent : "transparent",
+              zIndex: 10,
             }}
           >
             <Text
@@ -391,28 +392,35 @@ export default function LoginScreen() {
       <GridOverlay />
 
             {/* Top ambient glow */}
-      {/* <LinearGradient
+      <LinearGradient
         colors={["rgba(201,242,77,0.14)", "rgba(201,242,77,0.04)", "transparent"]}
         style={styles.glowTop}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
-      /> */}
+      />
 
       {/* Bottom ambient glow */}
-      {/* <LinearGradient
+      <LinearGradient
         colors={["transparent", "rgba(201,242,77,0.06)", "rgba(201,242,77,0.12)"]}
         style={styles.glowBottom}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 1 }}
-      /> */}
+      />
 
       {/* Top accent line */}
-      {/* <LinearGradient
+      <LinearGradient
         colors={["transparent", colors.accent, "transparent"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={styles.topAccentLine}
-      /> */}
+      />
+
+      <LinearGradient
+        colors={["rgba(201,242,77,0.14)", "rgba(201,242,77,0.04)", "transparent"]}
+        style={styles.glowTop}
+        start={{ x: 0.5, y: 0 }}
+        end={{ x: 0.5, y: 1 }}
+      />
 
       {/* Scan line */}
       <Animated.View
@@ -684,6 +692,8 @@ export default function LoginScreen() {
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      
     </View>
   );
 }
@@ -718,13 +728,14 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 2,
-    zIndex: 5,
+    zIndex: 1,
     backgroundColor: "rgba(201,242,77,0.5)",
     // Horizontal fade via shadow (LinearGradient not possible on Animated.View directly)
     shadowColor: "#C9F24D",
-    shadowOpacity: 0.8,
+    shadowOpacity: 0.1,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 0 },
+    opacity: 0.1,
   },
   topAccentLine: {
     position: "absolute",
@@ -733,22 +744,22 @@ const styles = StyleSheet.create({
     right: 0,
     height: 2,
     opacity: 0.75,
-    zIndex: 10,
+    zIndex: -1,
   },
   glowTop: {
     position: "absolute",
     top: 0,
-    left: "10%",
-    right: "10%",
-    height: 320,
+    left: "5%",
+    right: "5%",
+    height: 200,
     zIndex: 1,
   },
   glowBottom: {
     position: "absolute",
     bottom: 0,
-    left: "20%",
-    right: "20%",
-    height: 280,
+    left: "5%",
+    right: "5%",
+    height: 180,
     zIndex: 1,
   },
   cta: {

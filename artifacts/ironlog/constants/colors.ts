@@ -36,10 +36,12 @@ const light = {
 
   // Back-compat aliases (mapped onto new palette)
   text: "#0E0E0C",
+  whiteText: "#F2F0E8",
   tint: "#C9F24D",
   background: "#F4F2EC",
   foreground: "#0E0E0C",
   card: "#FFFFFF",
+  darkCard: "#1A1A18",
   cardForeground: "#0E0E0C",
   primary: "#C9F24D",
   primaryForeground: "#0E0E0C",
@@ -91,10 +93,12 @@ const dark = {
   ok: "#7DBC97",
 
   text: "#F2F0E8",
+  whiteText: "#F2F0E8",
   tint: "#C9F24D",
   background: "#0F0F0E",
   foreground: "#F2F0E8",
   card: "#1A1A18",
+  darkCard: "#1A1A18",
   cardForeground: "#F2F0E8",
   primary: "#C9F24D",
   primaryForeground: "#0E0E0C",
