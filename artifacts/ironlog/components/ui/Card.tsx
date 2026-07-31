@@ -8,7 +8,7 @@ interface CardProps {
   style?: ViewStyle;
   onPress?: () => void;
   padding?: number;
-  variant?: "default" | "accent" | "ink" | "ghost";
+  variant?: "default" | "accent" | "ink" |"darkCard" | "ghost";
   radius?: number;
 }
 
@@ -30,6 +30,8 @@ export function Card({
         return { bg: colors.ink, border: colors.ink };
       case "ghost":
         return { bg: "transparent", border: colors.border };
+      case "darkCard": 
+        return { bg: colors.darkCard, border: colors.border };
       default:
         return { bg: colors.surface, border: colors.border };
     }

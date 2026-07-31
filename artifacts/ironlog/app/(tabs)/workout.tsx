@@ -87,7 +87,7 @@ export default function WorkoutScreen() {
         {/* Quick start panel */}
         <View
           style={{
-            backgroundColor: colors.ink,
+            backgroundColor: colors.darkCard,
             borderRadius: 24,
             padding: 20,
             marginBottom: 14,
@@ -99,7 +99,7 @@ export default function WorkoutScreen() {
             </Text>
             <Feather name="zap" size={14} color={colors.accent} />
           </Row>
-          <Text variant="h2" color={colors.bg} style={{ marginBottom: 16 }}>
+          <Text variant="h2" color={colors.whiteText} style={{ marginBottom: 16 }}>
             ¿Sin plan?{"\n"}Empieza ya.
           </Text>
           <Row gap={8}>

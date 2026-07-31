@@ -402,7 +402,7 @@ export default function HomeScreen() {
           <Text variant="hero" color={colors.whiteText}>
             {heroTitle}{" "}
             <Text variant="hero" color={colors.whiteText} italic style={{ fontWeight: "300" }}>
-              {heroItalic}
+              {heroItalic} 
             </Text>
           </Text>
           <Row gap={8} style={{ marginTop: 14 }}>

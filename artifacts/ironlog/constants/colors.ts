@@ -41,7 +41,7 @@ const light = {
   background: "#F4F2EC",
   foreground: "#0E0E0C",
   card: "#FFFFFF",
-  darkCard: "#1A1A18",
+  darkCard: "#0E0E0C",
   cardForeground: "#0E0E0C",
   primary: "#C9F24D",
   primaryForeground: "#0E0E0C",

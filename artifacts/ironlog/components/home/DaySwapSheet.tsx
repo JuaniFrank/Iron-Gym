@@ -139,6 +139,7 @@ export function DaySwapSheet({ visible, onClose }: DaySwapSheetProps) {
           title=""
           compact
           right={<IconButton icon="x" onPress={onClose} />}
+          style={{ paddingTop: 16}}
         />
         <ScrollView
           contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
@@ -154,7 +155,7 @@ export function DaySwapSheet({ visible, onClose }: DaySwapSheetProps) {
           </Col>
 
           <Pressable onPress={handleFreestyle}>
-            <Card variant="ink" style={{ marginBottom: 14 }}>
+            <Card variant="darkCard" style={{ marginBottom: 14 }}>
               <Row gap={12}>
                 <View
                   style={{
