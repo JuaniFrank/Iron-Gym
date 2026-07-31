@@ -15,7 +15,10 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.juanfrank.ironlog"
+      "bundleIdentifier": "com.juanfrank.ironlog",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.juanfrank.ironlog"
@@ -37,6 +40,14 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {
+        "origin": "https://replit.com/"
+      },
+      "eas": {
+        "projectId": "904ec3b2-67b3-4913-8e2b-799ec9506d6e"
+      }
     }
   }
 }
