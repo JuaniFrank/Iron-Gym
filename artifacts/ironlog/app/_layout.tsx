@@ -26,7 +26,7 @@ import { PRESET_ROUTINES } from "@/constants/presetRoutines";
 import { DEFAULT_PROFILE, SEED_VERSION } from "@/constants/seed";
 import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { db } from "@/services/db";
+import { db, initDb } from "@/services/db";
 import { useSegments, useRouter } from "expo-router";
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
@@ -112,6 +112,7 @@ function buildSeedPayload(): SeedPayload {
  */
 async function bootDatabase(): Promise<void> {
   try {
+    await initDb();
     await runMigrations(db);
     await ensureSchemaVersion(db);
     await runSeedIfNeeded(db, buildSeedPayload());
