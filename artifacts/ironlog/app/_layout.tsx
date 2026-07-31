@@ -25,7 +25,7 @@ import { FOOD_DATABASE } from "@/constants/foods";
 import { PRESET_ROUTINES } from "@/constants/presetRoutines";
 import { DEFAULT_PROFILE, SEED_VERSION } from "@/constants/seed";
 import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
-import { db } from "@/services/db";
+import { db, initDb } from "@/services/db";
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -110,6 +110,7 @@ function buildSeedPayload(): SeedPayload {
  */
 async function bootDatabase(): Promise<void> {
   try {
+    await initDb();
     await runMigrations(db);
     await ensureSchemaVersion(db);
     await runSeedIfNeeded(db, buildSeedPayload());
