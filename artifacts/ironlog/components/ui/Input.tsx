@@ -107,6 +107,8 @@ export function Input({
 const styles = StyleSheet.create({
   input: {
     flex: 1,
+    // RN-web <input> has an intrinsic width; without this it never shrinks in a row.
+    ...(Platform.OS === "web" ? { minWidth: 0, width: 0 } : {}),
     fontSize: 16,
     paddingVertical: 8,
   },

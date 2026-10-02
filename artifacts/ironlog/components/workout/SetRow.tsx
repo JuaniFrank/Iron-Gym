@@ -289,6 +289,10 @@ export function SetRow({
   );
 }
 
+// RN-web renders <input> with an intrinsic width (~20ch) and `min-width: auto`,
+// so `flex: 1` never shrinks below it and the row overflows. Web only.
+const webShrink = Platform.OS === "web" ? { minWidth: 0, width: 0 } : {};
+
 const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
@@ -310,9 +314,11 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     gap: 6,
+    ...webShrink,
   },
   input: {
     flex: 1,
+    ...webShrink,
     height: 36,
     borderRadius: 8,
     paddingHorizontal: 6,

@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useMemo } from "react";
-import { useColorScheme } from "react-native";
+import React, { createContext, useContext, useEffect, useMemo } from "react";
+import { Platform, useColorScheme } from "react-native";
 
 import colors, { type ThemePalette } from "@/constants/colors";
 import { useUserProfile } from "@/domains/profile/queries";
@@ -27,6 +27,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const palette = scheme === "dark" ? colors.dark : colors.light;
     return { scheme, colors: { ...palette, radius: colors.radius } };
   }, [scheme]);
+
+  // Web only: keep the document background in sync with the theme so the
+  // safe-area / overscroll / home-indicator areas never flash a different colour.
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof document === "undefined") return;
+    document.documentElement.style.setProperty("--app-bg", value.colors.bg);
+  }, [value.colors.bg]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }

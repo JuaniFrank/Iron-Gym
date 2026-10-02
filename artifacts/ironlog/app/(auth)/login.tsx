@@ -415,12 +415,15 @@ export default function LoginScreen() {
         style={styles.topAccentLine}
       />
 
-      <LinearGradient
-        colors={["rgba(201,242,77,0.14)", "rgba(201,242,77,0.04)", "transparent"]}
-        style={styles.glowTop}
-        start={{ x: 0.5, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-      />
+      {/* Second glow pass: native look only. On web it stacks into a visible band. */}
+      {Platform.OS !== "web" ? (
+        <LinearGradient
+          colors={["rgba(201,242,77,0.14)", "rgba(201,242,77,0.04)", "transparent"]}
+          style={styles.glowTop}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+        />
+      ) : null}
 
       {/* Scan line */}
       <Animated.View
@@ -749,16 +752,16 @@ const styles = StyleSheet.create({
   glowTop: {
     position: "absolute",
     top: 0,
-    left: "5%",
-    right: "5%",
+    left: Platform.OS === "web" ? 0 : "5%",
+    right: Platform.OS === "web" ? 0 : "5%",
     height: 200,
     zIndex: 1,
   },
   glowBottom: {
     position: "absolute",
     bottom: 0,
-    left: "5%",
-    right: "5%",
+    left: Platform.OS === "web" ? 0 : "5%",
+    right: Platform.OS === "web" ? 0 : "5%",
     height: 180,
     zIndex: 1,
   },

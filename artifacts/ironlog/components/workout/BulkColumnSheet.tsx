@@ -210,6 +210,7 @@ export function BulkColumnSheet({
                     }
                     style={{
                       flex: 1,
+                      ...(Platform.OS === "web" ? { minWidth: 0, width: 0 } : {}),
                       fontSize: 16,
                       fontWeight: "600",
                       color: colors.ink,
