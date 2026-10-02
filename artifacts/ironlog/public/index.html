@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="%LANG_ISO_CODE%">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, shrink-to-fit=no, viewport-fit=cover" />
+    <title>%WEB_TITLE%</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#15171A" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="IronLog" />
+    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
+    <style id="expo-reset">
+      /* Base paint = app `bg` token (constants/colors.ts). ThemeProvider overrides it
+         at runtime on web so the safe-area / overscroll areas match the active theme. */
+      :root {
+        --app-bg: #F4F2EC;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --app-bg: #0F0F0E;
+        }
+      }
+      /* Full-height incl. the home-indicator area in standalone PWAs. */
+      html,
+      body {
+        height: 100%;
+        min-height: 100vh;
+        min-height: -webkit-fill-available;
+        min-height: 100dvh;
+        background-color: var(--app-bg);
+        -webkit-text-size-adjust: 100%;
+        touch-action: manipulation;
+      }
+      /* These styles disable body scrolling if you are using <ScrollView> */
+      body {
+        overflow: hidden;
+        overflow-x: hidden;
+      }
+      /* These styles make the root element full-height */
+      #root {
+        display: flex;
+        height: 100%;
+        min-height: 100vh;
+        min-height: -webkit-fill-available;
+        min-height: 100dvh;
+        flex: 1;
+        background-color: var(--app-bg);
+        overflow-x: hidden;
+      }
+    </style>
+    <script>
+      // Register only for the production export (hashed entry script present);
+      // never under `expo start --web`, where this file is the dev template.
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", function () {
+          var isProd = Array.prototype.some.call(
+            document.getElementsByTagName("script"),
+            function (s) {
+              return (s.getAttribute("src") || "").indexOf("/_expo/static/js/web/") !== -1;
+            },
+          );
+          if (isProd) {
+            navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(function (err) {
+              console.warn("Service worker registration failed", err);
+            });
+          } else {
+            navigator.serviceWorker.getRegistrations().then(function (regs) {
+              regs.forEach(function (r) { r.unregister(); });
+            });
+          }
+        });
+      }
+    </script>
+  </head>
+
+  <body>
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
+    <!-- The root element for your Expo app. -->
+    <div id="root"></div>
+  </body>
+</html>

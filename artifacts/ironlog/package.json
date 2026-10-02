@@ -18,7 +18,9 @@
     "ios": "expo run:ios",
     "sideload": "bash scripts/update-ipa.sh",
     "sideload:full": "bash scripts/update-ipa.sh --full",
-    "build:unsigned": "bash scripts/build-unsigned-ipa.sh"
+    "build:unsigned": "bash scripts/build-unsigned-ipa.sh",
+    "build:web": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && expo export -p web",
+    "serve:web": "node server/serve-web.js",
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
