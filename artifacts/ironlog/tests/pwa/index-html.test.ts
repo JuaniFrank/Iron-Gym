@@ -25,6 +25,15 @@ describe("public/index.html mobile layout", () => {
     expect(html).toContain("-webkit-fill-available");
   });
 
+  it("uses 100lvh in standalone PWAs (iOS subtracts the top inset from 100%/dvh)", () => {
+    const standalone = html.match(
+      /@media \(display-mode: standalone\)\s*{([\s\S]*?)\n\s{6}}/,
+    );
+    expect(standalone, "standalone media query").not.toBeNull();
+    expect(standalone![1]).toMatch(/html,\s*body,\s*#root\s*{[^}]*height:\s*100lvh/s);
+    expect(standalone![1]).toMatch(/min-height:\s*100lvh/);
+  });
+
   it("guards against horizontal overflow", () => {
     expect(html).toMatch(/overflow-x:\s*hidden/);
   });

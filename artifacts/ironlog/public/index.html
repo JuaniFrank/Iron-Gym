@@ -51,6 +51,17 @@
         background-color: var(--app-bg);
         overflow-x: hidden;
       }
+      /* WebKit bug: installed iOS PWAs with black-translucent + viewport-fit=cover
+         report 100% / 100svh / 100dvh as screen height minus the top safe-area
+         inset, leaving a dead band at the bottom. Only 100lvh is the full screen. */
+      @media (display-mode: standalone) {
+        html,
+        body,
+        #root {
+          height: 100lvh;
+          min-height: 100lvh;
+        }
+      }
     </style>
     <script>
       // Register only for the production export (hashed entry script present);
