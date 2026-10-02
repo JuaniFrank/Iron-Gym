@@ -1,4 +1,4 @@
-import { initializeApp, getApps, getApp } from "firebase/app";
+import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import {
   initializeAuth,
   getAuth,
@@ -22,19 +22,27 @@ export const isFirebaseConfigured = Boolean(
     process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID
 );
 
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+// Only initialize Firebase when real credentials are present. Initializing with
+// an empty apiKey throws `auth/invalid-api-key` at import time, which crashes the
+// whole module and cascades into "missing default export" errors across the app.
+// AuthContext / useGoogleAuth already guard every call with isFirebaseConfigured,
+// so leaving these undefined when unconfigured is safe.
+let app: FirebaseApp = undefined as unknown as FirebaseApp;
+let auth: Auth = undefined as unknown as Auth;
 
-let auth: Auth;
-try {
-  if (typeof getReactNativePersistence === "function") {
-    auth = initializeAuth(app, {
-      persistence: getReactNativePersistence(AsyncStorage),
-    });
-  } else {
+if (isFirebaseConfigured) {
+  app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+  try {
+    if (typeof getReactNativePersistence === "function") {
+      auth = initializeAuth(app, {
+        persistence: getReactNativePersistence(AsyncStorage),
+      });
+    } else {
+      auth = getAuth(app);
+    }
+  } catch {
     auth = getAuth(app);
   }
-} catch {
-  auth = getAuth(app);
 }
 
 export { app, auth };
