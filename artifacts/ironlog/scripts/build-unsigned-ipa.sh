@@ -129,6 +129,28 @@ for bundle in "${POD_BUNDLES[@]}"; do
   fi
 done
 
+# Embed the dynamic frameworks the app links against (React, Hermes, etc.).
+# xcodebuild's React Native bundle phase can fail under pnpm *before* the
+# "[CP] Embed Pods Frameworks" phase runs, leaving IronLog.app/Frameworks/
+# empty. The app then builds an .app that crashes instantly at launch with
+# dyld: "Library not loaded: @rpath/React.framework/React". Copy the prebuilt
+# frameworks in manually, mirroring Pods-IronLog-frameworks.sh.
+log "Embedding dynamic frameworks into the app..."
+XCFRAMEWORK_DIR="$BUILD_DIR/XCFrameworkIntermediates"
+FRAMEWORKS_DEST="$APP_BUNDLE/Frameworks"
+mkdir -p "$FRAMEWORKS_DEST"
+embedded_count=0
+if [ -d "$XCFRAMEWORK_DIR" ]; then
+  while IFS= read -r -d '' fw; do
+    name="$(basename "$fw")"
+    rm -rf "$FRAMEWORKS_DEST/$name"
+    cp -R "$fw" "$FRAMEWORKS_DEST/"
+    log "  Embedded $name"
+    embedded_count=$((embedded_count + 1))
+  done < <(find "$XCFRAMEWORK_DIR" -type d -name '*.framework' -prune -print0)
+fi
+[ "$embedded_count" -gt 0 ] || err "No dynamic frameworks were embedded; the app would crash at launch with a dyld 'Library not loaded' error. See $XCODEBUILD_LOG"
+
 log "Bundling JavaScript..."
 rm -f "$BUNDLE_TMP"
 rm -rf "$ASSETS_TMP"
