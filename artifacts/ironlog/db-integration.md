@@ -46,12 +46,17 @@ const position = (max?.p ?? -1) + 1;
 Reorder con swap transaccional (position temporal -1 evita violar UNIQUE):
 
 ```ts
-await tx.transaction(async (t) => {
-  await t.update(routineExercises).set({ position: -1 }).where(eq(routineExercises.id, idA));
-  await t.update(routineExercises).set({ position: posA }).where(eq(routineExercises.id, idB));
-  await t.update(routineExercises).set({ position: posB }).where(eq(routineExercises.id, idA));
+db.transaction((t) => {
+  t.update(routineExercises).set({ position: -1 }).where(eq(routineExercises.id, idA)).run();
+  t.update(routineExercises).set({ position: posA }).where(eq(routineExercises.id, idB)).run();
+  t.update(routineExercises).set({ position: posB }).where(eq(routineExercises.id, idA)).run();
 });
 ```
+
+> IMPORTANTE: el callback de `db.transaction` DEBE ser síncrono (sin `async`/`await`),
+> usando `.run()/.all()/.get()`. La sesión drizzle de expo-sqlite es síncrona y hace
+> COMMIT apenas el callback retorna; con un callback `async` el COMMIT ocurre en el primer
+> `await` y el resto corre fuera de la transacción, sin rollback.
 
 Self-FK `superset_with` referencia `routine_exercises.id` del mismo día.
 
@@ -112,17 +117,19 @@ export async function runSeedIfNeeded(db: DB) {
   const storedVersion = stored ? parseInt(stored.value, 10) : 0;
   if (storedVersion >= SEED_VERSION) return;
 
-  await db.transaction(async (tx) => {
+  db.transaction((tx) => {
     for (const ex of EXERCISES) {
-      await tx.insert(exercises).values({ ...ex, isPreset: true, updatedAt: Date.now() })
+      tx.insert(exercises).values({ ...ex, isPreset: true, updatedAt: Date.now() })
         .onConflictDoUpdate({
           target: exercises.id,
           set: { ...ex, updatedAt: Date.now() },
-        });
+        })
+        .run();
     }
     // idem foods, routines (con cascade a routine_days y routine_exercises)
-    await tx.insert(meta).values({ key: 'seed_version', value: String(SEED_VERSION) })
-      .onConflictDoUpdate({ target: meta.key, set: { value: String(SEED_VERSION) } });
+    tx.insert(meta).values({ key: 'seed_version', value: String(SEED_VERSION) })
+      .onConflictDoUpdate({ target: meta.key, set: { value: String(SEED_VERSION) } })
+      .run();
   });
 }
 ```

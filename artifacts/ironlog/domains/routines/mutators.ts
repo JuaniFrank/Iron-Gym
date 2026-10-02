@@ -82,8 +82,8 @@ export async function createRoutine(
   const id = uid();
   const dayId = uid();
   const now = new Date();
-  await db.transaction(async (tx) => {
-    await tx.insert(routinesTable).values({
+  await db.transaction((tx) => {
+    tx.insert(routinesTable).values({
       id,
       name: validated.name,
       description: validated.description ?? null,
@@ -91,14 +91,14 @@ export async function createRoutine(
       isPreset: false,
       createdAt: now,
       updatedAt: now,
-    });
-    await tx.insert(routineDaysTable).values({
+    }).run();
+    tx.insert(routineDaysTable).values({
       id: dayId,
       routineId: id,
       name: "Día 1",
       position: 0,
       updatedAt: now,
-    });
+    }).run();
   });
   return {
     id,
@@ -137,27 +137,27 @@ export async function updateRoutine(
  */
 export async function deleteRoutine(id: string): Promise<void> {
   const now = new Date();
-  await db.transaction(async (tx) => {
-    await tx
+  await db.transaction((tx) => {
+    tx
       .update(routinesTable)
       .set({ deletedAt: now, updatedAt: now })
-      .where(eq(routinesTable.id, id));
+      .where(eq(routinesTable.id, id)).run();
     // Find all days first so we can soft-delete their exercises.
-    const days = await tx
+    const days = tx
       .select({ id: routineDaysTable.id })
       .from(routineDaysTable)
       .where(eq(routineDaysTable.routineId, id))
       .all();
     if (days.length > 0) {
-      await tx
+      tx
         .update(routineDaysTable)
         .set({ deletedAt: now, updatedAt: now })
-        .where(eq(routineDaysTable.routineId, id));
+        .where(eq(routineDaysTable.routineId, id)).run();
       for (const day of days) {
-        await tx
+        tx
           .update(routineExercisesTable)
           .set({ deletedAt: now, updatedAt: now })
-          .where(eq(routineExercisesTable.routineDayId, day.id));
+          .where(eq(routineExercisesTable.routineDayId, day.id)).run();
       }
     }
   });
@@ -171,14 +171,14 @@ export async function deleteRoutine(id: string): Promise<void> {
 export async function cloneRoutine(id: string): Promise<Routine | null> {
   const newId = uid();
   const now = new Date();
-  return await db.transaction(async (tx) => {
-    const original = await tx
+  return await db.transaction((tx) => {
+    const original = tx
       .select()
       .from(routinesTable)
       .where(and(eq(routinesTable.id, id), isNull(routinesTable.deletedAt)))
       .get();
     if (!original) return null;
-    const days = await tx
+    const days = tx
       .select()
       .from(routineDaysTable)
       .where(
@@ -194,7 +194,7 @@ export async function cloneRoutine(id: string): Promise<Routine | null> {
     for (const day of days) dayIdMap.set(day.id, uid());
     const dayIds = days.map((d) => d.id);
     const exs = dayIds.length
-      ? await tx
+      ? tx
           .select()
           .from(routineExercisesTable)
           .where(
@@ -211,7 +211,7 @@ export async function cloneRoutine(id: string): Promise<Routine | null> {
     const exIdMap = new Map<string, string>();
     for (const ex of exsForRoutine) exIdMap.set(ex.id, uid());
 
-    await tx.insert(routinesTable).values({
+    tx.insert(routinesTable).values({
       id: newId,
       name: `${original.name} (copia)`,
       description: original.description,
@@ -219,18 +219,18 @@ export async function cloneRoutine(id: string): Promise<Routine | null> {
       isPreset: false,
       createdAt: now,
       updatedAt: now,
-    });
+    }).run();
     for (const day of days) {
-      await tx.insert(routineDaysTable).values({
+      tx.insert(routineDaysTable).values({
         id: dayIdMap.get(day.id)!,
         routineId: newId,
         name: day.name,
         position: day.position,
         updatedAt: now,
-      });
+      }).run();
     }
     for (const ex of exsForRoutine) {
-      await tx.insert(routineExercisesTable).values({
+      tx.insert(routineExercisesTable).values({
         id: exIdMap.get(ex.id)!,
         routineDayId: dayIdMap.get(ex.routineDayId)!,
         exerciseId: ex.exerciseId,
@@ -242,7 +242,7 @@ export async function cloneRoutine(id: string): Promise<Routine | null> {
         restSeconds: ex.restSeconds,
         notes: ex.notes,
         updatedAt: now,
-      });
+      }).run();
     }
     return {
       ...rowToShallowRoutine({
@@ -272,20 +272,20 @@ export async function addRoutineDay(
   const validatedName = z.string().min(1).max(200).parse(name);
   const id = uid();
   const now = new Date();
-  await db.transaction(async (tx) => {
-    const row = await tx
+  await db.transaction((tx) => {
+    const row = tx
       .select({ p: max(routineDaysTable.position) })
       .from(routineDaysTable)
       .where(eq(routineDaysTable.routineId, routineId))
       .get();
     const position = (row?.p ?? -1) + 1;
-    await tx.insert(routineDaysTable).values({
+    tx.insert(routineDaysTable).values({
       id,
       routineId,
       name: validatedName,
       position,
       updatedAt: now,
-    });
+    }).run();
   });
   return { id, name: validatedName, exercises: [] };
 }
@@ -311,15 +311,15 @@ export async function deleteRoutineDay(
   dayId: string,
 ): Promise<void> {
   const now = new Date();
-  await db.transaction(async (tx) => {
-    await tx
+  await db.transaction((tx) => {
+    tx
       .update(routineDaysTable)
       .set({ deletedAt: now, updatedAt: now })
-      .where(eq(routineDaysTable.id, dayId));
-    await tx
+      .where(eq(routineDaysTable.id, dayId)).run();
+    tx
       .update(routineExercisesTable)
       .set({ deletedAt: now, updatedAt: now })
-      .where(eq(routineExercisesTable.routineDayId, dayId));
+      .where(eq(routineExercisesTable.routineDayId, dayId)).run();
   });
 }
 
@@ -338,8 +338,8 @@ export async function reorderRoutineDays(
 ): Promise<void> {
   if (fromIndex === toIndex) return;
   const now = new Date();
-  await db.transaction(async (tx) => {
-    const days = await tx
+  await db.transaction((tx) => {
+    const days = tx
       .select()
       .from(routineDaysTable)
       .where(
@@ -366,16 +366,16 @@ export async function reorderRoutineDays(
     //   2. Renumber every row to its target index. Order of writes no
     //      longer matters because the source positions are all negative.
     for (let i = 0; i < reordered.length; i += 1) {
-      await tx
+      tx
         .update(routineDaysTable)
         .set({ position: -1000 - i, updatedAt: now })
-        .where(eq(routineDaysTable.id, reordered[i].id));
+        .where(eq(routineDaysTable.id, reordered[i].id)).run();
     }
     for (let i = 0; i < reordered.length; i += 1) {
-      await tx
+      tx
         .update(routineDaysTable)
         .set({ position: i, updatedAt: now })
-        .where(eq(routineDaysTable.id, reordered[i].id));
+        .where(eq(routineDaysTable.id, reordered[i].id)).run();
     }
   });
 }
@@ -393,14 +393,14 @@ export async function addExerciseToDay(
   z.string().min(1).parse(exerciseId);
   const id = uid();
   const now = new Date();
-  await db.transaction(async (tx) => {
-    const row = await tx
+  await db.transaction((tx) => {
+    const row = tx
       .select({ p: max(routineExercisesTable.position) })
       .from(routineExercisesTable)
       .where(eq(routineExercisesTable.routineDayId, dayId))
       .get();
     const position = (row?.p ?? -1) + 1;
-    await tx.insert(routineExercisesTable).values({
+    tx.insert(routineExercisesTable).values({
       id,
       routineDayId: dayId,
       exerciseId,
@@ -412,7 +412,7 @@ export async function addExerciseToDay(
       restSeconds: DEFAULT_REST_SECONDS,
       notes: null,
       updatedAt: now,
-    });
+    }).run();
   });
   return {
     id,
@@ -464,16 +464,16 @@ export async function removeRoutineExercise(
   exerciseRowId: string,
 ): Promise<void> {
   const now = new Date();
-  await db.transaction(async (tx) => {
-    await tx
+  await db.transaction((tx) => {
+    tx
       .update(routineExercisesTable)
       .set({ deletedAt: now, updatedAt: now })
-      .where(eq(routineExercisesTable.id, exerciseRowId));
+      .where(eq(routineExercisesTable.id, exerciseRowId)).run();
     // Clear partner's supersetWith if it was pointing here.
-    await tx
+    tx
       .update(routineExercisesTable)
       .set({ supersetWith: null, updatedAt: now })
-      .where(eq(routineExercisesTable.supersetWith, exerciseRowId));
+      .where(eq(routineExercisesTable.supersetWith, exerciseRowId)).run();
   });
 }
 
@@ -493,34 +493,34 @@ export async function toggleSuperset(
   withId: string | null,
 ): Promise<void> {
   const now = new Date();
-  await db.transaction(async (tx) => {
+  await db.transaction((tx) => {
     if (withId == null) {
       // Find the previously-linked partner (if any) and clear its link too.
-      const current = await tx
+      const current = tx
         .select({ supersetWith: routineExercisesTable.supersetWith })
         .from(routineExercisesTable)
         .where(eq(routineExercisesTable.id, exerciseRowId))
         .get();
-      await tx
+      tx
         .update(routineExercisesTable)
         .set({ supersetWith: null, updatedAt: now })
-        .where(eq(routineExercisesTable.id, exerciseRowId));
+        .where(eq(routineExercisesTable.id, exerciseRowId)).run();
       if (current?.supersetWith) {
-        await tx
+        tx
           .update(routineExercisesTable)
           .set({ supersetWith: null, updatedAt: now })
-          .where(eq(routineExercisesTable.id, current.supersetWith));
+          .where(eq(routineExercisesTable.id, current.supersetWith)).run();
       }
       return;
     }
-    await tx
+    tx
       .update(routineExercisesTable)
       .set({ supersetWith: withId, updatedAt: now })
-      .where(eq(routineExercisesTable.id, exerciseRowId));
-    await tx
+      .where(eq(routineExercisesTable.id, exerciseRowId)).run();
+    tx
       .update(routineExercisesTable)
       .set({ supersetWith: exerciseRowId, updatedAt: now })
-      .where(eq(routineExercisesTable.id, withId));
+      .where(eq(routineExercisesTable.id, withId)).run();
   });
 }
 

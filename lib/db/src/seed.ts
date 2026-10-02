@@ -178,7 +178,7 @@ export async function runSeedIfNeeded(
 
   const now = new Date();
 
-  await db.transaction(async (tx) => {
+  await db.transaction((tx) => {
     // ---- exercises ------------------------------------------------------
     for (const ex of payload.exercises) {
       const row: NewExercise = {
@@ -191,7 +191,7 @@ export async function runSeedIfNeeded(
         isPreset: true,
         updatedAt: now,
       };
-      await tx
+      tx
         .insert(exercises)
         .values(row)
         .onConflictDoUpdate({
@@ -209,7 +209,7 @@ export async function runSeedIfNeeded(
             // matters for stale dev DBs).
             deletedAt: null,
           },
-        });
+        }).run();
     }
 
     // ---- food_items -----------------------------------------------------
@@ -226,7 +226,7 @@ export async function runSeedIfNeeded(
         isPreset: true,
         updatedAt: now,
       };
-      await tx
+      tx
         .insert(foodItems)
         .values(row)
         .onConflictDoUpdate({
@@ -243,7 +243,7 @@ export async function runSeedIfNeeded(
             updatedAt: now,
             deletedAt: null,
           },
-        });
+        }).run();
     }
 
     // ---- routines + routine_days + routine_exercises -------------------
@@ -252,7 +252,7 @@ export async function runSeedIfNeeded(
         ? new Date(routine.createdAt)
         : now;
 
-      await tx
+      tx
         .insert(routines)
         .values({
           id: routine.id,
@@ -273,7 +273,7 @@ export async function runSeedIfNeeded(
             updatedAt: now,
             deletedAt: null,
           },
-        });
+        }).run();
 
       // First pass: insert all days + exercises with deterministic ids.
       // Superset references resolve in this same pass because the target
@@ -285,7 +285,7 @@ export async function runSeedIfNeeded(
         const day = routine.days[dayIdx];
         const dayRowId = buildRoutineDayId(routine.id, day.id);
 
-        await tx
+        tx
           .insert(routineDays)
           .values({
             id: dayRowId,
@@ -302,7 +302,7 @@ export async function runSeedIfNeeded(
               updatedAt: now,
               deletedAt: null,
             },
-          });
+          }).run();
 
         for (let exIdx = 0; exIdx < day.exercises.length; exIdx += 1) {
           const re = day.exercises[exIdx];
@@ -314,7 +314,7 @@ export async function runSeedIfNeeded(
             ? buildRoutineExerciseId(dayRowId, exIdx, re.supersetWith)
             : null;
 
-          await tx
+          tx
             .insert(routineExercises)
             .values({
               id: reId,
@@ -344,28 +344,28 @@ export async function runSeedIfNeeded(
                 updatedAt: now,
                 deletedAt: null,
               },
-            });
+            }).run();
         }
       }
     }
 
     // ---- user_profile (singleton, only on first boot) -------------------
-    await tx
+    tx
       .insert(userProfile)
       .values({
         id: "singleton",
         ...payload.profileDefaults,
         updatedAt: now,
       })
-      .onConflictDoNothing({ target: userProfile.id });
+      .onConflictDoNothing({ target: userProfile.id }).run();
 
     // ---- _meta.seed_version --------------------------------------------
-    await tx
+    tx
       .insert(meta)
       .values({ key: "seed_version", value: String(payload.version) })
       .onConflictDoUpdate({
         target: meta.key,
         set: { value: String(payload.version) },
-      });
+      }).run();
   });
 }

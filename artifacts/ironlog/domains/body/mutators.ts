@@ -33,17 +33,17 @@ export async function logBodyWeight(
   const weight = z.number().positive().parse(weightKg);
   const now = new Date();
   const targetDate = new Date(startOfDay(date ?? now.getTime()));
-  await db.transaction(async (tx) => {
-    await tx.insert(bodyWeights).values({
+  await db.transaction((tx) => {
+    tx.insert(bodyWeights).values({
       id: uid(),
       date: targetDate,
       weightKg: weight,
       updatedAt: now,
-    });
-    await tx
+    }).run();
+    tx
       .update(userProfile)
       .set({ weightKg: weight, updatedAt: now })
-      .where(eq(userProfile.id, "singleton"));
+      .where(eq(userProfile.id, "singleton")).run();
   });
 }
 

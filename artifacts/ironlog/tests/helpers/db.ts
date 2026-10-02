@@ -8,19 +8,19 @@
 // rule): tests against a real DB, same dialect as prod. The whole point
 // is to catch SQL/migration breakage in CI before it ships.
 //
-// THE TRICKY BIT — async transaction adapter.
-// Prod mutators use `await db.transaction(async (tx) => { ... })`. The
-// expo-sqlite driver awaits the callback before COMMIT. better-sqlite3
-// is purely synchronous and EXPLICITLY rejects async callbacks
-// ("Transaction function cannot return a promise"). So we wrap the
-// drizzle handle with a Proxy that intercepts `.transaction()` and:
-//   1. Runs BEGIN manually
-//   2. Calls the async callback, awaits it
-//   3. Runs COMMIT (or ROLLBACK on throw)
-// The net effect mirrors the expo-sqlite semantics and lets the same
-// mutator code paths run unchanged. Drizzle queries themselves are
-// already sync on better-sqlite3 — the await of `tx.select()...` is
-// awaiting a non-promise, which is fine.
+// TRANSACTION SEMANTICS — mirror prod (expo-sqlite), NOT better-sqlite3.
+// Prod mutators call `db.transaction((tx) => { ... })` with a SYNCHRONOUS
+// callback. drizzle's expo-sqlite session runs `begin`, calls the callback,
+// then `commit` as soon as it RETURNS (rollback if it throws) — it never
+// awaits. So an `async` callback commits at its first `await` and later
+// statements run outside the transaction with no rollback (the bug fixed in
+// ironlog-web-compat T4). better-sqlite3's native drizzle transaction would
+// instead throw on async callbacks, hiding that class of bug differently, so
+// we wrap `.transaction()` to reproduce the expo lifecycle exactly:
+//   1. BEGIN
+//   2. result = cb(tx)   (NOT awaited)
+//   3. COMMIT on return, ROLLBACK on throw
+// Atomicity tests (tests/atomicity.test.ts) rely on this faithfulness.
 //
 // MIGRATION APPROACH.
 // We read the raw `.sql` files from `lib/db/src/migrations/sqlite` and
@@ -62,30 +62,19 @@ function loadMigrationSql(): string[] {
 type RawDb = ReturnType<typeof drizzleBetter<typeof schema>>;
 
 /**
- * Wrap a drizzle better-sqlite3 db so `.transaction(asyncCb)` works.
- *
- * The original drizzle-orm/better-sqlite3 transaction synchronously
- * calls `client.transaction()`, which throws on async callbacks. We
- * intercept at the JS level and do the BEGIN/COMMIT/ROLLBACK dance
- * ourselves — same lifecycle semantics, different mechanism.
- *
- * Limitations: nested transactions (savepoints) aren't handled — none
- * of the IronLog mutators nest, so this is fine. Add savepoint support
- * here if that ever changes.
+ * Wrap a drizzle better-sqlite3 db so `.transaction(cb)` follows the
+ * expo-sqlite session lifecycle (see header). Nested transactions
+ * (savepoints) aren't handled — none of the IronLog mutators nest.
  */
-function wrapAsyncTransaction(db: RawDb, sqlite: Database.Database): RawDb {
+function wrapExpoTransaction(db: RawDb, sqlite: Database.Database): RawDb {
   return new Proxy(db, {
     get(target, prop, receiver) {
       if (prop === "transaction") {
-        return async <T,>(
-          cb: (tx: RawDb) => Promise<T> | T,
-        ): Promise<T> => {
+        return <T,>(cb: (tx: RawDb) => T): T => {
           sqlite.exec("BEGIN");
           try {
-            // Pass the same wrapped handle as `tx` — mutators read from
-            // it identically to the top-level db (and avoiding a
-            // separate tx surface keeps drizzle method types aligned).
-            const result = await cb(receiver as RawDb);
+            // Same wrapped handle as `tx` — avoids a separate tx surface.
+            const result = cb(receiver as RawDb);
             sqlite.exec("COMMIT");
             return result;
           } catch (err) {
@@ -132,7 +121,7 @@ export function createTestDb(): {
   }
 
   const raw = drizzleBetter(sqlite, { schema });
-  const wrapped = wrapAsyncTransaction(raw, sqlite);
+  const wrapped = wrapExpoTransaction(raw, sqlite);
   // Single cast at the boundary — see `TestDb` doc.
   const db = wrapped as unknown as TestDb;
   useTestDb(db);

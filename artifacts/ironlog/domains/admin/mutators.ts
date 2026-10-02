@@ -44,55 +44,55 @@ import { db } from "@/services/db";
  * reseed naturally. For pure dev resets, the user can also reinstall.
  */
 export async function resetAll(): Promise<void> {
-  await db.transaction(async (tx) => {
+  await db.transaction((tx) => {
     // Children first (sets/notes/PRs cascade-deletable via session anyway,
     // but explicit deletes are safe).
-    await tx.delete(prRecords);
-    await tx.delete(sessionNotes);
-    await tx.delete(completedSets);
-    await tx.delete(workoutSessions);
+    tx.delete(prRecords).run();
+    tx.delete(sessionNotes).run();
+    tx.delete(completedSets).run();
+    tx.delete(workoutSessions).run();
 
-    await tx.delete(foodEntries);
-    await tx.delete(scheduledRoutines);
-    await tx.delete(scheduleOverrides);
-    await tx.delete(sessionPlans);
-    await tx.delete(achievementsUnlocked);
-    await tx.delete(featureDiscoveries);
+    tx.delete(foodEntries).run();
+    tx.delete(scheduledRoutines).run();
+    tx.delete(scheduleOverrides).run();
+    tx.delete(sessionPlans).run();
+    tx.delete(achievementsUnlocked).run();
+    tx.delete(featureDiscoveries).run();
 
-    await tx.delete(progressPhotos);
-    await tx.delete(bodyMeasurements);
-    await tx.delete(bodyWeights);
-    await tx.delete(fitnessGoals);
+    tx.delete(progressPhotos).run();
+    tx.delete(bodyMeasurements).run();
+    tx.delete(bodyWeights).run();
+    tx.delete(fitnessGoals).run();
 
     // Custom catalog rows (preserve presets — seed will re-upsert them).
     // Find custom routine ids first to scope dependent deletes.
-    const customRoutines = await tx
+    const customRoutines = tx
       .select({ id: routines.id })
       .from(routines)
       .where(eq(routines.isPreset, false))
       .all();
     const customRoutineIds = customRoutines.map((r) => r.id);
     if (customRoutineIds.length > 0) {
-      const customDays = await tx
+      const customDays = tx
         .select({ id: routineDays.id })
         .from(routineDays)
         .where(inArray(routineDays.routineId, customRoutineIds))
         .all();
       const customDayIds = customDays.map((d) => d.id);
       if (customDayIds.length > 0) {
-        await tx
+        tx
           .delete(routineExercises)
-          .where(inArray(routineExercises.routineDayId, customDayIds));
+          .where(inArray(routineExercises.routineDayId, customDayIds)).run();
       }
-      await tx
+      tx
         .delete(routineDays)
-        .where(inArray(routineDays.routineId, customRoutineIds));
-      await tx.delete(routines).where(eq(routines.isPreset, false));
+        .where(inArray(routineDays.routineId, customRoutineIds)).run();
+      tx.delete(routines).where(eq(routines.isPreset, false)).run();
     }
-    await tx.delete(exercises).where(eq(exercises.isPreset, false));
-    await tx.delete(foodItems).where(eq(foodItems.isPreset, false));
+    tx.delete(exercises).where(eq(exercises.isPreset, false)).run();
+    tx.delete(foodItems).where(eq(foodItems.isPreset, false)).run();
 
     // Wipe key/value singletons (active workout id, default rest, etc.)
-    await tx.delete(keyValue);
+    tx.delete(keyValue).run();
   });
 }

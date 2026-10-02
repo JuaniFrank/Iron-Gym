@@ -77,22 +77,22 @@ function rowToSet(row: typeof completedSets.$inferSelect): CompletedSet {
  */
 type TxLike = Pick<typeof db, "delete" | "insert">;
 
-async function setActiveWorkoutId(
+function setActiveWorkoutId(
   tx: TxLike,
   id: string | null,
-): Promise<void> {
+): void {
   const now = new Date();
   if (id == null) {
-    await tx.delete(keyValue).where(eq(keyValue.key, ACTIVE_KEY));
+    tx.delete(keyValue).where(eq(keyValue.key, ACTIVE_KEY)).run();
     return;
   }
-  await tx
-    .insert(keyValue)
+  tx.insert(keyValue)
     .values({ key: ACTIVE_KEY, value: id, updatedAt: now })
     .onConflictDoUpdate({
       target: keyValue.key,
       set: { value: id, updatedAt: now },
-    });
+    })
+    .run();
 }
 
 // ---------------------------------------------------------------------------
@@ -113,18 +113,18 @@ export async function startWorkout(
   const id = uid();
   const now = new Date();
 
-  return await db.transaction(async (tx) => {
-    const routine = await tx
+  return await db.transaction((tx) => {
+    const routine = tx
       .select({ name: routinesTable.name })
       .from(routinesTable)
       .where(eq(routinesTable.id, routineId))
       .get();
-    const day = await tx
+    const day = tx
       .select({ name: routineDaysTable.name })
       .from(routineDaysTable)
       .where(eq(routineDaysTable.id, dayId))
       .get();
-    const exs = await tx
+    const exs = tx
       .select({ exerciseId: routineExercisesTable.exerciseId })
       .from(routineExercisesTable)
       .where(
@@ -151,8 +151,8 @@ export async function startWorkout(
       notes: null,
       updatedAt: now,
     };
-    await tx.insert(workoutSessions).values(session);
-    await setActiveWorkoutId(tx, id);
+    tx.insert(workoutSessions).values(session).run();
+    setActiveWorkoutId(tx, id);
 
     return {
       id,
@@ -179,8 +179,8 @@ export async function startEmptyWorkout(
 ): Promise<WorkoutSession> {
   const id = uid();
   const now = new Date();
-  return await db.transaction(async (tx) => {
-    await tx.insert(workoutSessions).values({
+  return await db.transaction((tx) => {
+    tx.insert(workoutSessions).values({
       id,
       routineId: null,
       routineDayId: null,
@@ -193,8 +193,8 @@ export async function startEmptyWorkout(
       totalVolumeKg: 0,
       notes: null,
       updatedAt: now,
-    });
-    await setActiveWorkoutId(tx, id);
+    }).run();
+    setActiveWorkoutId(tx, id);
     return {
       id,
       routineName: name,
@@ -216,9 +216,9 @@ export async function startEmptyWorkout(
  */
 export async function cancelWorkout(sessionId: string): Promise<void> {
   z.string().min(1).parse(sessionId);
-  await db.transaction(async (tx) => {
-    await tx.delete(workoutSessions).where(eq(workoutSessions.id, sessionId));
-    await setActiveWorkoutId(tx, null);
+  await db.transaction((tx) => {
+    tx.delete(workoutSessions).where(eq(workoutSessions.id, sessionId)).run();
+    setActiveWorkoutId(tx, null);
   });
 }
 
@@ -247,8 +247,8 @@ export async function logSet(
   const validated = LogSetSchema.parse(set);
   const id = uid();
   const now = new Date();
-  await db.transaction(async (tx) => {
-    await tx.insert(completedSets).values({
+  await db.transaction((tx) => {
+    tx.insert(completedSets).values({
       id,
       sessionId,
       exerciseId: validated.exerciseId,
@@ -259,9 +259,9 @@ export async function logSet(
       setIndex: validated.setIndex,
       completedAt: now,
       updatedAt: now,
-    });
+    }).run();
     // Append to exerciseOrder if missing.
-    const session = await tx
+    const session = tx
       .select({
         exerciseOrder: workoutSessions.exerciseOrder,
         skippedExerciseIds: workoutSessions.skippedExerciseIds,
@@ -278,7 +278,7 @@ export async function logSet(
       ];
     }
     // Recompute total volume excluding warmups + skipped.
-    const allSets = await tx
+    const allSets = tx
       .select({
         weight: completedSets.weight,
         reps: completedSets.reps,
@@ -298,10 +298,10 @@ export async function logSet(
       .filter((s) => !s.isWarmup && !skipped.has(s.exerciseId))
       .reduce((sum, s) => sum + s.weight * s.reps, 0);
     updates.totalVolumeKg = Math.round(volume);
-    await tx
+    tx
       .update(workoutSessions)
       .set(updates)
-      .where(eq(workoutSessions.id, sessionId));
+      .where(eq(workoutSessions.id, sessionId)).run();
   });
 }
 
@@ -313,9 +313,9 @@ export async function removeSet(
   sessionId: string,
   setId: string,
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    await tx.delete(completedSets).where(eq(completedSets.id, setId));
-    const session = await tx
+  await db.transaction((tx) => {
+    tx.delete(completedSets).where(eq(completedSets.id, setId)).run();
+    const session = tx
       .select({
         skippedExerciseIds: workoutSessions.skippedExerciseIds,
       })
@@ -323,7 +323,7 @@ export async function removeSet(
       .where(eq(workoutSessions.id, sessionId))
       .get();
     if (!session) return;
-    const allSets = await tx
+    const allSets = tx
       .select({
         weight: completedSets.weight,
         reps: completedSets.reps,
@@ -342,10 +342,10 @@ export async function removeSet(
     const volume = allSets
       .filter((s) => !s.isWarmup && !skipped.has(s.exerciseId))
       .reduce((sum, s) => sum + s.weight * s.reps, 0);
-    await tx
+    tx
       .update(workoutSessions)
       .set({ totalVolumeKg: Math.round(volume), updatedAt: new Date() })
-      .where(eq(workoutSessions.id, sessionId));
+      .where(eq(workoutSessions.id, sessionId)).run();
   });
 }
 
@@ -358,21 +358,21 @@ export async function addExerciseToActiveWorkout(
   exerciseId: string,
 ): Promise<void> {
   z.string().min(1).parse(exerciseId);
-  await db.transaction(async (tx) => {
-    const session = await tx
+  await db.transaction((tx) => {
+    const session = tx
       .select({ exerciseOrder: workoutSessions.exerciseOrder })
       .from(workoutSessions)
       .where(eq(workoutSessions.id, sessionId))
       .get();
     if (!session) return;
     if (session.exerciseOrder.includes(exerciseId)) return;
-    await tx
+    tx
       .update(workoutSessions)
       .set({
         exerciseOrder: [...session.exerciseOrder, exerciseId],
         updatedAt: new Date(),
       })
-      .where(eq(workoutSessions.id, sessionId));
+      .where(eq(workoutSessions.id, sessionId)).run();
   });
 }
 
@@ -382,8 +382,8 @@ export async function reorderSessionExercises(
   toIndex: number,
 ): Promise<void> {
   if (fromIndex === toIndex) return;
-  await db.transaction(async (tx) => {
-    const session = await tx
+  await db.transaction((tx) => {
+    const session = tx
       .select({ exerciseOrder: workoutSessions.exerciseOrder })
       .from(workoutSessions)
       .where(eq(workoutSessions.id, sessionId))
@@ -394,10 +394,10 @@ export async function reorderSessionExercises(
     if (toIndex < 0 || toIndex >= order.length) return;
     const [moved] = order.splice(fromIndex, 1);
     order.splice(toIndex, 0, moved);
-    await tx
+    tx
       .update(workoutSessions)
       .set({ exerciseOrder: order, updatedAt: new Date() })
-      .where(eq(workoutSessions.id, sessionId));
+      .where(eq(workoutSessions.id, sessionId)).run();
   });
 }
 
@@ -416,8 +416,8 @@ export async function replaceSessionExercise(
   toExerciseId: string,
 ): Promise<void> {
   if (fromExerciseId === toExerciseId) return;
-  await db.transaction(async (tx) => {
-    const session = await tx
+  await db.transaction((tx) => {
+    const session = tx
       .select({
         exerciseOrder: workoutSessions.exerciseOrder,
         skippedExerciseIds: workoutSessions.skippedExerciseIds,
@@ -435,16 +435,16 @@ export async function replaceSessionExercise(
       x === fromExerciseId ? toExerciseId : x,
     );
     const now = new Date();
-    await tx
+    tx
       .update(workoutSessions)
       .set({
         exerciseOrder: newOrder,
         skippedExerciseIds: newSkipped,
         updatedAt: now,
       })
-      .where(eq(workoutSessions.id, sessionId));
+      .where(eq(workoutSessions.id, sessionId)).run();
     // Migrate sets in place — keeps `completedAt`/`id` so the user's recap is intact.
-    await tx
+    tx
       .update(completedSets)
       .set({ exerciseId: toExerciseId, updatedAt: now })
       .where(
@@ -452,7 +452,7 @@ export async function replaceSessionExercise(
           eq(completedSets.sessionId, sessionId),
           eq(completedSets.exerciseId, fromExerciseId),
         ),
-      );
+      ).run();
   });
 }
 
@@ -461,8 +461,8 @@ export async function setSessionExerciseSkipped(
   exerciseId: string,
   skipped: boolean,
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    const session = await tx
+  await db.transaction((tx) => {
+    const session = tx
       .select({
         skippedExerciseIds: workoutSessions.skippedExerciseIds,
       })
@@ -473,13 +473,13 @@ export async function setSessionExerciseSkipped(
     const set = new Set(session.skippedExerciseIds);
     if (skipped) set.add(exerciseId);
     else set.delete(exerciseId);
-    await tx
+    tx
       .update(workoutSessions)
       .set({
         skippedExerciseIds: Array.from(set),
         updatedAt: new Date(),
       })
-      .where(eq(workoutSessions.id, sessionId));
+      .where(eq(workoutSessions.id, sessionId)).run();
   });
 }
 
@@ -491,8 +491,8 @@ export async function removeSessionExercise(
   sessionId: string,
   exerciseId: string,
 ): Promise<void> {
-  await db.transaction(async (tx) => {
-    const session = await tx
+  await db.transaction((tx) => {
+    const session = tx
       .select({
         exerciseOrder: workoutSessions.exerciseOrder,
         skippedExerciseIds: workoutSessions.skippedExerciseIds,
@@ -506,24 +506,24 @@ export async function removeSessionExercise(
       (x) => x !== exerciseId,
     );
     const now = new Date();
-    await tx
+    tx
       .update(workoutSessions)
       .set({
         exerciseOrder: newOrder,
         skippedExerciseIds: newSkipped,
         updatedAt: now,
       })
-      .where(eq(workoutSessions.id, sessionId));
-    await tx
+      .where(eq(workoutSessions.id, sessionId)).run();
+    tx
       .delete(completedSets)
       .where(
         and(
           eq(completedSets.sessionId, sessionId),
           eq(completedSets.exerciseId, exerciseId),
         ),
-      );
+      ).run();
     // Recompute total volume.
-    const remaining = await tx
+    const remaining = tx
       .select({
         weight: completedSets.weight,
         reps: completedSets.reps,
@@ -542,10 +542,10 @@ export async function removeSessionExercise(
     const volume = remaining
       .filter((s) => !s.isWarmup && !skippedSet.has(s.exerciseId))
       .reduce((sum, s) => sum + s.weight * s.reps, 0);
-    await tx
+    tx
       .update(workoutSessions)
       .set({ totalVolumeKg: Math.round(volume), updatedAt: now })
-      .where(eq(workoutSessions.id, sessionId));
+      .where(eq(workoutSessions.id, sessionId)).run();
   });
 }
 
@@ -604,8 +604,8 @@ export async function finishWorkout(
   z.string().min(1).parse(sessionId);
   const now = new Date();
 
-  return await db.transaction(async (tx) => {
-    const session = await tx
+  return await db.transaction((tx) => {
+    const session = tx
       .select()
       .from(workoutSessions)
       .where(eq(workoutSessions.id, sessionId))
@@ -614,7 +614,7 @@ export async function finishWorkout(
       throw new Error(`finishWorkout: session ${sessionId} not found`);
     }
 
-    const setRows = await tx
+    const setRows = tx
       .select()
       .from(completedSets)
       .where(
@@ -639,7 +639,7 @@ export async function finishWorkout(
       if (currentMax <= 0) continue;
 
       // Historical max — exclude this session, only finished sessions, only non-warmup.
-      const histRow = await tx
+      const histRow = tx
         .select({ m: max(completedSets.weight) })
         .from(completedSets)
         .innerJoin(
@@ -660,7 +660,7 @@ export async function finishWorkout(
       const previousMax = histRow?.m ?? 0;
 
       if (currentMax > previousMax) {
-        const exRow = await tx
+        const exRow = tx
           .select({ name: exercisesTable.name })
           .from(exercisesTable)
           .where(eq(exercisesTable.id, exId))
@@ -681,7 +681,7 @@ export async function finishWorkout(
     const totalVolume = setRows
       .filter((s) => !s.isWarmup && !skipped.has(s.exerciseId))
       .reduce((sum, s) => sum + s.weight * s.reps, 0);
-    await tx
+    tx
       .update(workoutSessions)
       .set({
         endedAt: now,
@@ -689,11 +689,11 @@ export async function finishWorkout(
         totalVolumeKg: Math.round(totalVolume),
         updatedAt: now,
       })
-      .where(eq(workoutSessions.id, sessionId));
+      .where(eq(workoutSessions.id, sessionId)).run();
 
     // ---- Insert PR rows (idempotent via UNIQUE) --------------------------
     for (const pr of detectedPrs) {
-      await tx
+      tx
         .insert(prRecords)
         .values({
           id: uid(),
@@ -708,14 +708,14 @@ export async function finishWorkout(
         })
         .onConflictDoNothing({
           target: [prRecords.sessionId, prRecords.exerciseId, prRecords.type],
-        });
+        }).run();
     }
 
     // ---- Clear active workout BEFORE achievements (so the loaded state
     //      reflects the just-finished session as a finished one). The session
     //      row is already updated above with endedAt, so loadAchievementState
     //      will pick it up.
-    await setActiveWorkoutId(tx, null);
+    setActiveWorkoutId(tx, null);
 
     // ---- Achievements ----------------------------------------------------
     // Note: loadAchievementState uses `db` (the singleton handle), NOT `tx`.
@@ -725,7 +725,7 @@ export async function finishWorkout(
     // which is the same SQLite connection. expo-sqlite serializes per
     // connection so the read sees the in-flight tx writes. To be safe and
     // explicit, we re-implement the load inline using `tx`.
-    const sessionsRows = await tx
+    const sessionsRows = tx
       .select()
       .from(workoutSessions)
       .where(
@@ -735,19 +735,19 @@ export async function finishWorkout(
         ),
       )
       .all();
-    const allSetsRows = await tx
+    const allSetsRows = tx
       .select()
       .from(completedSets)
       .where(isNull(completedSets.deletedAt))
       .all();
-    const allPrsRows = await tx
+    const allPrsRows = tx
       .select()
       .from(prRecords)
       .where(isNull(prRecords.deletedAt))
       .all();
     // Body weights are needed for the `weight-tracker` achievement
     // (length >= 10). Load inside the tx to keep the snapshot consistent.
-    const bodyWeightRows = await tx
+    const bodyWeightRows = tx
       .select()
       .from(bodyWeights)
       .where(isNull(bodyWeights.deletedAt))
@@ -771,7 +771,7 @@ export async function finishWorkout(
       achievedAt: toMs(row.achievedAt) ?? Date.now(),
     }));
     // Compute streak inside the tx — small projection, cheap.
-    const streakRows = await tx
+    const streakRows = tx
       .select({ endedAt: workoutSessions.endedAt })
       .from(workoutSessions)
       .where(
@@ -806,7 +806,7 @@ export async function finishWorkout(
     };
 
     const alreadyUnlocked = new Set(
-      (await tx.select({ id: achievementsUnlocked.id }).from(achievementsUnlocked).all())
+      (tx.select({ id: achievementsUnlocked.id }).from(achievementsUnlocked).all())
         .map((a) => a.id),
     );
     const newUnlocks: AchievementUnlock[] = [];
@@ -822,10 +822,10 @@ export async function finishWorkout(
     }
     if (newUnlocks.length > 0) {
       for (const a of newUnlocks) {
-        await tx
+        tx
           .insert(achievementsUnlocked)
           .values({ id: a.id, unlockedAt: now })
-          .onConflictDoNothing({ target: achievementsUnlocked.id });
+          .onConflictDoNothing({ target: achievementsUnlocked.id }).run();
       }
     }
 

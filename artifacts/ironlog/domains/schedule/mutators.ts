@@ -141,13 +141,13 @@ export async function swapDates(
   const kB = dateKey(timestampB);
   const now = new Date();
 
-  await db.transaction(async (tx) => {
-    const overrides = await tx
+  await db.transaction((tx) => {
+    const overrides = tx
       .select()
       .from(scheduleOverrides)
       .where(isNull(scheduleOverrides.deletedAt))
       .all();
-    const schedule = await tx.select().from(scheduledRoutines).all();
+    const schedule = tx.select().from(scheduledRoutines).all();
 
     const resolve = (ts: number): ResolvedPlan => {
       const k = dateKey(ts);
@@ -179,14 +179,11 @@ export async function swapDates(
     const planA = resolve(timestampA);
     const planB = resolve(timestampB);
 
-    const writePlan = async (
-      k: string,
-      plan: ResolvedPlan,
-    ): Promise<void> => {
+    const writePlan = (k: string, plan: ResolvedPlan): void => {
       const routineId = plan.kind === "training" ? plan.routineId : null;
       const routineDayId =
         plan.kind === "training" ? plan.routineDayId : null;
-      await tx
+      tx
         .insert(scheduleOverrides)
         .values({
           dateKey: k,
@@ -203,12 +200,12 @@ export async function swapDates(
             updatedAt: now,
             deletedAt: null,
           },
-        });
+        }).run();
     };
 
     // A receives B's resolved plan, B receives A's resolved plan.
-    await writePlan(kA, planB);
-    await writePlan(kB, planA);
+    writePlan(kA, planB);
+    writePlan(kB, planA);
   });
 }
 
