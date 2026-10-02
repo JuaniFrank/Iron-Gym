@@ -16,6 +16,7 @@ interface InputProps extends TextInputProps {
   error?: string;
   hint?: string;
   containerStyle?: ViewStyle;
+  leftAdornment?: React.ReactNode;
   rightAdornment?: React.ReactNode;
   /** Use a tiny uppercase mono label inside the field, like the redesign Field. */
   fieldLabel?: string;
@@ -27,6 +28,7 @@ export function Input({
   error,
   hint,
   containerStyle,
+  leftAdornment,
   rightAdornment,
   fieldLabel,
   suffix,
@@ -60,7 +62,8 @@ export function Input({
             {fieldLabel}
           </Text>
         ) : null}
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: leftAdornment ? 10 : 0 }}>
+          {leftAdornment}
           <TextInput
             {...rest}
             onFocus={(e) => {
@@ -108,7 +111,8 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     // RN-web <input> has an intrinsic width; without this it never shrinks in a row.
-    ...(Platform.OS === "web" ? { minWidth: 0, width: 0 } : {}),
+    // The browser's own focus ring would draw a second box inside the styled field.
+    ...(Platform.OS === "web" ? { minWidth: 0, width: 0, outlineWidth: 0 } : {}),
     fontSize: 16,
     paddingVertical: 8,
   },

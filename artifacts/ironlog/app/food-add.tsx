@@ -197,33 +197,19 @@ export default function FoodAddScreen() {
       </View>
 
       <View style={{ paddingHorizontal: 20, marginBottom: 14 }}>
-        <View
-          style={{
-            backgroundColor: colors.surface,
-            borderWidth: 1,
-            borderColor: colors.border,
-            borderRadius: 14,
-            height: 48,
-            flexDirection: "row",
-            alignItems: "center",
-            paddingHorizontal: 14,
-            gap: 10,
-          }}
-        >
-          <Feather name="search" size={16} color={colors.muted} />
-          <Input
-            placeholder="Buscar alimento…"
-            value={search}
-            onChangeText={setSearch}
-            containerStyle={{ flex: 1 }}
-            style={{ paddingVertical: 0 }}
-          />
-          {search ? (
-            <Pressable onPress={() => setSearch("")} hitSlop={8}>
-              <Feather name="x" size={14} color={colors.muted} />
-            </Pressable>
-          ) : null}
-        </View>
+        <Input
+          placeholder="Buscar alimento…"
+          value={search}
+          onChangeText={setSearch}
+          leftAdornment={<Feather name="search" size={16} color={colors.muted} />}
+          rightAdornment={
+            search ? (
+              <Pressable onPress={() => setSearch("")} hitSlop={8}>
+                <Feather name="x" size={14} color={colors.muted} />
+              </Pressable>
+            ) : null
+          }
+        />
       </View>
 
       <Text

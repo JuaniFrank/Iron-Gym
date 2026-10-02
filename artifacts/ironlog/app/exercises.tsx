@@ -154,29 +154,13 @@ export default function ExercisesScreen() {
 
       <View style={{ paddingHorizontal: 20 }}>
         {/* Search */}
-        <View
-          style={{
-            backgroundColor: colors.surface,
-            borderWidth: 1,
-            borderColor: colors.border,
-            borderRadius: 14,
-            height: 48,
-            flexDirection: "row",
-            alignItems: "center",
-            paddingHorizontal: 14,
-            gap: 10,
-            marginBottom: 14,
-          }}
-        >
-          <Feather name="search" size={16} color={colors.muted} />
-          <Input
-            placeholder="Buscar ejercicio…"
-            value={search}
-            onChangeText={setSearch}
-            containerStyle={{ flex: 1 }}
-            style={{ paddingVertical: 0 }}
-          />
-        </View>
+        <Input
+          placeholder="Buscar ejercicio…"
+          value={search}
+          onChangeText={setSearch}
+          containerStyle={{ marginBottom: 14 }}
+          leftAdornment={<Feather name="search" size={16} color={colors.muted} />}
+        />
 
         <ScrollView
           horizontal
