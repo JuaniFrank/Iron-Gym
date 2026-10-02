@@ -14,11 +14,13 @@ import {
 } from "@workspace/db";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { BootErrorScreen, BootLoadingScreen } from "@/components/BootErrorScreen";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { EXERCISES } from "@/constants/exercises";
 import { FOOD_DATABASE } from "@/constants/foods";
@@ -27,6 +29,7 @@ import { DEFAULT_PROFILE, SEED_VERSION } from "@/constants/seed";
 import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { db, initDb } from "@/services/db";
+import { bootWithRetry, classifyBootError } from "@/services/dbBoot";
 import { useSegments, useRouter } from "expo-router";
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
@@ -183,21 +186,55 @@ export default function RootLayout() {
     Inter_700Bold,
   });
   const [dbReady, setDbReady] = useState(false);
+  const [bootError, setBootError] = useState<{ error: unknown } | null>(null);
+  const [bootAttempt, setBootAttempt] = useState(0);
 
   useEffect(() => {
-    bootDatabase().then(() => setDbReady(true));
-    // No catch here on purpose — DDB-19 fail-fast lets the rejection bubble
-    // up so Expo's red-screen / Sentry surface the error instead of silently
-    // hanging on the splash.
+    let cancelled = false;
+    setBootError(null);
+    // On web the OPFS lock held by another tab is released only when that tab
+    // closes, so retry briefly; any other failure (or the lock persisting) is
+    // surfaced on screen instead of a blank page (DDB-19 still fails fast:
+    // the user's DB is never replaced by a fallback).
+    bootWithRetry(bootDatabase, { retryLocked: Platform.OS === "web" })
+      .then(() => {
+        if (!cancelled) setDbReady(true);
+      })
+      .catch((error) => {
+        if (!cancelled) setBootError({ error });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bootAttempt]);
+
+  // On web a full reload is the only fully robust retry: it also resets the
+  // SQLite worker, whatever state a failed init left it in.
+  const retryBoot = useCallback(() => {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      window.location.reload();
+      return;
+    }
+    setBootAttempt((n) => n + 1);
   }, []);
 
   useEffect(() => {
-    if (fontsLoaded && dbReady) {
+    if (fontsLoaded && (dbReady || bootError)) {
       SplashScreen.hideAsync().catch(() => undefined);
     }
-  }, [fontsLoaded, dbReady]);
+  }, [fontsLoaded, dbReady, bootError]);
 
-  if (!fontsLoaded || !dbReady) return null;
+  if (bootError) {
+    return (
+      <BootErrorScreen
+        kind={classifyBootError(bootError.error)}
+        error={bootError.error}
+        onRetry={retryBoot}
+      />
+    );
+  }
+
+  if (!fontsLoaded || !dbReady) return <BootLoadingScreen />;
 
   return (
     <ErrorBoundary>
