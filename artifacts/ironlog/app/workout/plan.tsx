@@ -3,7 +3,6 @@ import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
   Dimensions,
   Keyboard,
   Platform,
@@ -11,6 +10,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { showAlert } from "@/utils/alert";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
@@ -148,7 +148,7 @@ export default function PlanWorkoutScreen() {
   };
 
   const handleDeletePlan = () => {
-    Alert.alert(
+    showAlert(
       "Borrar plan",
       "Vas a perder los pesos, reps y RPEs predefinidos. La rutina original no cambia.",
       [

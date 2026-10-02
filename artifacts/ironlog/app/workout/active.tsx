@@ -2,7 +2,8 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Platform, Pressable, ScrollView, View } from "react-native";
+import { Platform, Pressable, ScrollView, View } from "react-native";
+import { showAlert } from "@/utils/alert";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Button } from "@/components/ui/Button";
@@ -151,10 +152,10 @@ export default function ActiveWorkoutScreen() {
 
   const handleFinish = () => {
     if (completedSetsCount === 0) {
-      Alert.alert("Sin sets", "Registra al menos un set antes de terminar.");
+      showAlert("Sin sets", "Registra al menos un set antes de terminar.");
       return;
     }
-    Alert.alert("Terminar sesión", "¿Quieres terminar el entrenamiento?", [
+    showAlert("Terminar sesión", "¿Quieres terminar el entrenamiento?", [
       { text: "Cancelar", style: "cancel" },
       {
         text: "Terminar",
@@ -173,7 +174,7 @@ export default function ActiveWorkoutScreen() {
   };
 
   const handleCancel = () => {
-    Alert.alert(
+    showAlert(
       "Descartar sesión",
       "¿Descartar este entrenamiento? Se perderán los sets registrados.",
       [
@@ -524,7 +525,7 @@ export default function ActiveWorkoutScreen() {
                         }}
                         onRemove={() => {
                           if (completedSet) {
-                            Alert.alert("Eliminar set", "¿Borrar este set?", [
+                            showAlert("Eliminar set", "¿Borrar este set?", [
                               { text: "Cancelar", style: "cancel" },
                               {
                                 text: "Eliminar",
@@ -628,7 +629,7 @@ export default function ActiveWorkoutScreen() {
               const setsCount = session.sets.filter(
                 (s) => s.exerciseId === actionForExId,
               ).length;
-              Alert.alert(
+              showAlert(
                 `Quitar ${exName}`,
                 setsCount > 0
                   ? `Tiene ${setsCount} ${setsCount === 1 ? "set logueado" : "sets logueados"} que se van a borrar. La rutina original no cambia.`

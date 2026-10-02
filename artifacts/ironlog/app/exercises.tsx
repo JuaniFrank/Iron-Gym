@@ -1,7 +1,8 @@
 import { Feather } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
+import { showAlert } from "@/utils/alert";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Card } from "@/components/ui/Card";
@@ -285,7 +286,7 @@ export default function ExercisesScreen() {
                 <Pressable
                   onPress={async () => {
                     if (!newName.trim()) {
-                      Alert.alert("Falta nombre", "Escribe un nombre para el ejercicio.");
+                      showAlert("Falta nombre", "Escribe un nombre para el ejercicio.");
                       return;
                     }
                     const ex = await createCustomExercise({

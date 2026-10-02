@@ -1,7 +1,8 @@
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useState } from "react";
-import { Alert, Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
+import { showAlert } from "@/utils/alert";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -190,7 +191,7 @@ export default function SettingsScreen() {
 
           <Pressable
             onPress={() =>
-              Alert.alert(
+              showAlert(
                 "Resetear descubrimientos",
                 "Las features opt-in volverán a aparecer cuando se cumplan sus condiciones. No afecta a tus notas guardadas.",
                 [
@@ -219,7 +220,7 @@ export default function SettingsScreen() {
 
           <Pressable
             onPress={() =>
-              Alert.alert(
+              showAlert(
                 "Borrar todas las notas",
                 `Vas a eliminar ${notes.length} ${notes.length === 1 ? "nota" : "notas"}. No se puede deshacer.`,
                 [
@@ -248,7 +249,7 @@ export default function SettingsScreen() {
 
         <Pressable
           onPress={() =>
-            Alert.alert(
+            showAlert(
               "Borrar todos los datos",
               "Esto eliminará todas tus rutinas, sesiones, comidas y registros corporales. No se puede deshacer.",
               [

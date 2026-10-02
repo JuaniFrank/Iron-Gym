@@ -1,7 +1,8 @@
 import { Feather } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import React, { useState } from "react";
-import { Alert, Dimensions, Image, Modal, Platform, Pressable, ScrollView, View } from "react-native";
+import { Dimensions, Image, Modal, Platform, Pressable, ScrollView, View } from "react-native";
+import { showAlert } from "@/utils/alert";
 
 import { LineChart } from "@/components/charts/LineChart";
 import { Button } from "@/components/ui/Button";
@@ -56,7 +57,7 @@ export default function BodyScreen() {
   const handlePickPhoto = async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert("Permiso requerido", "Necesitamos acceso a tus fotos.");
+      showAlert("Permiso requerido", "Necesitamos acceso a tus fotos.");
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -72,7 +73,7 @@ export default function BodyScreen() {
   const handleTakePhoto = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
-      Alert.alert("Permiso requerido", "Necesitamos acceso a la cámara.");
+      showAlert("Permiso requerido", "Necesitamos acceso a la cámara.");
       return;
     }
     const result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
@@ -324,7 +325,7 @@ export default function BodyScreen() {
                   <Pressable
                     key={p.id}
                     onLongPress={() => {
-                      Alert.alert("Eliminar foto", "¿Borrar esta foto?", [
+                      showAlert("Eliminar foto", "¿Borrar esta foto?", [
                         { text: "Cancelar", style: "cancel" },
                         {
                           text: "Eliminar",

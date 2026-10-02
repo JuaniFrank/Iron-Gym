@@ -1,6 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import React, { useState } from "react";
-import { Alert, Modal, Pressable, ScrollView, View } from "react-native";
+import { Modal, Pressable, ScrollView, View } from "react-native";
+import { showAlert } from "@/utils/alert";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -223,7 +224,7 @@ export default function GoalsScreen() {
               style={{ marginTop: 18 }}
               onPress={() => {
                 if (!title.trim()) {
-                  Alert.alert("Falta título", "Escribe un título para la meta.");
+                  showAlert("Falta título", "Escribe un título para la meta.");
                   return;
                 }
                 const dn = parseInt(days, 10) || 30;

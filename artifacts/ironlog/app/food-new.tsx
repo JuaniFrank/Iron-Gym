@@ -1,6 +1,7 @@
 import { router } from "expo-router";
 import React, { useState } from "react";
-import { Alert, ScrollView, View } from "react-native";
+import { ScrollView, View } from "react-native";
+import { showAlert } from "@/utils/alert";
 
 import { Button } from "@/components/ui/Button";
 import { Header } from "@/components/ui/Header";
@@ -21,12 +22,12 @@ export default function FoodNewScreen() {
 
   const handleCreate = async () => {
     if (!name.trim()) {
-      Alert.alert("Falta nombre", "Escribe el nombre del alimento.");
+      showAlert("Falta nombre", "Escribe el nombre del alimento.");
       return;
     }
     const calN = parseFloat(cal);
     if (isNaN(calN) || calN < 0) {
-      Alert.alert("Calorías inválidas", "Introduce un valor numérico.");
+      showAlert("Calorías inválidas", "Introduce un valor numérico.");
       return;
     }
     await createCustomFood({

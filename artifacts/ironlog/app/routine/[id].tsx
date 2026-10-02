@@ -2,7 +2,8 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
-import { Alert, Platform, Pressable, ScrollView, View } from "react-native";
+import { Platform, Pressable, ScrollView, View } from "react-native";
+import { showAlert } from "@/utils/alert";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Button } from "@/components/ui/Button";
@@ -95,7 +96,7 @@ export default function RoutineDetailScreen() {
 
   const handleStart = async () => {
     if (activeWorkoutId) {
-      Alert.alert(
+      showAlert(
         "Sesión activa",
         "Ya tienes un entrenamiento en curso. ¿Quieres continuarlo?",
         [
@@ -111,7 +112,7 @@ export default function RoutineDetailScreen() {
   };
 
   const handleDelete = () => {
-    Alert.alert("Eliminar rutina", `¿Borrar "${routine.name}"?`, [
+    showAlert("Eliminar rutina", `¿Borrar "${routine.name}"?`, [
       { text: "Cancelar", style: "cancel" },
       {
         text: "Eliminar",
@@ -400,7 +401,7 @@ export default function RoutineDetailScreen() {
               {!isPreset && routine.days.length > 1 ? (
                 <Pressable
                   onPress={() => {
-                    Alert.alert("Eliminar día", `¿Borrar "${activeDay.name}"?`, [
+                    showAlert("Eliminar día", `¿Borrar "${activeDay.name}"?`, [
                       { text: "Cancelar", style: "cancel" },
                       {
                         text: "Eliminar",
