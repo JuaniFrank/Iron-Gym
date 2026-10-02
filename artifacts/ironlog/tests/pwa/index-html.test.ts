@@ -15,6 +15,13 @@ describe("public/index.html mobile layout", () => {
     expect(viewport).toContain("viewport-fit=cover");
   });
 
+  it("uses an opaque iOS status bar (iOS 26+ draws an edge blur over black-translucent apps)", () => {
+    const style = /<meta name="apple-mobile-web-app-status-bar-style" content="([^"]+)"/.exec(
+      html,
+    )?.[1];
+    expect(style).toBe("default");
+  });
+
   it("paints html/body/#root so no white strip shows below the app", () => {
     expect(html).toMatch(/html,\s*body\s*{[^}]*background-color:/s);
     expect(html).toMatch(/#root\s*{[^}]*background-color:/s);
@@ -23,15 +30,6 @@ describe("public/index.html mobile layout", () => {
   it("covers the full dynamic viewport (incl. home-indicator area)", () => {
     expect(html).toContain("100dvh");
     expect(html).toContain("-webkit-fill-available");
-  });
-
-  it("uses 100lvh in standalone PWAs (iOS subtracts the top inset from 100%/dvh)", () => {
-    const standalone = html.match(
-      /@media \(display-mode: standalone\)\s*{([\s\S]*?)\n\s{6}}/,
-    );
-    expect(standalone, "standalone media query").not.toBeNull();
-    expect(standalone![1]).toMatch(/html,\s*body,\s*#root\s*{[^}]*height:\s*100lvh/s);
-    expect(standalone![1]).toMatch(/min-height:\s*100lvh/);
   });
 
   it("guards against horizontal overflow", () => {

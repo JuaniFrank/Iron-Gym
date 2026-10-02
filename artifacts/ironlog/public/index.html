@@ -10,7 +10,7 @@
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="IronLog" />
     <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
     <style id="expo-reset">
@@ -51,17 +51,9 @@
         background-color: var(--app-bg);
         overflow-x: hidden;
       }
-      /* WebKit bug: installed iOS PWAs with black-translucent + viewport-fit=cover
-         report 100% / 100svh / 100dvh as screen height minus the top safe-area
-         inset, leaving a dead band at the bottom. Only 100lvh is the full screen. */
-      @media (display-mode: standalone) {
-        html,
-        body,
-        #root {
-          height: 100lvh;
-          min-height: 100lvh;
-        }
-      }
+      /* The status bar is intentionally opaque ("default"), not black-translucent:
+         iOS 26+ draws a Liquid Glass edge blur over translucent installed apps, and
+         translucent standalone mode also shortens 100%/100dvh by the top inset. */
     </style>
     <script>
       // Register only for the production export (hashed entry script present);
