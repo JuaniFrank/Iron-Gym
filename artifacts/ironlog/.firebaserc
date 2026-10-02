@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "default": "irongym-auth",
+    "irongym": "irongym-auth"
+  },
+  "targets": {},
+  "etags": {}
+}

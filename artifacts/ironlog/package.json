@@ -21,6 +21,7 @@
     "build:unsigned": "bash scripts/build-unsigned-ipa.sh",
     "build:web": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && expo export -p web",
     "serve:web": "node server/serve-web.js",
+    "deploy:web": "pnpm build:web && pnpm dlx firebase-tools deploy --only hosting"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
