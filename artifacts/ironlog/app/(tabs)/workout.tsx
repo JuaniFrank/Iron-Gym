@@ -11,7 +11,6 @@ import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { useThemeColors } from "@/contexts/ThemeContext";
-import { cloneRoutine } from "@/domains/routines/mutators";
 import { useAllRoutines, useCustomRoutines } from "@/domains/routines/queries";
 import { startEmptyWorkout } from "@/domains/workout/mutators";
 import { useActiveWorkoutId } from "@/domains/workout/queries";
@@ -182,10 +181,7 @@ export default function WorkoutScreen() {
                 onPress={() => router.push(`/routine/${r.id}`)}
                 onClone={
                   r.isPreset
-                    ? async () => {
-                        const cloned = await cloneRoutine(r.id);
-                        if (cloned) router.push(`/routine/${cloned.id}`);
-                      }
+                    ? () => router.push(`/routine/new?template=${r.id}` as never)
                     : undefined
                 }
               />
@@ -210,10 +206,7 @@ export default function WorkoutScreen() {
                   goalColor={goalColor(r.goal)}
                   goalLabel={r.goal ? GOAL_LABELS[r.goal] : null}
                   onPress={() => router.push(`/routine/${r.id}`)}
-                  onClone={async () => {
-                    const cloned = await cloneRoutine(r.id);
-                    if (cloned) router.push(`/routine/${cloned.id}`);
-                  }}
+                  onClone={() => router.push(`/routine/new?template=${r.id}` as never)}
                 />
               ))}
             </Col>

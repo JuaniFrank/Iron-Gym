@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, max } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, max } from "drizzle-orm";
 import {
   routineDays as routineDaysTable,
   routineExercises as routineExercisesTable,
@@ -7,6 +7,11 @@ import {
 import { z } from "zod";
 
 import { db } from "@/services/db";
+import {
+  validateDraft,
+  type ExerciseDraft,
+  type RoutineDraft,
+} from "@/domains/routines/draft";
 import type { Routine, RoutineDay, RoutineExercise } from "@/types";
 import { uid } from "@/utils/id";
 
@@ -524,3 +529,296 @@ export async function toggleSuperset(
   });
 }
 
+
+// ---------------------------------------------------------------------------
+// Draft save
+// ---------------------------------------------------------------------------
+
+type ExerciseRow = typeof routineExercisesTable.$inferSelect;
+
+function exerciseFieldsChanged(a: ExerciseDraft, b: ExerciseDraft): boolean {
+  return (
+    a.exerciseId !== b.exerciseId ||
+    a.targetSets !== b.targetSets ||
+    a.targetReps !== b.targetReps ||
+    a.warmupSets !== b.warmupSets ||
+    a.restSeconds !== b.restSeconds ||
+    (a.notes ?? null) !== (b.notes ?? null) ||
+    (a.supersetWith ?? null) !== (b.supersetWith ?? null)
+  );
+}
+
+/**
+ * Persist a routine draft in ONE synchronous transaction.
+ *
+ * - `original === null`: create. Inserts the routine (never a preset), its
+ *   days and exercises with positions taken from array order.
+ * - otherwise: edit. Diffs `draft` against `original` and writes only what
+ *   changed (so `updatedAt` and the sync outbox only see touched rows):
+ *   routine row only if its fields changed, new days/exercises inserted,
+ *   changed rows updated, removed rows soft-deleted.
+ *
+ * Positions are guarded by `UNIQUE(routine_id, position)` /
+ * `UNIQUE(routine_day_id, position)`, and soft-deleted rows keep occupying
+ * their slot. So before renumbering we park every moving row — and any
+ * soft-deleted row sitting on a slot that is about to be reused — at a
+ * unique negative position (below every position currently in the DB).
+ *
+ * Throws (writing nothing) when the draft is invalid. The transaction
+ * callback MUST stay synchronous (cf. tests/atomicity.test.ts).
+ */
+export async function saveRoutineDraft(
+  draft: RoutineDraft,
+  original: RoutineDraft | null,
+): Promise<string> {
+  const validation = validateDraft(draft);
+  if (!validation.ok) {
+    throw new Error(`Invalid routine draft: ${JSON.stringify(validation.errors)}`);
+  }
+  const name = draft.name.trim();
+  const description = draft.description ?? null;
+  const goal = draft.goal ?? null;
+  const now = new Date();
+
+  db.transaction((tx) => {
+    if (original === null) {
+      tx.insert(routinesTable).values({
+        id: draft.id,
+        name,
+        description,
+        goal,
+        isPreset: false,
+        createdAt: now,
+        updatedAt: now,
+      }).run();
+      draft.days.forEach((day, dayIndex) => {
+        tx.insert(routineDaysTable).values({
+          id: day.id,
+          routineId: draft.id,
+          name: day.name.trim(),
+          position: dayIndex,
+          updatedAt: now,
+        }).run();
+        day.exercises.forEach((ex, exIndex) => {
+          tx.insert(routineExercisesTable).values({
+            id: ex.id,
+            routineDayId: day.id,
+            exerciseId: ex.exerciseId,
+            position: exIndex,
+            targetSets: ex.targetSets,
+            targetReps: ex.targetReps,
+            warmupSets: ex.warmupSets,
+            supersetWith: ex.supersetWith ?? null,
+            restSeconds: ex.restSeconds,
+            notes: ex.notes ?? null,
+            updatedAt: now,
+          }).run();
+        });
+      });
+      return;
+    }
+
+    // --- Edit: gather current DB state (including soft-deleted rows, which
+    // still hold their UNIQUE position slots) -------------------------------
+    const dbDays = tx
+      .select()
+      .from(routineDaysTable)
+      .where(eq(routineDaysTable.routineId, draft.id))
+      .all();
+    const dbDayIds = dbDays.map((d) => d.id);
+    const dbExercises: ExerciseRow[] = dbDayIds.length
+      ? tx
+          .select()
+          .from(routineExercisesTable)
+          .where(inArray(routineExercisesTable.routineDayId, dbDayIds))
+          .all()
+      : [];
+    const dbDayById = new Map(dbDays.map((d) => [d.id, d]));
+    const dbExById = new Map(dbExercises.map((e) => [e.id, e]));
+
+    const originalDayById = new Map(original.days.map((d) => [d.id, d]));
+    const originalExById = new Map<string, ExerciseDraft>();
+    for (const day of original.days) {
+      for (const ex of day.exercises) originalExById.set(ex.id, ex);
+    }
+
+    // Final layout of the draft.
+    const draftExById = new Map<string, { ex: ExerciseDraft; dayId: string; index: number }>();
+    for (const day of draft.days) {
+      day.exercises.forEach((ex, index) =>
+        draftExById.set(ex.id, { ex, dayId: day.id, index }),
+      );
+    }
+    const draftDayIds = new Set(draft.days.map((d) => d.id));
+
+    // Negative slots below everything stored today, handed out uniquely.
+    let nextNegative =
+      Math.min(0, ...dbDays.map((d) => d.position), ...dbExercises.map((e) => e.position)) - 1;
+    const takeNegative = () => nextNegative--;
+
+    // --- Routine row ------------------------------------------------------
+    const routineChanged =
+      name !== original.name.trim() ||
+      description !== (original.description ?? null) ||
+      goal !== (original.goal ?? null);
+    if (routineChanged) {
+      tx
+        .update(routinesTable)
+        .set({ name, description, goal, updatedAt: now })
+        .where(eq(routinesTable.id, draft.id)).run();
+    }
+
+    // --- Classify days ----------------------------------------------------
+    // Slots targeted by a changed/new live row, per parent.
+    const dayTargets = new Set<number>();
+    const exTargets = new Map<string, Set<number>>();
+    const targetEx = (dayId: string, index: number) => {
+      const set = exTargets.get(dayId) ?? new Set<number>();
+      set.add(index);
+      exTargets.set(dayId, set);
+    };
+
+    const dayUpdates: { id: string; name: string; position: number }[] = [];
+    const newDays: { id: string; name: string; position: number }[] = [];
+    draft.days.forEach((day, index) => {
+      const row = dbDayById.get(day.id);
+      const orig = originalDayById.get(day.id);
+      if (!row || !orig) {
+        newDays.push({ id: day.id, name: day.name.trim(), position: index });
+        dayTargets.add(index);
+        return;
+      }
+      if (row.position !== index || day.name.trim() !== orig.name.trim()) {
+        dayUpdates.push({ id: day.id, name: day.name.trim(), position: index });
+        if (row.position !== index) dayTargets.add(index);
+      }
+    });
+
+    // --- Classify exercises ------------------------------------------------
+    const exUpdates: { id: string; dayId: string; position: number; ex: ExerciseDraft; parked: boolean }[] = [];
+    const newExercises: { dayId: string; position: number; ex: ExerciseDraft }[] = [];
+    for (const [id, { ex, dayId, index }] of draftExById) {
+      const row = dbExById.get(id);
+      const orig = originalExById.get(id);
+      if (!row || !orig) {
+        newExercises.push({ dayId, position: index, ex });
+        targetEx(dayId, index);
+        continue;
+      }
+      const moved = row.routineDayId !== dayId || row.position !== index;
+      if (moved || exerciseFieldsChanged(ex, orig)) {
+        exUpdates.push({ id, dayId, position: index, ex, parked: moved });
+        if (moved) targetEx(dayId, index);
+      }
+    }
+
+    // --- Soft-delete removed rows (+ relocate deleted rows in the way) -----
+    const removedDayIds = original.days
+      .map((d) => d.id)
+      .filter((id) => !draftDayIds.has(id) && dbDayById.has(id));
+    const removedExIds = [...originalExById.keys()].filter(
+      (id) => !draftExById.has(id) && dbExById.has(id),
+    );
+    const removedDaySet = new Set(removedDayIds);
+    const removedExSet = new Set(removedExIds);
+
+    for (const row of dbDays) {
+      const nowDeleted = removedDaySet.has(row.id);
+      const wasDeleted = row.deletedAt !== null;
+      if (!nowDeleted && !wasDeleted) continue;
+      const collides = dayTargets.has(row.position);
+      if (!nowDeleted && !collides) continue;
+      tx
+        .update(routineDaysTable)
+        .set({
+          ...(nowDeleted ? { deletedAt: now } : {}),
+          ...(collides ? { position: takeNegative() } : {}),
+          updatedAt: now,
+        })
+        .where(eq(routineDaysTable.id, row.id)).run();
+    }
+    for (const row of dbExercises) {
+      const nowDeleted = removedExSet.has(row.id);
+      const wasDeleted = row.deletedAt !== null;
+      if (!nowDeleted && !wasDeleted) continue;
+      const collides = exTargets.get(row.routineDayId)?.has(row.position) ?? false;
+      if (!nowDeleted && !collides) continue;
+      tx
+        .update(routineExercisesTable)
+        .set({
+          ...(nowDeleted ? { deletedAt: now } : {}),
+          ...(collides ? { position: takeNegative() } : {}),
+          updatedAt: now,
+        })
+        .where(eq(routineExercisesTable.id, row.id)).run();
+    }
+
+    // --- Park moving live rows, then write final state ---------------------
+    for (const u of dayUpdates) {
+      if (dbDayById.get(u.id)!.position !== u.position) {
+        tx
+          .update(routineDaysTable)
+          .set({ position: takeNegative() })
+          .where(eq(routineDaysTable.id, u.id)).run();
+      }
+    }
+    for (const u of exUpdates) {
+      if (u.parked) {
+        tx
+          .update(routineExercisesTable)
+          .set({ position: takeNegative() })
+          .where(eq(routineExercisesTable.id, u.id)).run();
+      }
+    }
+
+    for (const d of newDays) {
+      tx.insert(routineDaysTable).values({
+        id: d.id,
+        routineId: draft.id,
+        name: d.name,
+        position: d.position,
+        updatedAt: now,
+      }).run();
+    }
+    for (const u of dayUpdates) {
+      tx
+        .update(routineDaysTable)
+        .set({ name: u.name, position: u.position, updatedAt: now })
+        .where(eq(routineDaysTable.id, u.id)).run();
+    }
+    for (const n of newExercises) {
+      tx.insert(routineExercisesTable).values({
+        id: n.ex.id,
+        routineDayId: n.dayId,
+        exerciseId: n.ex.exerciseId,
+        position: n.position,
+        targetSets: n.ex.targetSets,
+        targetReps: n.ex.targetReps,
+        warmupSets: n.ex.warmupSets,
+        supersetWith: n.ex.supersetWith ?? null,
+        restSeconds: n.ex.restSeconds,
+        notes: n.ex.notes ?? null,
+        updatedAt: now,
+      }).run();
+    }
+    for (const u of exUpdates) {
+      tx
+        .update(routineExercisesTable)
+        .set({
+          routineDayId: u.dayId,
+          exerciseId: u.ex.exerciseId,
+          position: u.position,
+          targetSets: u.ex.targetSets,
+          targetReps: u.ex.targetReps,
+          warmupSets: u.ex.warmupSets,
+          supersetWith: u.ex.supersetWith ?? null,
+          restSeconds: u.ex.restSeconds,
+          notes: u.ex.notes ?? null,
+          updatedAt: now,
+        })
+        .where(eq(routineExercisesTable.id, u.id)).run();
+    }
+  });
+
+  return draft.id;
+}

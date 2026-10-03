@@ -1,9 +1,10 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import { router, useLocalSearchParams, useNavigation } from "expo-router";
+import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Platform, Pressable, ScrollView, View } from "react-native";
 import { showAlert } from "@/utils/alert";
+import { uid } from "@/utils/id";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Button } from "@/components/ui/Button";
@@ -18,16 +19,19 @@ import { Text } from "@/components/ui/Text";
 import { useThemeColors } from "@/contexts/ThemeContext";
 import { useAllExercises } from "@/domains/exercises/queries";
 import {
-  addRoutineDay,
-  cloneRoutine,
-  createRoutine,
-  deleteRoutine,
-  deleteRoutineDay,
-  removeRoutineExercise,
-  updateRoutine,
-  updateRoutineDay,
-  updateRoutineExercise,
-} from "@/domains/routines/mutators";
+  canSaveDraft,
+  draftFromRoutine,
+  draftFromTemplate,
+  draftReducer,
+  emptyDraft,
+  saveButtonLabel,
+  shouldPromptOnLeave,
+  validateDraft,
+  type DraftAction,
+  type RoutineDraft,
+} from "@/domains/routines/draft";
+import { registerDraft, unregisterDraft } from "@/domains/routines/draftStore";
+import { deleteRoutine, saveRoutineDraft } from "@/domains/routines/mutators";
 import { useAllRoutines } from "@/domains/routines/queries";
 import { startWorkout } from "@/domains/workout/mutators";
 import { useActiveWorkoutId } from "@/domains/workout/queries";
@@ -39,11 +43,19 @@ const GOAL_LABELS: Record<string, string> = {
   beginner: "PRINCIPIANTE",
 };
 
+type ScreenAction = DraftAction | { type: "load"; draft: RoutineDraft };
+
+function screenReducer(state: RoutineDraft, action: ScreenAction): RoutineDraft {
+  return action.type === "load" ? action.draft : draftReducer(state, action);
+}
+
 export default function RoutineDetailScreen() {
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ id: string }>();
+  const navigation = useNavigation();
+  const params = useLocalSearchParams<{ id: string; template?: string }>();
   const isNew = params.id === "new";
+  const templateId = isNew ? params.template : undefined;
   const allRoutines = useAllRoutines();
   const allExercises = useAllExercises();
   const activeWorkoutId = useActiveWorkoutId();
@@ -51,34 +63,81 @@ export default function RoutineDetailScreen() {
     () => new Map(allExercises.map((e) => [e.id, e])),
     [allExercises],
   );
-  const getExerciseById = (id: string) => exerciseById.get(id);
-  const [createdId, setCreatedId] = useState<string | null>(null);
-  const routineId = isNew ? createdId : params.id;
-  const routine = routineId ? allRoutines.find((r) => r.id === routineId) : null;
 
-  useEffect(() => {
-    if (isNew && !createdId) {
-      let cancelled = false;
-      void createRoutine({ name: "Nueva rutina" }).then((r) => {
-        if (!cancelled) setCreatedId(r.id);
-      });
-      return () => {
-        cancelled = true;
-      };
-    }
-  }, [isNew, createdId]);
+  // The persisted routine (edit mode / presets). New routines have none.
+  const routine = isNew ? null : (allRoutines.find((r) => r.id === params.id) ?? null);
 
+  const [draft, dispatchScreen] = useReducer(screenReducer, undefined, emptyDraft);
+  /** Last saved state; null while the routine does not exist in the DB yet. */
+  const [original, setOriginal] = useState<RoutineDraft | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [showErrors, setShowErrors] = useState(false);
   const [activeDayId, setActiveDayId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState(false);
-  const [nameInput, setNameInput] = useState("");
 
+  // Load the draft once; later live-query emissions must not reset edits.
+  const loadedRef = useRef(false);
   useEffect(() => {
-    if (routine && !activeDayId && routine.days[0]) {
-      setActiveDayId(routine.days[0].id);
+    if (loadedRef.current) return;
+    if (isNew) {
+      if (!templateId) {
+        loadedRef.current = true;
+        return;
+      }
+      const template = allRoutines.find((r) => r.id === templateId);
+      if (template) {
+        loadedRef.current = true;
+        const d = draftFromTemplate(template);
+        dispatchScreen({ type: "load", draft: d });
+        setActiveDayId(d.days[0]?.id ?? null);
+      }
+    } else if (routine) {
+      loadedRef.current = true;
+      const d = draftFromRoutine(routine);
+      dispatchScreen({ type: "load", draft: d });
+      setOriginal(d);
+      setActiveDayId(d.days[0]?.id ?? null);
     }
-  }, [routine, activeDayId]);
+  }, [isNew, templateId, routine, allRoutines]);
 
-  if (!routine) {
+  // Fresh empty draft: select its only day.
+  useEffect(() => {
+    if (!activeDayId && draft.days[0]) setActiveDayId(draft.days[0].id);
+  }, [activeDayId, draft.days]);
+
+  // Let the exercise picker (a separate screen) append to this draft.
+  const draftKey = useMemo(() => uid(), []);
+  useEffect(() => {
+    const send = (action: DraftAction) => dispatchScreen(action);
+    registerDraft(draftKey, send);
+    return () => unregisterDraft(draftKey, send);
+  }, [draftKey]);
+
+  // Unsaved-changes guard (header back, iOS swipe, Android/browser back).
+  const draftRef = useRef(draft);
+  const originalRef = useRef(original);
+  draftRef.current = draft;
+  originalRef.current = original;
+  const bypassRef = useRef(false);
+  useEffect(() => {
+    return navigation.addListener("beforeRemove", (e) => {
+      if (!shouldPromptOnLeave(draftRef.current, originalRef.current, bypassRef.current)) return;
+      e.preventDefault();
+      showAlert("¿Descartar cambios?", "Tienes cambios sin guardar en esta rutina.", [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Descartar",
+          style: "destructive",
+          onPress: () => {
+            bypassRef.current = true;
+            navigation.dispatch(e.data.action);
+          },
+        },
+      ]);
+    });
+  }, [navigation]);
+
+  const ready = isNew || original !== null;
+  if (!ready) {
     return (
       <Screen noPadding>
         <Header title="Rutina" back />
@@ -89,10 +148,46 @@ export default function RoutineDetailScreen() {
     );
   }
 
-  const isPreset = !!routine.isPreset;
-  const activeDay = routine.days.find((d) => d.id === activeDayId) ?? routine.days[0];
-  const goalLabel = routine.goal ? GOAL_LABELS[routine.goal] : null;
-  const totalEx = routine.days.reduce((sum, d) => sum + d.exercises.length, 0);
+  const isPreset = !isNew && !!routine?.isPreset;
+  const exists = original !== null;
+  const dirty = canSaveDraft(draft, original, false);
+  const errors = showErrors ? validateDraft(draft) : null;
+  const fieldErrors = errors && !errors.ok ? errors.errors : null;
+  const activeDay = draft.days.find((d) => d.id === activeDayId) ?? draft.days[0];
+  const goalLabel = draft.goal ? GOAL_LABELS[draft.goal] : null;
+  const totalEx = draft.days.reduce((sum, d) => sum + d.exercises.length, 0);
+
+  const openPicker = () => {
+    if (!activeDay) return;
+    router.push(`/exercises?draftKey=${draftKey}&dayId=${activeDay.id}` as never);
+  };
+
+  const handleSave = async () => {
+    if (saving || isPreset) return;
+    const validation = validateDraft(draft);
+    if (!validation.ok) {
+      setShowErrors(true);
+      return;
+    }
+    setShowErrors(false);
+    setSaving(true);
+    const snapshot = draft;
+    try {
+      const id = await saveRoutineDraft(snapshot, original);
+      if (original === null) {
+        // Replace so back does not return to the empty "new" form.
+        bypassRef.current = true;
+        router.replace(`/routine/${id}` as never);
+      } else {
+        setOriginal(snapshot);
+      }
+    } catch (err) {
+      console.error("[ironlog] saveRoutineDraft failed:", err);
+      showAlert("No se pudo guardar", "Ocurrió un error al guardar la rutina. Inténtalo de nuevo.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleStart = async () => {
     if (activeWorkoutId) {
@@ -107,32 +202,45 @@ export default function RoutineDetailScreen() {
       return;
     }
     if (!activeDay) return;
-    await startWorkout(routine.id, activeDay.id);
+    if (!isPreset && dirty) {
+      showAlert(
+        "Cambios sin guardar",
+        "Guarda la rutina antes de empezar el entrenamiento.",
+        [
+          { text: "Cancelar", style: "cancel" },
+          { text: "Guardar", onPress: () => void handleSave() },
+        ],
+      );
+      return;
+    }
+    await startWorkout(draft.id, activeDay.id);
     router.push("/workout/active");
   };
 
   const handleDelete = () => {
-    showAlert("Eliminar rutina", `¿Borrar "${routine.name}"?`, [
+    showAlert("Eliminar rutina", `¿Borrar "${draft.name}"?`, [
       { text: "Cancelar", style: "cancel" },
       {
         text: "Eliminar",
         style: "destructive",
         onPress: async () => {
-          await deleteRoutine(routine.id);
+          await deleteRoutine(draft.id);
+          bypassRef.current = true;
           router.back();
         },
       },
     ]);
   };
 
-  const handleClone = async () => {
-    const cloned = await cloneRoutine(routine.id);
-    if (cloned) router.replace(`/routine/${cloned.id}`);
+  const handleUseAsTemplate = () => {
+    router.replace(`/routine/new?template=${draft.id}` as never);
   };
 
   const goalSummary = goalLabel
-    ? `${goalLabel} · ${routine.days.length} ${routine.days.length === 1 ? "DÍA" : "DÍAS"}`
-    : `${routine.days.length} ${routine.days.length === 1 ? "DÍA" : "DÍAS"} · ${totalEx} EJERCICIOS`;
+    ? `${goalLabel} · ${draft.days.length} ${draft.days.length === 1 ? "DÍA" : "DÍAS"}`
+    : `${draft.days.length} ${draft.days.length === 1 ? "DÍA" : "DÍAS"} · ${totalEx} EJERCICIOS`;
+
+  const showStart = !!activeDay && activeDay.exercises.length > 0 && (isPreset || exists);
 
   return (
     <Screen noPadding>
@@ -142,10 +250,10 @@ export default function RoutineDetailScreen() {
         compact
         right={
           isPreset ? (
-            <IconButton icon="copy" onPress={handleClone} />
-          ) : (
+            <IconButton icon="copy" onPress={handleUseAsTemplate} />
+          ) : exists ? (
             <IconButton icon="trash-2" onPress={handleDelete} color={colors.danger} />
-          )
+          ) : undefined
         }
       />
 
@@ -153,43 +261,31 @@ export default function RoutineDetailScreen() {
         contentContainerStyle={{
           paddingHorizontal: 20,
           paddingTop: 4,
-          paddingBottom: 120 + insets.bottom,
+          paddingBottom: 190 + insets.bottom,
         }}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         <Col gap={6} style={{ marginBottom: 6 }}>
           <Text variant="tiny" color={colors.muted}>
             {goalSummary}
           </Text>
-          {!isPreset && editingName ? (
-            <Row gap={8}>
-              <View style={{ flex: 1 }}>
-                <Input value={nameInput} onChangeText={setNameInput} autoFocus />
-              </View>
-              <Button
-                label="Guardar"
-                onPress={() => {
-                  if (nameInput.trim()) updateRoutine(routine.id, { name: nameInput.trim() });
-                  setEditingName(false);
-                }}
-              />
-            </Row>
+          {isPreset ? (
+            <Text variant="h1">{draft.name}</Text>
           ) : (
-            <Pressable
-              disabled={isPreset}
-              onPress={() => {
-                setNameInput(routine.name);
-                setEditingName(true);
-              }}
-            >
-              <Text variant="h1">{routine.name}</Text>
-            </Pressable>
+            <Input
+              value={draft.name}
+              onChangeText={(name) => dispatchScreen({ type: "setName", name })}
+              placeholder="Nombre de la rutina"
+              error={fieldErrors?.name}
+              autoFocus={!exists && !templateId}
+            />
           )}
         </Col>
 
-        {routine.description ? (
+        {draft.description ? (
           <Text variant="body" muted style={{ marginVertical: 14 }}>
-            {routine.description}
+            {draft.description}
           </Text>
         ) : (
           <View style={{ height: 14 }} />
@@ -213,7 +309,7 @@ export default function RoutineDetailScreen() {
           contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
           style={{ marginBottom: 14, marginHorizontal: -2 }}
         >
-          {routine.days.map((d) => {
+          {draft.days.map((d) => {
             const active = d.id === activeDay?.id;
             return (
               <Pressable
@@ -241,7 +337,11 @@ export default function RoutineDetailScreen() {
           })}
           {!isPreset ? (
             <Pressable
-              onPress={() => addRoutineDay(routine.id, `Día ${routine.days.length + 1}`)}
+              onPress={() => {
+                const id = uid();
+                dispatchScreen({ type: "addDay", id });
+                setActiveDayId(id);
+              }}
               style={({ pressed }) => ({
                 paddingHorizontal: 12,
                 paddingVertical: 10,
@@ -266,6 +366,11 @@ export default function RoutineDetailScreen() {
                   {activeDay.exercises.length}{" "}
                   {activeDay.exercises.length === 1 ? "ejercicio" : "ejercicios"}
                 </Text>
+                {fieldErrors?.dayNames?.[activeDay.id] ? (
+                  <Text variant="caption" color={colors.danger}>
+                    {fieldErrors.dayNames[activeDay.id]}
+                  </Text>
+                ) : null}
               </Col>
             </Row>
 
@@ -276,16 +381,18 @@ export default function RoutineDetailScreen() {
                   title="Sin ejercicios"
                   description="Añade el primer ejercicio a este día."
                   actionLabel={isPreset ? undefined : "Añadir ejercicio"}
-                  onAction={
-                    isPreset
-                      ? undefined
-                      : () => router.push(`/exercises?routineId=${routine.id}&dayId=${activeDay.id}` as never)
-                  }
+                  onAction={isPreset ? undefined : openPicker}
                 />
               ) : (
                 activeDay.exercises.map((re, idx) => {
-                  const ex = getExerciseById(re.exerciseId);
-                  if (!ex) return null;
+                  const ex = exerciseById.get(re.exerciseId);
+                  const patch = (p: Partial<typeof re>) =>
+                    dispatchScreen({
+                      type: "updateExercise",
+                      dayId: activeDay.id,
+                      id: re.id,
+                      patch: p,
+                    });
                   return (
                     <Card key={re.id} padding={0}>
                       <Row
@@ -310,7 +417,7 @@ export default function RoutineDetailScreen() {
                         </View>
                         <Col gap={4} flex={1}>
                           <Text variant="title" numberOfLines={1}>
-                            {ex.name}
+                            {ex?.name ?? "Ejercicio"}
                           </Text>
                           <Row gap={10}>
                             <Text variant="mono" color={colors.muted} style={{ fontSize: 11 }}>
@@ -333,33 +440,21 @@ export default function RoutineDetailScreen() {
                               <SmallStepper
                                 label="Series"
                                 value={re.targetSets}
-                                onChange={(v) =>
-                                  updateRoutineExercise(routine.id, activeDay.id, re.id, {
-                                    targetSets: v,
-                                  })
-                                }
+                                onChange={(v) => patch({ targetSets: v })}
                                 min={1}
                                 max={10}
                               />
                               <SmallStepper
                                 label="Reps"
                                 value={re.targetReps}
-                                onChange={(v) =>
-                                  updateRoutineExercise(routine.id, activeDay.id, re.id, {
-                                    targetReps: v,
-                                  })
-                                }
+                                onChange={(v) => patch({ targetReps: v })}
                                 min={1}
                                 max={50}
                               />
                               <SmallStepper
                                 label="Calent."
                                 value={re.warmupSets}
-                                onChange={(v) =>
-                                  updateRoutineExercise(routine.id, activeDay.id, re.id, {
-                                    warmupSets: v,
-                                  })
-                                }
+                                onChange={(v) => patch({ warmupSets: v })}
                                 min={0}
                                 max={5}
                               />
@@ -368,15 +463,20 @@ export default function RoutineDetailScreen() {
                         </Col>
                         {!isPreset ? (
                           <Pressable
-                            onPress={() => removeRoutineExercise(routine.id, activeDay.id, re.id)}
+                            onPress={() =>
+                              dispatchScreen({
+                                type: "removeExercise",
+                                dayId: activeDay.id,
+                                id: re.id,
+                              })
+                            }
                             hitSlop={8}
+                            accessibilityLabel="Quitar ejercicio"
                             style={({ pressed }) => ({ padding: 4, opacity: pressed ? 0.6 : 1 })}
                           >
-                            <Feather name="more-vertical" size={16} color={colors.muted} />
+                            <Feather name="x" size={18} color={colors.muted} />
                           </Pressable>
-                        ) : (
-                          <Feather name="more-vertical" size={16} color={colors.muted} />
-                        )}
+                        ) : null}
                       </Row>
                     </Card>
                   );
@@ -389,16 +489,12 @@ export default function RoutineDetailScreen() {
                   variant="outline"
                   icon="plus"
                   fullWidth
-                  onPress={() =>
-                    router.push(
-                      `/exercises?routineId=${routine.id}&dayId=${activeDay.id}` as never,
-                    )
-                  }
+                  onPress={openPicker}
                   style={{ marginTop: 6 }}
                 />
               ) : null}
 
-              {!isPreset && routine.days.length > 1 ? (
+              {!isPreset && draft.days.length > 1 ? (
                 <Pressable
                   onPress={() => {
                     showAlert("Eliminar día", `¿Borrar "${activeDay.name}"?`, [
@@ -407,8 +503,10 @@ export default function RoutineDetailScreen() {
                         text: "Eliminar",
                         style: "destructive",
                         onPress: () => {
-                          deleteRoutineDay(routine.id, activeDay.id);
-                          setActiveDayId(routine.days[0]?.id ?? null);
+                          dispatchScreen({ type: "removeDay", dayId: activeDay.id });
+                          setActiveDayId(
+                            draft.days.find((d) => d.id !== activeDay.id)?.id ?? null,
+                          );
                         },
                       },
                     ]);
@@ -430,23 +528,37 @@ export default function RoutineDetailScreen() {
         ) : null}
       </ScrollView>
 
-      {/* Sticky lime CTA */}
-      {activeDay && activeDay.exercises.length > 0 ? (
+      {/* Sticky actions */}
+      {showStart || !isPreset ? (
         <View
           style={{
             position: "absolute",
             bottom: Math.max(insets.bottom, 16) + 6,
             left: 16,
             right: 16,
+            gap: 8,
           }}
         >
-          <Button
-            label="Empezar entrenamiento"
-            icon="play"
-            size="lg"
-            fullWidth
-            onPress={handleStart}
-          />
+          {showStart ? (
+            <Button
+              label="Empezar entrenamiento"
+              icon="play"
+              size={isPreset ? "lg" : "md"}
+              variant={isPreset ? "primary" : "dark"}
+              fullWidth
+              onPress={handleStart}
+            />
+          ) : null}
+          {!isPreset ? (
+            <Button
+              label={saveButtonLabel(original)}
+              size="lg"
+              fullWidth
+              disabled={!canSaveDraft(draft, original, saving)}
+              loading={saving}
+              onPress={handleSave}
+            />
+          ) : null}
         </View>
       ) : null}
     </Screen>
