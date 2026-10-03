@@ -26,6 +26,12 @@ export const EXERCISES: Exercise[] = [
   make("chest-13", "Pullover con mancuerna", "Trabaja pecho y dorsal en una expansión torácica.", "chest", ["back"], "dumbbell"),
   make("chest-14", "Press inclinado en Smith", "Movimiento guiado. Permite cargar más peso de forma segura.", "chest", ["shoulders", "triceps"], "machine"),
   make("chest-15", "Flyes con cables (en banco)", "Aperturas tumbado en banco con poleas para tensión continua.", "chest", ["shoulders"], "cable"),
+  make("chest-16", "Press declinado con mancuernas", "Banco declinado con mancuernas. Énfasis en pecho inferior.", "chest", ["triceps"], "dumbbell"),
+  make("chest-17", "Press inclinado en máquina", "Press guiado a 30-45°. Pecho superior con estabilidad.", "chest", ["shoulders", "triceps"], "machine"),
+  make("chest-18", "Press de pecho en polea", "De pie con poleas. Tensión constante y trabajo de core.", "chest", ["shoulders", "triceps"], "cable"),
+  make("chest-19", "Flexiones con pies elevados", "Pies sobre un banco. Mayor carga en pecho superior.", "chest", ["shoulders", "triceps"], "bodyweight"),
+  make("chest-20", "Press en suelo con mancuernas", "Tumbado en el suelo. Recorrido corto, cuida los hombros.", "chest", ["triceps", "shoulders"], "dumbbell"),
+  make("chest-21", "Press landmine a una mano", "Empuje diagonal con barra anclada. Pecho superior y estabilidad.", "chest", ["shoulders", "triceps"], "barbell"),
 
   // BACK
   make("back-1", "Dominadas (pull-ups)", "Tracción vertical con peso corporal. Rey del dorsal.", "back", ["biceps", "forearms"], "bodyweight"),
@@ -43,6 +49,12 @@ export const EXERCISES: Exercise[] = [
   make("back-13", "Encogimientos con mancuernas", "Aislamiento de trapecio.", "back", ["forearms"], "dumbbell"),
   make("back-14", "Remo Pendlay", "Remo explosivo desde el suelo en cada repetición.", "back", ["biceps"], "barbell"),
   make("back-15", "Face pulls en polea", "Salud de hombro y trapecio medio. Esencial para postura.", "back", ["shoulders"], "cable"),
+  make("back-16", "Remo en máquina con apoyo en pecho", "Tracción guiada sin carga lumbar. Aísla la espalda media.", "back", ["biceps"], "machine"),
+  make("back-17", "Jalón a una mano en polea", "Unilateral. Gran estiramiento y contracción del dorsal.", "back", ["biceps"], "cable"),
+  make("back-18", "Remo Meadows", "Remo unilateral con barra anclada. Dorsal y espalda alta.", "back", ["biceps", "forearms"], "barbell"),
+  make("back-19", "Dominadas con agarre neutro", "Agarre paralelo. Más cómodo para hombros y codos.", "back", ["biceps", "forearms"], "bodyweight"),
+  make("back-20", "Remo Yates", "Remo con agarre supino y torso más erguido. Dorsal inferior.", "back", ["biceps"], "barbell"),
+  make("back-21", "Dominadas asistidas en máquina", "Dominadas con contrapeso. Ideal para progresar hasta la primera.", "back", ["biceps"], "machine"),
 
   // SHOULDERS
   make("sh-1", "Press militar de pie", "Press vertical con barra. Movimiento maestro de hombros.", "shoulders", ["triceps"], "barbell"),
@@ -60,6 +72,12 @@ export const EXERCISES: Exercise[] = [
   make("sh-13", "Elevaciones laterales inclinado", "Mancuernas en banco inclinado lateralmente. Aísla deltoides medio.", "shoulders", [], "dumbbell"),
   make("sh-14", "Press en Smith de hombros", "Press vertical guiado.", "shoulders", ["triceps"], "machine"),
   make("sh-15", "Pike push-ups", "Flexiones en V invertida. Press vertical con peso corporal.", "shoulders", ["triceps"], "bodyweight"),
+  make("sh-16", "Press militar sentado con barra", "Press vertical con respaldo. Menos exigencia de core.", "shoulders", ["triceps"], "barbell"),
+  make("sh-17", "Elevaciones frontales con mancuernas", "Aislamiento del deltoides anterior, alterno o conjunto.", "shoulders", [], "dumbbell"),
+  make("sh-18", "Elevaciones frontales en polea", "Tensión constante en el deltoides anterior.", "shoulders", [], "cable"),
+  make("sh-19", "Elevaciones laterales en máquina", "Aislamiento guiado del deltoides medio.", "shoulders", [], "machine"),
+  make("sh-20", "Press landmine de hombros", "Press vertical con barra anclada. Amable con el hombro.", "shoulders", ["triceps"], "barbell"),
+  make("sh-21", "Pájaros en polea cruzada", "Deltoides posterior con tensión continua.", "shoulders", ["back"], "cable"),
 
   // BICEPS
   make("bi-1", "Curl con barra", "Curl básico de bíceps. Mucha carga posible.", "biceps", ["forearms"], "barbell"),
@@ -77,6 +95,12 @@ export const EXERCISES: Exercise[] = [
   make("bi-13", "Curl en máquina", "Patrón guiado de curl. Bueno para aislamiento.", "biceps", [], "machine"),
   make("bi-14", "Curl Zottman", "Curl supino subiendo, pronación arriba, baja prono. Bíceps + antebrazo.", "biceps", ["forearms"], "dumbbell"),
   make("bi-15", "Curl invertido (pronado)", "Curl con barra en pronación. Trabaja braquial y antebrazo.", "biceps", ["forearms"], "barbell"),
+  make("bi-16", "Curl predicador con mancuerna", "Unilateral en banco scott. Aísla el bíceps sin impulso.", "biceps", [], "dumbbell"),
+  make("bi-17", "Curl en polea alta (doble bíceps)", "Brazos en cruz con poleas altas. Contracción máxima.", "biceps", [], "cable"),
+  make("bi-18", "Curl martillo cruzado", "Mancuerna hacia el hombro contrario. Braquial y braquiorradial.", "biceps", ["forearms"], "dumbbell"),
+  make("bi-19", "Curl con mancuernas sentado", "Sentado con respaldo. Reduce el balanceo del cuerpo.", "biceps", ["forearms"], "dumbbell"),
+  make("bi-20", "Curl Bayesian en polea", "De espaldas a la polea. Mucho estiramiento del bíceps.", "biceps", [], "cable"),
+  make("bi-21", "Curl con barra agarre ancho", "Agarre ancho. Mayor énfasis en la cabeza corta.", "biceps", ["forearms"], "barbell"),
 
   // TRICEPS
   make("tri-1", "Press francés con barra", "Extensión de tríceps tumbado. Trabaja la cabeza larga.", "triceps", [], "barbell"),
@@ -94,6 +118,12 @@ export const EXERCISES: Exercise[] = [
   make("tri-13", "Extensión en máquina de tríceps", "Patrón de pushdown guiado.", "triceps", [], "machine"),
   make("tri-14", "Press francés con mancuernas", "Variante con mancuernas. Más rango de movimiento.", "triceps", [], "dumbbell"),
   make("tri-15", "Skullcrushers con barra Z", "Extensión inclinada hacia la frente. Cuidado con codos.", "triceps", [], "barbell"),
+  make("tri-16", "Press cerrado en Smith", "Press de agarre estrecho guiado. Tríceps y pecho interno.", "triceps", ["chest", "shoulders"], "machine"),
+  make("tri-17", "Extensión de tríceps a una mano en polea", "Unilateral. Corrige asimetrías entre brazos.", "triceps", [], "cable"),
+  make("tri-18", "Extensión de tríceps agarre inverso", "Pushdown con agarre supino. Cabeza medial.", "triceps", [], "cable"),
+  make("tri-19", "Press francés en polea", "Tumbado con polea baja. Tensión constante en el tríceps.", "triceps", [], "cable"),
+  make("tri-20", "Fondos asistidos en máquina", "Fondos con contrapeso. Progresión hacia el peso corporal.", "triceps", ["chest"], "machine"),
+  make("tri-21", "Press cerrado con mancuernas", "Mancuernas juntas. Tríceps con buen rango de movimiento.", "triceps", ["chest", "shoulders"], "dumbbell"),
 
   // QUADRICEPS
   make("q-1", "Sentadilla con barra", "Reina de los ejercicios de pierna. Trabaja todo el tren inferior.", "quadriceps", ["glutes", "hamstrings"], "barbell"),
@@ -111,6 +141,12 @@ export const EXERCISES: Exercise[] = [
   make("q-13", "Sentadilla pausada", "3 segundos en el fondo. Construye fuerza desde el hoyo.", "quadriceps", ["glutes"], "barbell"),
   make("q-14", "Prensa unilateral", "Una pierna a la vez en prensa. Corrige asimetrías.", "quadriceps", ["glutes"], "machine"),
   make("q-15", "Sentadilla con cinturón (belt squat)", "Carga sin comprimir columna.", "quadriceps", ["glutes"], "machine"),
+  make("q-16", "Sentadilla Zercher", "Barra en el pliegue de los codos. Cuádriceps y core.", "quadriceps", ["glutes", "back"], "barbell"),
+  make("q-17", "Sentadilla con salto", "Pliométrico. Potencia explosiva de piernas.", "quadriceps", ["glutes", "calves"], "bodyweight"),
+  make("q-18", "Sentadilla con peso corporal", "Base técnica. Ideal para calentar o para volumen alto.", "quadriceps", ["glutes"], "bodyweight"),
+  make("q-19", "Extensión de cuádriceps unilateral", "Una pierna a la vez en máquina. Corrige asimetrías.", "quadriceps", [], "machine"),
+  make("q-20", "Sentadilla en cajón (box squat)", "Sentarse sobre un cajón. Control y fuerza desde abajo.", "quadriceps", ["glutes", "hamstrings"], "barbell"),
+  make("q-21", "Prensa de piernas horizontal", "Prensa con respaldo vertical. Cuádriceps con menos carga lumbar.", "quadriceps", ["glutes"], "machine"),
 
   // HAMSTRINGS
   make("h-1", "Peso muerto rumano (RDL)", "Bisagra de cadera. Rey de los isquios.", "hamstrings", ["glutes", "back"], "barbell"),
@@ -128,6 +164,12 @@ export const EXERCISES: Exercise[] = [
   make("h-13", "Reverse hyper", "Aislamiento de isquios y glúteos. Salud lumbar.", "hamstrings", ["glutes"], "machine"),
   make("h-14", "Slider hamstring curl", "Curl con discos en suelo. Peso corporal.", "hamstrings", ["glutes"], "bodyweight"),
   make("h-15", "Peso muerto trap bar", "Híbrido entre sentadilla y peso muerto.", "hamstrings", ["glutes", "quadriceps"], "barbell"),
+  make("h-16", "Curl femoral unilateral en máquina", "Una pierna a la vez. Aislamiento y simetría.", "hamstrings", [], "machine"),
+  make("h-17", "Curl femoral con balón suizo", "Talones sobre el balón. Isquios y estabilidad.", "hamstrings", ["glutes"], "bodyweight"),
+  make("h-18", "Puente de glúteo con pies elevados", "Pies sobre banco. Mayor trabajo de isquios.", "hamstrings", ["glutes"], "bodyweight"),
+  make("h-19", "Buenos días sentado", "Bisagra de cadera sentado. Isquios y espalda baja.", "hamstrings", ["glutes", "back"], "barbell"),
+  make("h-20", "Peso muerto rumano en Smith", "Bisagra guiada. Permite concentrarse en el estiramiento.", "hamstrings", ["glutes"], "machine"),
+  make("h-21", "Curl femoral con mancuerna", "Tumbado boca abajo con mancuerna entre los pies.", "hamstrings", [], "dumbbell"),
 
   // GLUTES
   make("g-1", "Hip thrust con barra", "Rey de los glúteos. Empuje de cadera apoyado.", "glutes", ["hamstrings"], "barbell"),
@@ -145,6 +187,12 @@ export const EXERCISES: Exercise[] = [
   make("g-13", "Cable pull-through", "Tracción entre piernas con polea baja.", "glutes", ["hamstrings"], "cable"),
   make("g-14", "Reverse lunge", "Zancada hacia atrás. Más glúteo que zancada normal.", "glutes", ["quadriceps"], "dumbbell"),
   make("g-15", "Curtsy lunge", "Zancada lateral cruzada. Glúteo medio.", "glutes", ["quadriceps"], "dumbbell"),
+  make("g-16", "Hip thrust en máquina", "Empuje de cadera guiado. Cómodo con mucha carga.", "glutes", ["hamstrings"], "machine"),
+  make("g-17", "Hip thrust con mancuerna", "Mancuerna sobre la cadera. Buen punto de partida.", "glutes", ["hamstrings"], "dumbbell"),
+  make("g-18", "Abducción de cadera en polea", "De pie con tobillera. Glúteo medio.", "glutes", [], "cable"),
+  make("g-19", "Clamshell con banda", "Tumbado de lado abriendo la rodilla. Glúteo medio.", "glutes", [], "bodyweight"),
+  make("g-20", "Donkey kick", "A cuatro apoyos, patada hacia arriba. Aislamiento del glúteo.", "glutes", ["hamstrings"], "bodyweight"),
+  make("g-21", "Sentadilla en Smith con pies adelantados", "Pies adelantados en máquina. Mayor énfasis en glúteo.", "glutes", ["quadriceps", "hamstrings"], "machine"),
 
   // CALVES
   make("ca-1", "Elevación de talones de pie", "Gemelos en máquina de pie. Carga máxima.", "calves", [], "machine"),
@@ -162,6 +210,12 @@ export const EXERCISES: Exercise[] = [
   make("ca-13", "Elevación en hack squat", "Gemelos en máquina hack squat.", "calves", [], "machine"),
   make("ca-14", "Tibial raise", "Elevación de punta. Trabaja tibial anterior.", "calves", [], "bodyweight"),
   make("ca-15", "Farmer walk en puntillas", "Caminar con peso en puntas.", "calves", ["forearms"], "dumbbell"),
+  make("ca-16", "Elevación de talones sentado con mancuerna", "Mancuerna sobre las rodillas. Trabaja el sóleo.", "calves", [], "dumbbell"),
+  make("ca-17", "Saltos de tobillo (pogo jumps)", "Saltos cortos y rápidos. Rigidez y potencia de tobillo.", "calves", [], "bodyweight"),
+  make("ca-18", "Elevación de talones en prensa a una pierna", "Unilateral en prensa. Corrige asimetrías.", "calves", [], "machine"),
+  make("ca-19", "Caminata en puntillas", "Caminar sobre las puntas. Resistencia de gemelos.", "calves", [], "bodyweight"),
+  make("ca-20", "Elevación de talones a una pierna en máquina", "Unilateral en máquina de pie. Gran contracción.", "calves", [], "machine"),
+  make("ca-21", "Elevación de talones con banda elástica", "Banda bajo el pie. Resistencia progresiva.", "calves", [], "bodyweight"),
 
   // ABS
   make("ab-1", "Crunch abdominal", "Crunch básico en suelo. Recto abdominal.", "abs", [], "bodyweight"),
@@ -179,14 +233,20 @@ export const EXERCISES: Exercise[] = [
   make("ab-13", "Pallof press", "Anti-rotación con polea o banda.", "abs", [], "cable"),
   make("ab-14", "Wood chopper en polea", "Movimiento diagonal. Oblicuos potentes.", "abs", [], "cable"),
   make("ab-15", "Toes to bar", "Levantar puntas hasta la barra colgado. Abs avanzado.", "abs", [], "bodyweight"),
+  make("ab-16", "Crunch bicicleta", "Codo a rodilla contraria. Recto abdominal y oblicuos.", "abs", [], "bodyweight"),
+  make("ab-17", "Elevación de piernas en banco", "Tumbado en banco. Abdomen inferior sin colgarse.", "abs", [], "bodyweight"),
+  make("ab-18", "Crunch en máquina", "Patrón guiado con carga progresiva.", "abs", [], "machine"),
+  make("ab-19", "Hollow body hold", "Isométrico con lumbar pegada al suelo. Core profundo.", "abs", [], "bodyweight"),
+  make("ab-20", "V-ups", "Manos y pies se encuentran arriba. Abdomen completo.", "abs", [], "bodyweight"),
+  make("ab-21", "Plancha con toque de hombro", "Plancha alta alternando toques. Anti-rotación.", "abs", [], "bodyweight"),
 
   // FOREARMS
   make("fa-1", "Curl de muñeca con barra", "Flexión de muñeca con barra. Antebrazo flexor.", "forearms", [], "barbell"),
   make("fa-2", "Curl invertido de muñeca", "Extensión de muñeca con barra. Antebrazo extensor.", "forearms", [], "barbell"),
   make("fa-3", "Farmer walk", "Caminar con mancuernas pesadas. Agarre.", "forearms", [], "dumbbell"),
-  make("fa-4", "Curl martillo", "Mancuernas neutras. Bíceps + antebrazo.", "forearms", ["biceps"], "dumbbell"),
+  make("fa-4", "Curl martillo para antebrazo", "Mancuernas neutras. Bíceps + antebrazo.", "forearms", ["biceps"], "dumbbell"),
   make("fa-5", "Plate pinch", "Sostener disco entre dedos.", "forearms", [], "bodyweight"),
-  make("fa-6", "Curl Zottman", "Curl con rotación. Trabaja todo el antebrazo.", "forearms", ["biceps"], "dumbbell"),
+  make("fa-6", "Curl Zottman para antebrazo", "Curl con rotación. Trabaja todo el antebrazo.", "forearms", ["biceps"], "dumbbell"),
   make("fa-7", "Wrist roller", "Enrollar peso colgado de palo. Antebrazos masivos.", "forearms", [], "bodyweight"),
   make("fa-8", "Reverse curl con barra", "Curl pronado. Braquiorradial y extensores.", "forearms", ["biceps"], "barbell"),
   make("fa-9", "Dead hang", "Colgarse de la barra. Resistencia de agarre.", "forearms", [], "bodyweight"),
@@ -196,6 +256,12 @@ export const EXERCISES: Exercise[] = [
   make("fa-13", "Cable wrist curl", "Curl de muñeca en polea baja.", "forearms", [], "cable"),
   make("fa-14", "Finger curl con barra", "Rodar barra desde dedos. Flexores profundos.", "forearms", [], "barbell"),
   make("fa-15", "Rack hold (heavy)", "Sostener barra pesada en jaula. Agarre estático.", "forearms", [], "barbell"),
+  make("fa-16", "Farmer walk con trap bar", "Caminar con barra hexagonal pesada. Agarre y trapecio.", "forearms", [], "barbell"),
+  make("fa-17", "Suitcase carry", "Caminar con una mancuerna. Agarre y oblicuos.", "forearms", ["abs"], "dumbbell"),
+  make("fa-18", "Curl de muñeca con mancuerna", "Flexión de muñeca unilateral. Antebrazo flexor.", "forearms", [], "dumbbell"),
+  make("fa-19", "Extensión de muñeca con mancuerna", "Extensión de muñeca unilateral. Antebrazo extensor.", "forearms", [], "dumbbell"),
+  make("fa-20", "Pronación y supinación con mancuerna", "Rotar el antebrazo con peso. Salud de codo y muñeca.", "forearms", [], "dumbbell"),
+  make("fa-21", "Dead hang a una mano", "Colgarse de un solo brazo. Agarre avanzado.", "forearms", ["back"], "bodyweight"),
 ];
 
 export const MUSCLE_GROUP_LABELS: Record<string, string> = {

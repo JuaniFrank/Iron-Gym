@@ -11,7 +11,7 @@ import type { UserProfile } from "@/types";
  *
  * NOT the same as `_meta.schema_version` (which gates Drizzle migrations).
  */
-export const SEED_VERSION = 1;
+export const SEED_VERSION = 2;
 
 /**
  * Default singleton profile inserted on first boot.
