@@ -226,3 +226,35 @@ describe("runSeedIfNeeded (DDB-14 + DDB-15)", () => {
     expect(custom?.isPreset).toBe(false);
   });
 });
+
+describe("runSeedIfNeeded and sync capture", () => {
+  it("captures nothing, restores applying, seeds profile at epoch 0, and still captures later edits", async () => {
+    const { db, sqlite } = createTestDb();
+    await runSeedIfNeeded(db, basePayload());
+
+    const outboxCount = () =>
+      (sqlite.prepare("SELECT COUNT(*) AS n FROM _outbox").get() as { n: number }).n;
+    expect(outboxCount()).toBe(0);
+    expect(
+      sqlite.prepare("SELECT value FROM _sync_state WHERE key = 'applying'").get(),
+    ).toEqual({ value: "0" });
+
+    const profile = (await db.select().from(userProfile).all())[0];
+    expect(profile.updatedAt.getTime()).toBe(0);
+
+    sqlite.prepare("UPDATE user_profile SET name = 'Real' WHERE id = 'singleton'").run();
+    expect(sqlite.prepare("SELECT table_name, row_id, op FROM _outbox").all()).toEqual([
+      { table_name: "user_profile", row_id: "singleton", op: "upsert" },
+    ]);
+  });
+
+  it("leaves applying at 0 when the seed transaction throws", async () => {
+    const { db, sqlite } = createTestDb();
+    const bad = basePayload();
+    bad.routines[0].days[0].exercises[0].exerciseId = "missing-ex";
+    await expect(runSeedIfNeeded(db, bad)).rejects.toThrow();
+    expect(
+      sqlite.prepare("SELECT value FROM _sync_state WHERE key = 'applying'").get(),
+    ).toEqual({ value: "0" });
+  });
+});

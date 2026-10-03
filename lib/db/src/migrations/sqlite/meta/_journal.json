@@ -15,6 +15,20 @@
       "when": 1777600994898,
       "tag": "0001_full_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790918917689,
+      "tag": "0002_sync_state_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1790918922499,
+      "tag": "0003_sync_capture_triggers",
+      "breakpoints": true
     }
   ]
 }

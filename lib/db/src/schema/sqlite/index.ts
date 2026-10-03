@@ -7,6 +7,8 @@
 // --- bookkeeping ---
 export * from "./_meta";
 export * from "./key_value";
+export * from "./_outbox";
+export * from "./_sync_state";
 
 // --- catalog (preset + custom) ---
 export * from "./exercises";

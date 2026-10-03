@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import type { DB } from "./client/sqlite";
 import { exercises } from "./schema/sqlite/exercises";
@@ -179,6 +179,11 @@ export async function runSeedIfNeeded(
   const now = new Date();
 
   await db.transaction((tx) => {
+    // Seed data is device-local: suppress the sync capture triggers for the
+    // whole transaction (routine_days / routine_exercises / user_profile have
+    // no `is_preset` column). A throw rolls the flag back with the rest.
+    tx.run(sql`UPDATE _sync_state SET value = '1' WHERE key = 'applying'`);
+
     // ---- exercises ------------------------------------------------------
     for (const ex of payload.exercises) {
       const row: NewExercise = {
@@ -355,9 +360,12 @@ export async function runSeedIfNeeded(
       .values({
         id: "singleton",
         ...payload.profileDefaults,
-        updatedAt: now,
+        // Epoch 0 so a real profile from another device always wins LWW.
+        updatedAt: new Date(0),
       })
       .onConflictDoNothing({ target: userProfile.id }).run();
+
+    tx.run(sql`UPDATE _sync_state SET value = '0' WHERE key = 'applying'`);
 
     // ---- _meta.seed_version --------------------------------------------
     tx
