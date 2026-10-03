@@ -30,6 +30,7 @@ import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { db, initDb } from "@/services/db";
 import { bootWithRetry, classifyBootError } from "@/services/dbBoot";
+import { SyncProvider } from "@/services/sync/SyncProvider";
 import { useSegments, useRouter } from "expo-router";
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
@@ -244,9 +245,11 @@ export default function RootLayout() {
             <QueryClientProvider client={queryClient}>
               <ThemeProvider>
                 <AuthProvider>
-                  <RouteGuard>
-                    <StackNavigator />
-                  </RouteGuard>
+                  <SyncProvider>
+                    <RouteGuard>
+                      <StackNavigator />
+                    </RouteGuard>
+                  </SyncProvider>
                 </AuthProvider>
               </ThemeProvider>
             </QueryClientProvider>

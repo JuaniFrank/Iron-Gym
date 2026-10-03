@@ -1,0 +1,67 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny: nothing is readable or writable unless matched below.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // Must stay in sync with SYNC_TABLES in services/sync/tables.ts
+    // (tests/sync/firestoreRules.test.ts enforces it).
+    function isSyncTable(table) {
+      return table in [
+        'exercises',
+        'food_items',
+        'routines',
+        'routine_days',
+        'routine_exercises',
+        'workout_sessions',
+        'completed_sets',
+        'pr_records',
+        'body_weights',
+        'body_measurements',
+        'progress_photos',
+        'food_entries',
+        'fitness_goals',
+        'scheduled_routines',
+        'schedule_overrides',
+        'session_plans',
+        'achievements_unlocked',
+        'session_notes',
+        'user_profile'
+      ];
+    }
+
+    // Shape of a synced row document. `data` is null exactly for tombstones.
+    function isValidDoc() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['data', 'updatedAt', 'deleted', 'serverUpdatedAt'])
+        && d.keys().hasAll(['data', 'updatedAt', 'deleted', 'serverUpdatedAt'])
+        && d.updatedAt is int
+        && d.deleted is bool
+        && d.serverUpdatedAt == request.time
+        && ((d.deleted == true && d.data == null)
+            || (d.deleted == false && d.data is map));
+    }
+
+    match /users/{uid}/{table}/{rowId} {
+      allow read: if isOwner(uid);
+
+      allow create: if isOwner(uid) && isSyncTable(table) && isValidDoc();
+
+      // Server-side last-write-wins: a stale push is rejected; the client
+      // keeps its outbox entry and the next pull resolves the conflict.
+      allow update: if isOwner(uid) && isSyncTable(table) && isValidDoc()
+        && request.resource.data.updatedAt >= resource.data.updatedAt;
+
+      // Deletions are tombstones (updates with deleted = true), never real.
+      allow delete: if false;
+    }
+  }
+}

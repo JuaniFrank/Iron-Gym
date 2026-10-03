@@ -4,6 +4,12 @@ import {
   getAuth,
   type Auth,
 } from "firebase/auth";
+import {
+  getFirestore,
+  initializeFirestore,
+  memoryLocalCache,
+  type Firestore,
+} from "firebase/firestore";
 // @ts-expect-error - getReactNativePersistence exists in React Native resolution of firebase/auth
 import { getReactNativePersistence } from "firebase/auth";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -33,6 +39,9 @@ export const isFirebaseConfigured = Boolean(
 // so leaving these undefined when unconfigured is safe.
 let app: FirebaseApp = undefined as unknown as FirebaseApp;
 let auth: Auth = undefined as unknown as Auth;
+// Local SQLite is the offline cache, so Firestore uses memory cache only
+// (never IndexedDB persistence).
+let firestore: Firestore = undefined as unknown as Firestore;
 
 if (isFirebaseConfigured) {
   app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
@@ -47,6 +56,12 @@ if (isFirebaseConfigured) {
   } catch {
     auth = getAuth(app);
   }
+  try {
+    firestore = initializeFirestore(app, { localCache: memoryLocalCache() });
+  } catch {
+    // Already initialized (e.g. fast refresh): reuse the existing instance.
+    firestore = getFirestore(app);
+  }
 }
 
-export { app, auth };
+export { app, auth, firestore };
