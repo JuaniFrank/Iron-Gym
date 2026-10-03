@@ -16,22 +16,32 @@ import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { EXERCISE_TYPE_LABELS, MUSCLE_GROUPS, MUSCLE_GROUP_LABELS } from "@/constants/exercises";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import {
+  filterExercises,
+  hasActiveFilters,
+  toggleValue,
+} from "@/domains/exercises/filter";
 import { createCustomExercise } from "@/domains/exercises/mutators";
 import {
   useAllExercises,
   useExerciseById,
 } from "@/domains/exercises/queries";
 import { addExerciseToDay } from "@/domains/routines/mutators";
+import { dispatchToDraft } from "@/domains/routines/draftStore";
+import { uid } from "@/utils/id";
 import {
   addExerciseToActiveWorkout,
   replaceSessionExercise,
 } from "@/domains/workout/mutators";
-import type { Exercise, MuscleGroup } from "@/types";
+import type { Exercise, ExerciseType, MuscleGroup } from "@/types";
+
+const EXERCISE_TYPES: ExerciseType[] = ["barbell", "dumbbell", "machine", "cable", "bodyweight"];
 
 export default function ExercisesScreen() {
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
+    draftKey?: string;
     routineId?: string;
     dayId?: string;
     sessionId?: string;
@@ -46,31 +56,45 @@ export default function ExercisesScreen() {
     undefined;
 
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<MuscleGroup | "all">(
-    sourceExercise ? sourceExercise.primaryMuscle : "all",
+  const [muscles, setMuscles] = useState<MuscleGroup[]>(
+    sourceExercise ? [sourceExercise.primaryMuscle] : [],
   );
+  const [types, setTypes] = useState<ExerciseType[]>([]);
   const [showCustom, setShowCustom] = useState(false);
   const [newName, setNewName] = useState("");
   const [newGroup, setNewGroup] = useState<MuscleGroup>(
     sourceExercise?.primaryMuscle ?? "chest",
   );
+  const [newType, setNewType] = useState<ExerciseType>("barbell");
 
   // If the source exercise resolves later (e.g. custom exercise loaded after mount),
   // re-snap the filter to its muscle.
   useEffect(() => {
     if (sourceExercise) {
-      setFilter(sourceExercise.primaryMuscle);
+      setMuscles([sourceExercise.primaryMuscle]);
     }
   }, [sourceExercise?.id, sourceExercise?.primaryMuscle]);
 
-  const filtered = useMemo(() => {
-    return allExercises.filter((e) => {
-      const matchesSearch =
-        search.trim() === "" || e.name.toLowerCase().includes(search.toLowerCase());
-      const matchesFilter = filter === "all" || e.primaryMuscle === filter;
-      return matchesSearch && matchesFilter;
-    });
-  }, [allExercises, search, filter]);
+  const filters = useMemo(() => ({ muscles, types, search }), [muscles, types, search]);
+  const filtersActive = hasActiveFilters(filters);
+  const filtered = useMemo(
+    () => filterExercises(allExercises, filters),
+    [allExercises, filters],
+  );
+
+  const clearFilters = () => {
+    setSearch("");
+    setMuscles([]);
+    setTypes([]);
+  };
+
+  // Prefill the custom exercise form from the filters when they are unambiguous.
+  const openCustomForm = () => {
+    if (muscles.length === 1) setNewGroup(muscles[0]);
+    else setNewGroup(sourceExercise?.primaryMuscle ?? "chest");
+    setNewType(types.length === 1 ? types[0] : "barbell");
+    setShowCustom(true);
+  };
 
   const handlePick = async (exId: string) => {
     if (isReplaceMode && params.replaceSessionId && params.replaceExerciseId) {
@@ -87,7 +111,17 @@ export default function ExercisesScreen() {
       router.back();
       return;
     }
-    if (params.routineId && params.dayId) {
+    if (params.draftKey && params.dayId) {
+      // Draft mode: hand the exercise to the routine screen's in-memory
+      // draft. Nothing is written to the DB until the user saves there.
+      dispatchToDraft(params.draftKey, {
+        type: "addExercise",
+        dayId: params.dayId,
+        id: uid(),
+        exerciseId: exId,
+      });
+      router.back();
+    } else if (params.routineId && params.dayId) {
       await addExerciseToDay(params.routineId, params.dayId, exId);
       router.back();
     } else if (params.sessionId) {
@@ -122,7 +156,7 @@ export default function ExercisesScreen() {
       >
         <IconButton icon="chevron-down" onPress={() => router.back()} />
         <Text variant="title">{isReplaceMode ? "Reemplazar" : "Ejercicios"}</Text>
-        <IconButton icon="plus" variant="primary" onPress={() => setShowCustom(true)} />
+        <IconButton icon="plus" variant="primary" onPress={openCustomForm} />
       </View>
 
       {isReplaceMode && sourceExercise ? (
@@ -162,26 +196,58 @@ export default function ExercisesScreen() {
           leftAdornment={<Feather name="search" size={16} color={colors.muted} />}
         />
 
+        <Text variant="tiny" color={colors.muted} style={{ marginBottom: 6 }}>
+          MÚSCULO
+        </Text>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 6, paddingBottom: 14 }}
+          contentContainerStyle={{ gap: 6, paddingBottom: 12 }}
           style={{ marginHorizontal: -2 }}
         >
-          <Chip
-            label="Todo"
-            active={filter === "all"}
-            onPress={() => setFilter("all")}
-          />
+          <Chip label="Todos" active={muscles.length === 0} onPress={() => setMuscles([])} />
           {MUSCLE_GROUPS.map((g) => (
             <Chip
               key={g}
               label={MUSCLE_GROUP_LABELS[g]}
-              active={filter === g}
-              onPress={() => setFilter(g as MuscleGroup)}
+              active={muscles.includes(g as MuscleGroup)}
+              onPress={() => setMuscles((cur) => toggleValue(cur, g as MuscleGroup))}
             />
           ))}
         </ScrollView>
+
+        <Text variant="tiny" color={colors.muted} style={{ marginBottom: 6 }}>
+          EQUIPAMIENTO
+        </Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 6, paddingBottom: 12 }}
+          style={{ marginHorizontal: -2 }}
+        >
+          <Chip label="Todos" active={types.length === 0} onPress={() => setTypes([])} />
+          {EXERCISE_TYPES.map((t) => (
+            <Chip
+              key={t}
+              label={EXERCISE_TYPE_LABELS[t]}
+              active={types.includes(t)}
+              onPress={() => setTypes((cur) => toggleValue(cur, t))}
+            />
+          ))}
+        </ScrollView>
+
+        {filtersActive ? (
+          <Row jc="space-between" style={{ paddingBottom: 12 }}>
+            <Text variant="caption" muted>
+              {filtered.length} {filtered.length === 1 ? "ejercicio" : "ejercicios"}
+            </Text>
+            <Pressable onPress={clearFilters} hitSlop={8}>
+              <Text variant="caption" weight="semibold" color={colors.accentEdge}>
+                Limpiar filtros
+              </Text>
+            </Pressable>
+          </Row>
+        ) : null}
       </View>
 
       <ScrollView
@@ -192,11 +258,15 @@ export default function ExercisesScreen() {
           <EmptyState
             icon="search"
             title="Sin resultados"
-            description="No encontramos ejercicios. Intenta con otra búsqueda."
-            actionLabel="Crear ejercicio personalizado"
-            onAction={() => setShowCustom(true)}
+            description={
+              filtersActive
+                ? "No hay ejercicios que coincidan con los filtros actuales. Prueba quitando alguno."
+                : "No encontramos ejercicios. Intenta con otra búsqueda."
+            }
+            actionLabel={filtersActive ? "Limpiar filtros" : "Crear ejercicio personalizado"}
+            onAction={filtersActive ? clearFilters : openCustomForm}
           />
-        ) : showCustom ? null : filter === "all" ? (
+        ) : showCustom ? null : muscles.length !== 1 ? (
           MUSCLE_GROUPS.map((g) =>
             grouped[g] && grouped[g].length > 0 ? (
               <Col key={g} gap={6} style={{ marginBottom: 18 }}>
@@ -248,6 +318,25 @@ export default function ExercisesScreen() {
                   ))}
                 </ScrollView>
               </View>
+              <View>
+                <Text variant="tiny" color={colors.muted} style={{ marginBottom: 6 }}>
+                  EQUIPAMIENTO
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 6 }}
+                >
+                  {EXERCISE_TYPES.map((t) => (
+                    <Chip
+                      key={t}
+                      label={EXERCISE_TYPE_LABELS[t]}
+                      active={newType === t}
+                      onPress={() => setNewType(t)}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
               <Row gap={8}>
                 <Pressable
                   onPress={() => {
@@ -278,7 +367,7 @@ export default function ExercisesScreen() {
                       description: "Ejercicio personalizado",
                       primaryMuscle: newGroup,
                       secondaryMuscles: [],
-                      type: "barbell",
+                      type: newType,
                     });
                     setNewName("");
                     setShowCustom(false);
