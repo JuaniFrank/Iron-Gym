@@ -1,8 +1,18 @@
 diff --git a/web/WorkerChannel.ts b/web/WorkerChannel.ts
-index 7fba380..a04b9df 100644
+index 7fba380..8692ebd 100644
 --- a/web/WorkerChannel.ts
 +++ b/web/WorkerChannel.ts
-@@ -40,7 +40,9 @@ export function sendWorkerResult({
+@@ -14,6 +14,9 @@ const deferredMap = new Map<number, Deferred>();
+ const PENDING = 1;
+ const RESOLVED = 2;
+ 
++/** Max time the main thread waits for a synchronous worker call. */
++const SYNC_OPERATION_TIMEOUT_MS = 30_000;
++
+ let hasWarnedSync = false;
+ 
+ /**
+@@ -40,7 +43,9 @@ export function sendWorkerResult({
      const resultJson = error != null ? serialize({ error }) : serialize({ result });
      const resultBytes = new TextEncoder().encode(resultJson);
      const length = resultBytes.length;
@@ -13,8 +23,41 @@ index 7fba380..a04b9df 100644
      resultArray.set(resultBytes, 4);
      Atomics.store(lock, 0, RESOLVED);
    } else {
+@@ -116,24 +121,21 @@ export function invokeWorkerSync<T extends SQLiteWorkerMessageType & keyof Resul
+     resultBuffer,
+   });
+ 
++  // Wall-clock deadline instead of upstream's iteration count: 1M
++  // `Atomics.pause()` calls last only a few milliseconds, so slow devices (e.g.
++  // iOS OPFS writes inside a large transaction) hit "Sync operation timeout" on
++  // legitimate work.
++  const deadline = Date.now() + SYNC_OPERATION_TIMEOUT_MS;
+   let i = 0;
+   // @ts-expect-error: Remove this when TypeScript supports Atomics.pause
+   const useAtomicsPause = typeof Atomics.pause === 'function';
+   while (Atomics.load(lock, 0) === PENDING) {
+-    ++i;
+-
++    if ((++i & 0x3ff) === 0 && Date.now() > deadline) {
++      throw new Error('Sync operation timeout');
++    }
+     if (useAtomicsPause) {
+-      if (i > 1_000_000) {
+-        throw new Error('Sync operation timeout');
+-      }
+       // @ts-expect-error: Remove this when TypeScript supports Atomics.pause
+       Atomics.pause();
+-    } else {
+-      // NOTE(kudo): Unfortunate for the busy loop,
+-      // because we don't have a way for main thread to yield its execution to other callbacks.
+-      if (i > 1000_000_000) {
+-        throw new Error('Sync operation timeout');
+-      }
+     }
+   }
+ 
 diff --git a/web/worker.ts b/web/worker.ts
-index deaf721..aa603e9 100644
+index deaf721..8633314 100644
 --- a/web/worker.ts
 +++ b/web/worker.ts
 @@ -781,26 +781,31 @@ async function maybeInitAsync(): Promise<{

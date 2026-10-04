@@ -51,3 +51,35 @@ describe("expo-sqlite WorkerChannel length header", () => {
     },
   );
 });
+
+// Upstream's "timeout" counts busy-loop iterations (1M `Atomics.pause()` calls,
+// a few milliseconds), not time. On slow devices (iPhone OPFS writes during a
+// large seed transaction) a legitimate sync call exceeded it and boot failed
+// with "Sync operation timeout". The patch makes it a wall-clock deadline.
+describe("expo-sqlite WorkerChannel sync timeout", () => {
+  it("waits for a worker that answers after 300ms", async () => {
+    const { Worker } = await import("node:worker_threads");
+    const responder = new Worker(
+      `
+      const { parentPort } = require("node:worker_threads");
+      parentPort.on("message", ({ lockBuffer, resultBuffer }) => {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+        const bytes = new TextEncoder().encode(JSON.stringify({ result: { ok: true } }));
+        new DataView(resultBuffer).setUint32(0, bytes.length, true);
+        new Uint8Array(resultBuffer).set(bytes, 4);
+        const lock = new Int32Array(lockBuffer);
+        Atomics.store(lock, 0, 2);
+        Atomics.notify(lock, 0);
+      });
+      `,
+      { eval: true },
+    );
+    await new Promise((r) => responder.once("online", r));
+    try {
+      const worker = { postMessage: (msg: any) => responder.postMessage(msg) };
+      expect(channel.invokeWorkerSync(worker, "exec" as any, {} as any)).toEqual({ ok: true });
+    } finally {
+      await responder.terminate();
+    }
+  });
+});
