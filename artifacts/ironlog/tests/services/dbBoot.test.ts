@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { bootWithRetry, classifyBootError } from "@/services/dbBoot";
+import { bootWithRetry, classifyBootError, describeBootError } from "@/services/dbBoot";
 
 const lockError = () =>
   new Error(
@@ -72,5 +72,41 @@ describe("bootWithRetry", () => {
     const boot = vi.fn().mockRejectedValue(lockError());
     await expect(bootWithRetry(boot, { retryLocked: false, sleep: vi.fn() })).rejects.toBeDefined();
     expect(boot).toHaveBeenCalledTimes(1);
+  });
+});
+
+// drizzle wraps driver errors (`DrizzleError` with `cause`), and a failed
+// transaction whose ROLLBACK also fails replaces the original error with
+// "Failed to run the query 'ROLLBACK'" (SQLite already rolled back on its own,
+// e.g. after an OPFS lock / I/O error mid-transaction).
+const wrapped = (message: string, cause: unknown) => Object.assign(new Error(message), { cause });
+
+describe("boot errors with a cause chain", () => {
+  it("classifies a lock found in the cause chain as locked", () => {
+    const err = wrapped("Failed to run the query 'INSERT ...'", wrapped("outer", lockError()));
+    expect(classifyBootError(err)).toBe("locked");
+  });
+  it("classifies a failed ROLLBACK as an aborted transaction", () => {
+    const err = wrapped(
+      "Failed to run the query 'ROLLBACK'",
+      new Error("cannot rollback - no transaction is active"),
+    );
+    expect(classifyBootError(err)).toBe("aborted");
+  });
+  it("describes the whole cause chain", () => {
+    const err = wrapped(
+      "Failed to run the query 'ROLLBACK'",
+      new Error("cannot rollback - no transaction is active"),
+    );
+    expect(describeBootError(err)).toBe(
+      "Failed to run the query 'ROLLBACK' ← cannot rollback - no transaction is active",
+    );
+  });
+  it("retries an aborted transaction even when lock retries are off", async () => {
+    const aborted = wrapped("Failed to run the query 'ROLLBACK'", new Error("x"));
+    const boot = vi.fn().mockRejectedValueOnce(aborted).mockResolvedValueOnce(undefined);
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    await bootWithRetry(boot, { retryLocked: false, delaysMs: [5], sleep });
+    expect(boot).toHaveBeenCalledTimes(2);
   });
 });
