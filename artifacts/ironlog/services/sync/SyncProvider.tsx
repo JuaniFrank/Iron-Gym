@@ -26,7 +26,7 @@ import { createSyncEngine, type SyncEngine, type SyncStatus } from "./engine";
 import { createFirestoreRemote } from "./firestoreRemote";
 import { startSyncTriggers } from "./triggers";
 
-const IDLE: SyncStatus = { state: "idle" };
+const IDLE: SyncStatus = { state: "idle", log: [] };
 const NOOP_UNSUBSCRIBE = () => undefined;
 
 const SyncContext = createContext<SyncEngine | null>(null);
@@ -90,4 +90,9 @@ export function useSyncStatus(): SyncStatus {
     engine ? engine.subscribe : () => NOOP_UNSUBSCRIBE,
     engine ? engine.getStatus : () => IDLE,
   );
+}
+
+/** The sync engine (for "sync now"); null when sync is not active. */
+export function useSyncEngine(): SyncEngine | null {
+  return useContext(SyncContext);
 }

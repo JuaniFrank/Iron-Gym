@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { SyncProgressEvent } from "@/services/sync/progress";
 import { pullChanges } from "@/services/sync/pull";
 import { pushPending } from "@/services/sync/push";
 import type { PulledChange } from "@/services/sync/remote";
@@ -483,5 +484,59 @@ describe("push -> pull round trip", () => {
       expect(rows(b.sqlite, t)).toEqual(rows(sqlite, t));
     }
     expect(b.sqlite.prepare("SELECT * FROM _outbox").all()).toEqual([]);
+  });
+});
+
+describe("pullChanges: progress", () => {
+  it("reports fetches per table and one apply event per committed batch", async () => {
+    for (let i = 1; i <= 60; i++) {
+      const id = `ex-${String(i).padStart(3, "0")}`;
+      remoteDoc("exercises", id, 2000, exerciseData(id, { updated_at: 2000 }), i);
+    }
+    const events: SyncProgressEvent[] = [];
+
+    const res = await pullChanges(db, remote, UID, {
+      batchSize: 25,
+      yieldToUi: async () => {},
+      onProgress: (e) => events.push(e),
+    });
+
+    expect(res).toEqual({ applied: 60 });
+    const fetches = events.filter((e) => e.phase === "pull-fetch");
+    expect(fetches.length).toBeGreaterThan(1);
+    expect(fetches[0]).toEqual({ phase: "pull-fetch", table: "exercises", fetched: 60 });
+    expect(fetches.find((e) => e.phase === "pull-fetch" && e.table === "routines")).toEqual({
+      phase: "pull-fetch",
+      table: "routines",
+      fetched: 0,
+    });
+    expect(events.filter((e) => e.phase === "pull-apply")).toEqual([
+      { phase: "pull-apply", table: "exercises", done: 25, total: 60, applied: 25 },
+      { phase: "pull-apply", table: "exercises", done: 50, total: 60, applied: 50 },
+      { phase: "pull-apply", table: "exercises", done: 60, total: 60, applied: 60 },
+    ]);
+    // All fetches come before any apply.
+    const firstApply = events.findIndex((e) => e.phase === "pull-apply");
+    expect(events.slice(firstApply).some((e) => e.phase === "pull-fetch")).toBe(false);
+  });
+
+  it("counts rows that lost last-write-wins as done but not applied", async () => {
+    sqlite.exec(
+      `INSERT INTO exercises (id, name, primary_muscle, type, is_preset, updated_at)
+       VALUES ('ex-1', 'Local', 'quads', 'compound', 0, 9000)`,
+    );
+    remoteDoc("exercises", "ex-1", 2000, exerciseData("ex-1", { updated_at: 2000 }), 1);
+    const events: SyncProgressEvent[] = [];
+
+    await pullChanges(db, remote, UID, { onProgress: (e) => events.push(e) });
+
+    expect(events.filter((e) => e.phase === "pull-apply")).toEqual([
+      { phase: "pull-apply", table: "exercises", done: 1, total: 1, applied: 0 },
+    ]);
+  });
+
+  it("is a no-op when onProgress is omitted", async () => {
+    remoteDoc("exercises", "ex-1", 2000, exerciseData("ex-1", { updated_at: 2000 }), 1);
+    expect(await pullChanges(db, remote, UID)).toEqual({ applied: 1 });
   });
 });

@@ -16,8 +16,17 @@ let uid: string | null;
 
 const all = (d: Device, sql: string, ...p: unknown[]) => d.sqlite.prepare(sql).all(...p) as Row[];
 const outboxCount = (d: Device) => all(d, "SELECT * FROM _outbox").length;
-const engineFor = (d: Device, getUid: () => string | null = () => uid) =>
-  createSyncEngine({ db: d.db, remote, getUid });
+const engineFor = (
+  d: Device,
+  getUid: () => string | null = () => uid,
+  extra: { now?: () => number; notifyIntervalMs?: number } = {},
+) => createSyncEngine({ db: d.db, remote, getUid, ...extra });
+
+/** A clock that advances `step` ms on every read. */
+const steppingClock = (step: number) => {
+  let t = 1_000_000;
+  return () => (t += step);
+};
 
 function insertExercise(d: Device, id: string, name = "Mine") {
   d.sqlite
@@ -159,7 +168,10 @@ describe("syncNow", () => {
   it("notifies subscribers of status changes until unsubscribed", async () => {
     const engine = engineFor(a);
     const seen: SyncStatus["state"][] = [];
-    const off = engine.subscribe((s) => seen.push(s.state));
+    // Progress ticks re-notify while syncing; only state changes matter here.
+    const off = engine.subscribe((s) => {
+      if (seen[seen.length - 1] !== s.state) seen.push(s.state);
+    });
 
     await engine.syncNow();
     expect(seen).toEqual(["syncing", "idle"]);
@@ -175,5 +187,150 @@ describe("syncNow", () => {
     });
     const result = await engine.syncNow();
     expect(result.status).toBe("error");
+  });
+});
+
+describe("status: activity, lastRun and log", () => {
+  it("reports activity phases in order while syncing and clears it after", async () => {
+    insertExercise(a, "e1", "FromA");
+    await engineFor(a).syncNow();
+    insertExercise(b, "e2", "FromB");
+    const engine = engineFor(b, undefined, { now: steppingClock(1000) });
+    const phases: string[] = [];
+    engine.subscribe((s) => {
+      const phase = s.activity?.phase;
+      if (phase && phases[phases.length - 1] !== phase) phases.push(phase);
+    });
+
+    await engine.syncNow();
+
+    expect(phases).toEqual(["backfill", "pull-fetch", "pull-apply", "push"]);
+    expect(engine.getStatus().activity).toBeUndefined();
+    expect(engine.getStatus().state).toBe("idle");
+  });
+
+  it("exposes the table and counts of the current activity", async () => {
+    insertExercise(a, "e1");
+    await engineFor(a).syncNow();
+    insertExercise(b, "e2");
+    const engine = engineFor(b, undefined, { now: steppingClock(1000) });
+    const seen: SyncStatus["activity"][] = [];
+    engine.subscribe((s) => s.activity && seen.push(s.activity));
+
+    await engine.syncNow();
+
+    expect(seen).toContainEqual({ phase: "pull-apply", table: "exercises", done: 1, total: 1 });
+    expect(seen).toContainEqual({ phase: "push", done: 1, total: 1 });
+  });
+
+  it("fills lastRun with timing and counts", async () => {
+    insertExercise(a, "e1");
+    await engineFor(a).syncNow();
+    insertExercise(b, "e2");
+    const engine = engineFor(b, undefined, { now: steppingClock(10) });
+
+    await engine.syncNow();
+
+    const run = engine.getStatus().lastRun!;
+    expect(run.pulled).toBe(1);
+    expect(run.pushed).toBeGreaterThanOrEqual(1);
+    expect(run.durationMs).toBeGreaterThan(0);
+    expect(run.startedAt).toBeGreaterThan(1_000_000);
+    expect(run.error).toBeUndefined();
+  });
+
+  it("logs run start, backfill, per-table pull, push and run end (newest first)", async () => {
+    insertExercise(a, "e1");
+    await engineFor(a).syncNow();
+    insertExercise(b, "e2");
+    const engine = engineFor(b, undefined, { now: steppingClock(10) });
+
+    await engine.syncNow();
+
+    const log = engine.getStatus().log;
+    const messages = log.map((e) => e.message);
+    expect(log.every((e) => e.level === "info")).toBe(true);
+    expect(log.map((e) => e.at)).toEqual([...log.map((e) => e.at)].sort((x, y) => y - x));
+    const idx = (re: RegExp) => messages.findIndex((m) => re.test(m));
+    // Newest first: end < push < pull < backfill < start.
+    expect(idx(/terminado/i)).toBe(0);
+    expect(idx(/push/i)).toBeLessThan(idx(/pull exercises/i));
+    expect(idx(/pull exercises/i)).toBeLessThan(idx(/backfill/i));
+    expect(idx(/backfill/i)).toBeLessThan(idx(/iniciado/i));
+    expect(messages.find((m) => /pull exercises/i.test(m))).toMatch(/1 recibidos?, 1 aplicados?/);
+    // Tables without changes are not logged.
+    expect(messages.some((m) => /pull routines/i.test(m))).toBe(false);
+  });
+
+  it("logs the backfill outcomes", async () => {
+    insertExercise(a, "e1");
+    const engine = engineFor(a);
+    await engine.syncNow();
+    expect(engine.getStatus().log.map((e) => e.message).join("\n")).toMatch(
+      /backfill: \d+ encolad/i,
+    );
+
+    await engine.syncNow();
+    expect(engine.getStatus().log.map((e) => e.message)).toContain("Backfill: ya hecho");
+  });
+
+  it("caps the log at 30 entries, newest first", async () => {
+    const engine = engineFor(a, undefined, { now: steppingClock(5) });
+    for (let i = 0; i < 12; i++) await engine.syncNow();
+
+    const log = engine.getStatus().log;
+    expect(log).toHaveLength(30);
+    expect(log[0].message).toMatch(/terminado/i);
+    expect(log.map((e) => e.at)).toEqual([...log.map((e) => e.at)].sort((x, y) => y - x));
+  });
+
+  it("logs the cause chain of a failed run and records it in lastRun", async () => {
+    const boom = new Error("outer", { cause: new Error("inner") });
+    vi.spyOn(remote, "pullSince").mockRejectedValue(boom);
+    const engine = engineFor(a, undefined, { now: steppingClock(10) });
+
+    await engine.syncNow();
+
+    const status = engine.getStatus();
+    const errors = status.log.filter((e) => e.level === "error");
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors[0].message).toContain("outer ← inner");
+    expect(status.lastRun?.error).toBe(boom);
+    expect(status.activity).toBeUndefined();
+  });
+
+  it("logs an account mismatch as an error and ends the run", async () => {
+    const engine = engineFor(a);
+    await engine.syncNow();
+    uid = "u2";
+
+    await engine.syncNow();
+
+    const status = engine.getStatus();
+    expect(status.state).toBe("account_mismatch");
+    expect(status.log.some((e) => e.level === "error" && /cuenta/i.test(e.message))).toBe(true);
+    expect(status.lastRun).toBeDefined();
+    expect(status.activity).toBeUndefined();
+  });
+
+  it("throttles progress notifications but always notifies state changes", async () => {
+    for (let i = 0; i < 60; i++) insertExercise(a, `e${i}`);
+    await engineFor(a).syncNow();
+
+    const count = async (clock: () => number) => {
+      const fresh = createTestDb();
+      const engine = engineFor(fresh, undefined, { now: clock, notifyIntervalMs: 250 });
+      const seen: SyncStatus[] = [];
+      engine.subscribe((s) => seen.push(s));
+      await engine.syncNow();
+      return seen;
+    };
+
+    const frozen = await count(() => 1_000_000);
+    const fast = await count(steppingClock(1000));
+
+    expect(frozen.map((s) => s.state)).toEqual(["syncing", "idle"]);
+    expect(fast.length).toBeGreaterThan(frozen.length + 5);
+    expect(fast[fast.length - 1].state).toBe("idle");
   });
 });

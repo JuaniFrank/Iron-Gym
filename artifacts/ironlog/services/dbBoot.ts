@@ -54,10 +54,14 @@ export function classifyBootError(err: unknown): BootErrorKind {
   return "other";
 }
 
-export function describeBootError(err: unknown): string {
+/** The error messages of the `cause` chain, outermost first, joined with " ← ". */
+export function describeErrorChain(err: unknown, fallback = "Error desconocido"): string {
   const messages = errorChain(err).map(messageOf).filter(Boolean);
-  if (messages.length > 0) return messages.join(" ← ");
-  return "Error desconocido al iniciar la base de datos.";
+  return messages.length > 0 ? messages.join(" ← ") : fallback;
+}
+
+export function describeBootError(err: unknown): string {
+  return describeErrorChain(err, "Error desconocido al iniciar la base de datos.");
 }
 
 /** ~2.4s total with the defaults. */

@@ -16,6 +16,7 @@ import { sql } from "drizzle-orm";
 
 import type { DB } from "@workspace/db";
 
+import type { SyncProgressListener } from "./progress";
 import type { PulledChange, SyncRemote } from "./remote";
 import { SYNC_TABLES, type SyncTable } from "./tables";
 
@@ -185,7 +186,13 @@ export async function pullChanges(
     overlapMs = DEFAULT_OVERLAP_MS,
     batchSize = DEFAULT_BATCH_SIZE,
     yieldToUi = defaultYieldToUi,
-  }: { overlapMs?: number; batchSize?: number; yieldToUi?: () => Promise<void> } = {},
+    onProgress,
+  }: {
+    overlapMs?: number;
+    batchSize?: number;
+    yieldToUi?: () => Promise<void>;
+    onProgress?: SyncProgressListener;
+  } = {},
 ): Promise<PullResult> {
   let applied = 0;
   try {
@@ -194,19 +201,27 @@ export async function pullChanges(
       const since = Math.max(0, readCursor(db, table.name) - overlapMs);
       const { changes } = await remote.pullSince(uid, table.name, since);
       fetched.push({ table, changes });
+      onProgress?.({ phase: "pull-fetch", table: table.name, fetched: changes.length });
     }
 
     // Per table (parent-first), per batch: one short synchronous transaction.
-    const batches: { table: SyncTable; changes: PulledChange[] }[] = [];
+    const batches: { table: SyncTable; changes: PulledChange[]; total: number }[] = [];
     for (const { table, changes } of fetched) {
       const sorted = [...changes].sort((a, b) => a.serverUpdatedAt - b.serverUpdatedAt);
-      for (const part of chunks(sorted, batchSize)) batches.push({ table, changes: part });
+      for (const part of chunks(sorted, batchSize)) {
+        batches.push({ table, changes: part, total: changes.length });
+      }
     }
+
+    // Running per-table progress, reported after each committed batch.
+    let tableName = "";
+    let tableDone = 0;
+    let tableApplied = 0;
 
     let columns: string[] = [];
     let columnsFor = "";
     for (let i = 0; i < batches.length; i++) {
-      const { table, changes } = batches[i];
+      const { table, changes, total } = batches[i];
       if (columnsFor !== table.name) {
         columns = localColumns(db, table.name);
         columnsFor = table.name;
@@ -224,6 +239,21 @@ export async function pullChanges(
         setApplying(tx, false);
       });
       applied += batchApplied;
+
+      if (tableName !== table.name) {
+        tableName = table.name;
+        tableDone = 0;
+        tableApplied = 0;
+      }
+      tableDone += changes.length;
+      tableApplied += batchApplied;
+      onProgress?.({
+        phase: "pull-apply",
+        table: table.name,
+        done: tableDone,
+        total,
+        applied: tableApplied,
+      });
 
       if (i < batches.length - 1) await yieldToUi();
     }

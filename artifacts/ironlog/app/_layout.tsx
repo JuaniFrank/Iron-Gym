@@ -22,6 +22,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { BootErrorScreen, BootLoadingScreen } from "@/components/BootErrorScreen";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { SyncIndicator } from "@/components/SyncIndicator";
 import { EXERCISES } from "@/constants/exercises";
 import { FOOD_DATABASE } from "@/constants/foods";
 import { PRESET_ROUTINES } from "@/constants/presetRoutines";
@@ -249,6 +250,7 @@ export default function RootLayout() {
                     <RouteGuard>
                       <StackNavigator />
                     </RouteGuard>
+                    <SyncIndicator />
                   </SyncProvider>
                 </AuthProvider>
               </ThemeProvider>

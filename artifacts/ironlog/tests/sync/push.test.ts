@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { SyncProgressEvent } from "@/services/sync/progress";
 import { pushPending } from "@/services/sync/push";
 
 import { createTestDb, type TestDb } from "../helpers/db";
@@ -259,5 +260,34 @@ describe("pushPending", () => {
     await pushPending(db, remote, UID, { batchSize: 2, yieldToUi });
 
     expect(yieldToUi).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("pushPending: progress", () => {
+  it("reports one event per round with cumulative counts and the initial total", async () => {
+    for (let i = 0; i < 5; i++) {
+      insertExercise(`ex-${i}`);
+      setQueuedAt("exercises", `ex-${i}`, 100 + i);
+    }
+    const events: SyncProgressEvent[] = [];
+
+    const res = await pushPending(db, remote, UID, {
+      batchSize: 2,
+      yieldToUi: async () => {},
+      onProgress: (e) => events.push(e),
+    });
+
+    expect(res).toEqual({ pushed: 5 });
+    expect(events).toEqual([
+      { phase: "push", done: 2, total: 5, tables: { exercises: 2 } },
+      { phase: "push", done: 4, total: 5, tables: { exercises: 4 } },
+      { phase: "push", done: 5, total: 5, tables: { exercises: 5 } },
+    ]);
+  });
+
+  it("emits nothing for an empty outbox", async () => {
+    const events: SyncProgressEvent[] = [];
+    await pushPending(db, remote, UID, { onProgress: (e) => events.push(e) });
+    expect(events).toEqual([]);
   });
 });

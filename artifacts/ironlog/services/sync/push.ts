@@ -9,6 +9,7 @@ import { sql } from "drizzle-orm";
 
 import type { DB } from "@workspace/db";
 
+import type { SyncProgressListener } from "./progress";
 import type { RemoteChange, SyncRemote } from "./remote";
 import { getSyncTable } from "./tables";
 
@@ -97,9 +98,19 @@ export async function pushPending(
   {
     batchSize = DEFAULT_BATCH_SIZE,
     yieldToUi = defaultYieldToUi,
-  }: { batchSize?: number; yieldToUi?: () => Promise<void> } = {},
+    onProgress,
+  }: {
+    batchSize?: number;
+    yieldToUi?: () => Promise<void>;
+    onProgress?: SyncProgressListener;
+  } = {},
 ): Promise<PushResult> {
   let pushed = 0;
+  // Only queried when someone listens, so the default path does no extra work.
+  const total = onProgress
+    ? (db.all<{ n: number }>(sql`SELECT COUNT(*) AS n FROM _outbox`)[0]?.n ?? 0)
+    : undefined;
+  const perTable: Record<string, number> = {};
   try {
     for (;;) {
       const entries = db.all<OutboxRow>(
@@ -132,6 +143,10 @@ export async function pushPending(
 
       clearEntries(db, [...known, ...unknown]);
       pushed += known.length;
+      if (onProgress) {
+        for (const e of known) perTable[e.table_name] = (perTable[e.table_name] ?? 0) + 1;
+        onProgress({ phase: "push", done: pushed, total, tables: { ...perTable } });
+      }
 
       // A short round was the last one; otherwise let the UI run first.
       if (entries.length >= batchSize) await yieldToUi();
