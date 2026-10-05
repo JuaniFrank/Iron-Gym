@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { pullChanges } from "@/services/sync/pull";
 import { pushPending } from "@/services/sync/push";
@@ -256,7 +256,10 @@ describe("pullChanges: ordering and atomicity", () => {
     expect(all("SELECT id FROM routine_days")).toEqual([{ id: "d1" }]);
   });
 
-  it("rolls everything back (rows and cursors) when a parent never arrives", async () => {
+  it("an orphan child fails alone: committed parent batches and cursors survive", async () => {
+    // Parents sit in earlier batches (parent-first table order), so they commit
+    // before the child batch is attempted. The orphan child batch rolls back
+    // alone and is retried on the next cycle (when its parent has arrived).
     remoteDoc("exercises", "ex-1", 2000, exerciseData("ex-1", { updated_at: 2000 }), 10);
     remoteDoc(
       "routine_days",
@@ -267,11 +270,11 @@ describe("pullChanges: ordering and atomicity", () => {
     );
     const res = await pullChanges(db, remote, UID);
 
-    expect(res.applied).toBe(0);
+    expect(res.applied).toBe(1);
     expect(res.error).toBeDefined();
-    expect(exercise("ex-1")).toBeUndefined();
+    expect(exercise("ex-1")).toBeDefined();
     expect(all("SELECT id FROM routine_days")).toEqual([]);
-    expect(cursor("exercises")).toBeUndefined();
+    expect(cursor("exercises")).toBe("10");
     expect(cursor("routine_days")).toBeUndefined();
     expect(applying()).toBe("0");
     expect(outbox()).toEqual([]);
@@ -329,6 +332,128 @@ describe("pullChanges: cursors", () => {
     };
     await pullChanges(db, remote, UID, { overlapMs: 5000 });
     expect(new Set(calls)).toEqual(new Set([0]));
+  });
+});
+
+describe("pullChanges: batching", () => {
+  const seedExercises = (n: number) => {
+    for (let i = 1; i <= n; i++) {
+      const id = `ex-${String(i).padStart(3, "0")}`;
+      remoteDoc("exercises", id, 2000, exerciseData(id, { updated_at: 2000 }), i);
+    }
+  };
+
+  it("applies each batch in its own transaction and advances the cursor per batch", async () => {
+    seedExercises(60);
+    const begins = vi.spyOn(sqlite, "exec");
+    const seen: (unknown)[] = [];
+    const yieldToUi = vi.fn(async () => {
+      seen.push(cursor("exercises"));
+    });
+
+    const res = await pullChanges(db, remote, UID, { batchSize: 25, yieldToUi });
+
+    expect(res).toEqual({ applied: 60 });
+    expect(begins.mock.calls.filter(([q]) => q === "BEGIN")).toHaveLength(3);
+    expect(yieldToUi).toHaveBeenCalledTimes(2);
+    expect(seen).toEqual(["25", "50"]);
+    expect(cursor("exercises")).toBe("60");
+    expect(all("SELECT id FROM exercises")).toHaveLength(60);
+  });
+
+  it("does not yield when everything fits in one batch", async () => {
+    seedExercises(3);
+    const yieldToUi = vi.fn(async () => {});
+    await pullChanges(db, remote, UID, { batchSize: 25, yieldToUi });
+    expect(yieldToUi).not.toHaveBeenCalled();
+  });
+
+  it("a failing batch keeps earlier batches and their cursor, then the next call resumes", async () => {
+    remoteDoc("routines", "r1", 1, routineData({ updated_at: 1 }), 5);
+    for (let i = 1; i <= 30; i++) {
+      const id = `d${String(i).padStart(2, "0")}`;
+      // d30 (second batch) points at a routine that has not arrived yet.
+      const routine = i === 30 ? "r2" : "r1";
+      remoteDoc(
+        "routine_days",
+        id,
+        1,
+        { id, routine_id: routine, name: id, position: i, updated_at: 1 },
+        100 + i,
+      );
+    }
+
+    const first = await pullChanges(db, remote, UID, {
+      batchSize: 25,
+      overlapMs: 0,
+      yieldToUi: async () => {},
+    });
+
+    expect(first.error).toBeDefined();
+    expect(first.applied).toBe(26); // routine r1 + the 25 days of batch 1
+    expect(all("SELECT id FROM routine_days")).toHaveLength(25);
+    expect(cursor("routines")).toBe("5");
+    expect(cursor("routine_days")).toBe("125");
+    expect(applying()).toBe("0");
+
+    remoteDoc("routines", "r2", 1, routineData({ id: "r2", updated_at: 1 }), 200);
+    const second = await pullChanges(db, remote, UID, {
+      batchSize: 25,
+      overlapMs: 0,
+      yieldToUi: async () => {},
+    });
+
+    expect(second.error).toBeUndefined();
+    expect(all("SELECT id FROM routine_days")).toHaveLength(30);
+    expect(cursor("routine_days")).toBe("130");
+  });
+
+  it("orders each table's changes by serverUpdatedAt across batches", async () => {
+    // Insertion order is the reverse of server order.
+    for (let i = 4; i >= 1; i--) {
+      remoteDoc("exercises", `ex-${i}`, 2000, exerciseData(`ex-${i}`, { updated_at: 2000 }), i);
+    }
+    const seen: unknown[] = [];
+    await pullChanges(db, remote, UID, {
+      batchSize: 2,
+      yieldToUi: async () => {
+        seen.push(cursor("exercises"));
+      },
+    });
+    expect(seen).toEqual(["2"]);
+    expect(cursor("exercises")).toBe("4");
+  });
+});
+
+describe("pullChanges: round trips per batch", () => {
+  it("reads local rows and outbox entries once per batch, not once per row", async () => {
+    for (let i = 1; i <= 25; i++) {
+      insertExercise(`ex-${i}`, 1000); // also enqueues a stale outbox entry
+      remoteDoc("exercises", `ex-${i}`, 2000, exerciseData(`ex-${i}`, { name: "R", updated_at: 2000 }), i);
+    }
+    const prepared: string[] = [];
+    const orig = sqlite.prepare.bind(sqlite);
+    vi.spyOn(sqlite, "prepare").mockImplementation(((q: string) => {
+      prepared.push(q);
+      return orig(q);
+    }) as typeof sqlite.prepare);
+
+    const res = await pullChanges(db, remote, UID, { batchSize: 25 });
+
+    expect(res).toEqual({ applied: 25 });
+    const count = (re: RegExp) => prepared.filter((q) => re.test(q)).length;
+    expect(count(/^\s*select[^]*from "exercises"/i)).toBe(1);
+    expect(count(/^\s*select[^]*from _outbox/i)).toBe(1);
+    expect(count(/^\s*delete from _outbox/i)).toBe(1);
+    expect(outbox()).toEqual([]);
+  });
+
+  it("handles batches larger than the bound-parameter chunk size", async () => {
+    for (let i = 1; i <= 600; i++) {
+      remoteDoc("exercises", `e${i}`, 2000, exerciseData(`e${i}`, { updated_at: 2000 }), i);
+    }
+    const res = await pullChanges(db, remote, UID, { batchSize: 600 });
+    expect(res).toEqual({ applied: 600 });
   });
 });
 

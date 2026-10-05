@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { pushPending } from "@/services/sync/push";
 
@@ -225,5 +225,39 @@ describe("pushPending", () => {
     // The poisoned entry is discarded so it cannot wedge the queue.
     expect(outbox()).toEqual([]);
     expect(sqlite.prepare("SELECT count(*) AS n FROM exercises").get()).toEqual({ n: 1 });
+  });
+
+  it("reads the rows of a round with one query per table", async () => {
+    for (let i = 0; i < 5; i++) insertExercise(`ex-${i}`);
+    const prepared: string[] = [];
+    const orig = sqlite.prepare.bind(sqlite);
+    vi.spyOn(sqlite, "prepare").mockImplementation(((q: string) => {
+      prepared.push(q);
+      return orig(q);
+    }) as typeof sqlite.prepare);
+
+    const res = await pushPending(db, remote, UID, { batchSize: 5, yieldToUi: async () => {} });
+
+    expect(res).toEqual({ pushed: 5 });
+    expect(prepared.filter((q) => /^\s*select \*\s+from "exercises"/i.test(q))).toHaveLength(1);
+    expect(remote.pushCalls[0].changes.map((c) => c.rowId).sort()).toEqual([
+      "ex-0",
+      "ex-1",
+      "ex-2",
+      "ex-3",
+      "ex-4",
+    ]);
+  });
+
+  it("yields to the UI between rounds but not after the last", async () => {
+    for (let i = 0; i < 5; i++) {
+      insertExercise(`ex-${i}`);
+      setQueuedAt("exercises", `ex-${i}`, 100 + i);
+    }
+    const yieldToUi = vi.fn(async () => {});
+
+    await pushPending(db, remote, UID, { batchSize: 2, yieldToUi });
+
+    expect(yieldToUi).toHaveBeenCalledTimes(2);
   });
 });

@@ -22,23 +22,39 @@ type OutboxRow = {
 };
 
 const DEFAULT_BATCH_SIZE = 400;
+const MAX_PARAMS = 500;
+
+/** Let the event loop (taps, paint) run between rounds. */
+const defaultYieldToUi = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 /** Quote a registry-vetted identifier (never call with outbox-supplied text). */
 const ident = (name: string) => sql.raw(`"${name}"`);
 
-function readRow(
+/** Read the rows of one table for a round with a single query, keyed by text pk. */
+function readRows(
   db: DB,
   table: string,
   pk: string,
-  rowId: string,
-): Record<string, unknown> | undefined {
-  const rows = db.all<Record<string, unknown>>(
-    sql`SELECT * FROM ${ident(table)} WHERE CAST(${ident(pk)} AS TEXT) = ${rowId} LIMIT 1`,
-  );
-  return rows[0];
+  rowIds: string[],
+): Map<string, Record<string, unknown>> {
+  const out = new Map<string, Record<string, unknown>>();
+  for (let i = 0; i < rowIds.length; i += MAX_PARAMS) {
+    const ids = sql.join(
+      rowIds.slice(i, i + MAX_PARAMS).map((id) => sql`${id}`),
+      sql`, `,
+    );
+    const rows = db.all<Record<string, unknown>>(
+      sql`SELECT * FROM ${ident(table)} WHERE CAST(${ident(pk)} AS TEXT) IN (${ids})`,
+    );
+    for (const row of rows) out.set(String(row[pk]), row);
+  }
+  return out;
 }
 
-function toChange(db: DB, entry: OutboxRow): RemoteChange | null {
+function toChange(
+  entry: OutboxRow,
+  rows: Map<string, Map<string, Record<string, unknown>>>,
+): RemoteChange | null {
   const table = getSyncTable(entry.table_name);
   if (!table) return null;
   const tombstone: RemoteChange = {
@@ -49,7 +65,7 @@ function toChange(db: DB, entry: OutboxRow): RemoteChange | null {
     data: null,
   };
   if (entry.op === "delete") return tombstone;
-  const row = readRow(db, table.name, table.pk, entry.row_id);
+  const row = rows.get(table.name)?.get(entry.row_id);
   if (!row) return tombstone;
   return {
     table: table.name,
@@ -78,7 +94,10 @@ export async function pushPending(
   db: DB,
   remote: SyncRemote,
   uid: string,
-  { batchSize = DEFAULT_BATCH_SIZE }: { batchSize?: number } = {},
+  {
+    batchSize = DEFAULT_BATCH_SIZE,
+    yieldToUi = defaultYieldToUi,
+  }: { batchSize?: number; yieldToUi?: () => Promise<void> } = {},
 ): Promise<PushResult> {
   let pushed = 0;
   try {
@@ -94,11 +113,28 @@ export async function pushPending(
       const known = entries.filter((e) => getSyncTable(e.table_name));
       const unknown = entries.filter((e) => !getSyncTable(e.table_name));
 
-      const changes = known.map((e) => toChange(db, e) as RemoteChange);
+      // One read per table for the whole round (not one per entry).
+      const rows = new Map<string, Map<string, Record<string, unknown>>>();
+      for (const e of known) {
+        if (e.op !== "upsert") continue;
+        const t = getSyncTable(e.table_name)!;
+        const ids = rows.get(t.name) ?? new Map();
+        rows.set(t.name, ids);
+        ids.set(e.row_id, undefined);
+      }
+      for (const [name, wanted] of rows) {
+        const t = getSyncTable(name)!;
+        rows.set(name, readRows(db, t.name, t.pk, [...wanted.keys()]));
+      }
+
+      const changes = known.map((e) => toChange(e, rows) as RemoteChange);
       if (changes.length > 0) await remote.push(uid, changes);
 
       clearEntries(db, [...known, ...unknown]);
       pushed += known.length;
+
+      // A short round was the last one; otherwise let the UI run first.
+      if (entries.length >= batchSize) await yieldToUi();
     }
   } catch (error) {
     return { pushed, error };
