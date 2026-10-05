@@ -4,6 +4,7 @@ import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import React, { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Platform, Pressable, ScrollView, View } from "react-native";
 import { showAlert } from "@/utils/alert";
+import { errorDetail } from "@/utils/errorDetail";
 import { uid } from "@/utils/id";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -183,7 +184,10 @@ export default function RoutineDetailScreen() {
       }
     } catch (err) {
       console.error("[ironlog] saveRoutineDraft failed:", err);
-      showAlert("No se pudo guardar", "Ocurrió un error al guardar la rutina. Inténtalo de nuevo.");
+      showAlert(
+        "No se pudo guardar",
+        `Tus cambios siguen en pantalla, puedes volver a intentarlo.\n\nDetalle: ${errorDetail(err)}`,
+      );
     } finally {
       setSaving(false);
     }

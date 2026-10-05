@@ -55,8 +55,13 @@ export function classifyBootError(err: unknown): BootErrorKind {
 }
 
 /** The error messages of the `cause` chain, outermost first, joined with " ← ". */
+/** Non-empty messages of the error and its `cause` chain, outermost first. */
+export function errorMessages(err: unknown): string[] {
+  return errorChain(err).map(messageOf).filter(Boolean);
+}
+
 export function describeErrorChain(err: unknown, fallback = "Error desconocido"): string {
-  const messages = errorChain(err).map(messageOf).filter(Boolean);
+  const messages = errorMessages(err);
   return messages.length > 0 ? messages.join(" ← ") : fallback;
 }
 
