@@ -41,7 +41,7 @@ module.exports = function (api) {
       ],
     ],
     plugins: [
-      // Required by `drizzle-orm/expo-sqlite/migrator`: inlines the contents
+      // Required by the migrations bundle (`lib/db/src/migrator.ts`): inlines the contents
       // of `*.sql` files imported from `lib/db/src/migrations/sqlite/migrations.js`
       // so the bundler can ship them as string literals at runtime.
       ["babel-plugin-inline-import", { extensions: [".sql"] }],

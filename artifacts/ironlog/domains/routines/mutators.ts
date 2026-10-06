@@ -87,8 +87,8 @@ export async function createRoutine(
   const id = uid();
   const dayId = uid();
   const now = new Date();
-  await db.transaction((tx) => {
-    tx.insert(routinesTable).values({
+  await db.transaction(async (tx) => {
+    await tx.insert(routinesTable).values({
       id,
       name: validated.name,
       description: validated.description ?? null,
@@ -97,7 +97,7 @@ export async function createRoutine(
       createdAt: now,
       updatedAt: now,
     }).run();
-    tx.insert(routineDaysTable).values({
+    await tx.insert(routineDaysTable).values({
       id: dayId,
       routineId: id,
       name: "Día 1",
@@ -142,24 +142,24 @@ export async function updateRoutine(
  */
 export async function deleteRoutine(id: string): Promise<void> {
   const now = new Date();
-  await db.transaction((tx) => {
-    tx
+  await db.transaction(async (tx) => {
+    await tx
       .update(routinesTable)
       .set({ deletedAt: now, updatedAt: now })
       .where(eq(routinesTable.id, id)).run();
     // Find all days first so we can soft-delete their exercises.
-    const days = tx
+    const days = await tx
       .select({ id: routineDaysTable.id })
       .from(routineDaysTable)
       .where(eq(routineDaysTable.routineId, id))
       .all();
     if (days.length > 0) {
-      tx
+      await tx
         .update(routineDaysTable)
         .set({ deletedAt: now, updatedAt: now })
         .where(eq(routineDaysTable.routineId, id)).run();
       for (const day of days) {
-        tx
+        await tx
           .update(routineExercisesTable)
           .set({ deletedAt: now, updatedAt: now })
           .where(eq(routineExercisesTable.routineDayId, day.id)).run();
@@ -176,14 +176,14 @@ export async function deleteRoutine(id: string): Promise<void> {
 export async function cloneRoutine(id: string): Promise<Routine | null> {
   const newId = uid();
   const now = new Date();
-  return await db.transaction((tx) => {
-    const original = tx
+  return await db.transaction(async (tx) => {
+    const original = await tx
       .select()
       .from(routinesTable)
       .where(and(eq(routinesTable.id, id), isNull(routinesTable.deletedAt)))
       .get();
     if (!original) return null;
-    const days = tx
+    const days = await tx
       .select()
       .from(routineDaysTable)
       .where(
@@ -199,7 +199,7 @@ export async function cloneRoutine(id: string): Promise<Routine | null> {
     for (const day of days) dayIdMap.set(day.id, uid());
     const dayIds = days.map((d) => d.id);
     const exs = dayIds.length
-      ? tx
+      ? (await tx
           .select()
           .from(routineExercisesTable)
           .where(
@@ -209,14 +209,14 @@ export async function cloneRoutine(id: string): Promise<Routine | null> {
               // Cheaper to filter in JS — typical day count is < 10.
             ),
           )
-          .all()
+          .all())
       : [];
     const exsForRoutine = exs.filter((e) => dayIdMap.has(e.routineDayId));
     // Build exercise-id map (old → new) for superset rewiring.
     const exIdMap = new Map<string, string>();
     for (const ex of exsForRoutine) exIdMap.set(ex.id, uid());
 
-    tx.insert(routinesTable).values({
+    await tx.insert(routinesTable).values({
       id: newId,
       name: `${original.name} (copia)`,
       description: original.description,
@@ -226,7 +226,7 @@ export async function cloneRoutine(id: string): Promise<Routine | null> {
       updatedAt: now,
     }).run();
     for (const day of days) {
-      tx.insert(routineDaysTable).values({
+      await tx.insert(routineDaysTable).values({
         id: dayIdMap.get(day.id)!,
         routineId: newId,
         name: day.name,
@@ -235,7 +235,7 @@ export async function cloneRoutine(id: string): Promise<Routine | null> {
       }).run();
     }
     for (const ex of exsForRoutine) {
-      tx.insert(routineExercisesTable).values({
+      await tx.insert(routineExercisesTable).values({
         id: exIdMap.get(ex.id)!,
         routineDayId: dayIdMap.get(ex.routineDayId)!,
         exerciseId: ex.exerciseId,
@@ -277,14 +277,14 @@ export async function addRoutineDay(
   const validatedName = z.string().min(1).max(200).parse(name);
   const id = uid();
   const now = new Date();
-  await db.transaction((tx) => {
-    const row = tx
+  await db.transaction(async (tx) => {
+    const row = await tx
       .select({ p: max(routineDaysTable.position) })
       .from(routineDaysTable)
       .where(eq(routineDaysTable.routineId, routineId))
       .get();
     const position = (row?.p ?? -1) + 1;
-    tx.insert(routineDaysTable).values({
+    await tx.insert(routineDaysTable).values({
       id,
       routineId,
       name: validatedName,
@@ -316,12 +316,12 @@ export async function deleteRoutineDay(
   dayId: string,
 ): Promise<void> {
   const now = new Date();
-  await db.transaction((tx) => {
-    tx
+  await db.transaction(async (tx) => {
+    await tx
       .update(routineDaysTable)
       .set({ deletedAt: now, updatedAt: now })
       .where(eq(routineDaysTable.id, dayId)).run();
-    tx
+    await tx
       .update(routineExercisesTable)
       .set({ deletedAt: now, updatedAt: now })
       .where(eq(routineExercisesTable.routineDayId, dayId)).run();
@@ -343,8 +343,8 @@ export async function reorderRoutineDays(
 ): Promise<void> {
   if (fromIndex === toIndex) return;
   const now = new Date();
-  await db.transaction((tx) => {
-    const days = tx
+  await db.transaction(async (tx) => {
+    const days = await tx
       .select()
       .from(routineDaysTable)
       .where(
@@ -371,13 +371,13 @@ export async function reorderRoutineDays(
     //   2. Renumber every row to its target index. Order of writes no
     //      longer matters because the source positions are all negative.
     for (let i = 0; i < reordered.length; i += 1) {
-      tx
+      await tx
         .update(routineDaysTable)
         .set({ position: -1000 - i, updatedAt: now })
         .where(eq(routineDaysTable.id, reordered[i].id)).run();
     }
     for (let i = 0; i < reordered.length; i += 1) {
-      tx
+      await tx
         .update(routineDaysTable)
         .set({ position: i, updatedAt: now })
         .where(eq(routineDaysTable.id, reordered[i].id)).run();
@@ -398,14 +398,14 @@ export async function addExerciseToDay(
   z.string().min(1).parse(exerciseId);
   const id = uid();
   const now = new Date();
-  await db.transaction((tx) => {
-    const row = tx
+  await db.transaction(async (tx) => {
+    const row = await tx
       .select({ p: max(routineExercisesTable.position) })
       .from(routineExercisesTable)
       .where(eq(routineExercisesTable.routineDayId, dayId))
       .get();
     const position = (row?.p ?? -1) + 1;
-    tx.insert(routineExercisesTable).values({
+    await tx.insert(routineExercisesTable).values({
       id,
       routineDayId: dayId,
       exerciseId,
@@ -469,13 +469,13 @@ export async function removeRoutineExercise(
   exerciseRowId: string,
 ): Promise<void> {
   const now = new Date();
-  await db.transaction((tx) => {
-    tx
+  await db.transaction(async (tx) => {
+    await tx
       .update(routineExercisesTable)
       .set({ deletedAt: now, updatedAt: now })
       .where(eq(routineExercisesTable.id, exerciseRowId)).run();
     // Clear partner's supersetWith if it was pointing here.
-    tx
+    await tx
       .update(routineExercisesTable)
       .set({ supersetWith: null, updatedAt: now })
       .where(eq(routineExercisesTable.supersetWith, exerciseRowId)).run();
@@ -498,31 +498,31 @@ export async function toggleSuperset(
   withId: string | null,
 ): Promise<void> {
   const now = new Date();
-  await db.transaction((tx) => {
+  await db.transaction(async (tx) => {
     if (withId == null) {
       // Find the previously-linked partner (if any) and clear its link too.
-      const current = tx
+      const current = await tx
         .select({ supersetWith: routineExercisesTable.supersetWith })
         .from(routineExercisesTable)
         .where(eq(routineExercisesTable.id, exerciseRowId))
         .get();
-      tx
+      await tx
         .update(routineExercisesTable)
         .set({ supersetWith: null, updatedAt: now })
         .where(eq(routineExercisesTable.id, exerciseRowId)).run();
       if (current?.supersetWith) {
-        tx
+        await tx
           .update(routineExercisesTable)
           .set({ supersetWith: null, updatedAt: now })
           .where(eq(routineExercisesTable.id, current.supersetWith)).run();
       }
       return;
     }
-    tx
+    await tx
       .update(routineExercisesTable)
       .set({ supersetWith: withId, updatedAt: now })
       .where(eq(routineExercisesTable.id, exerciseRowId)).run();
-    tx
+    await tx
       .update(routineExercisesTable)
       .set({ supersetWith: exerciseRowId, updatedAt: now })
       .where(eq(routineExercisesTable.id, withId)).run();
@@ -565,7 +565,8 @@ function exerciseFieldsChanged(a: ExerciseDraft, b: ExerciseDraft): boolean {
  * unique negative position (below every position currently in the DB).
  *
  * Throws (writing nothing) when the draft is invalid. The transaction
- * callback MUST stay synchronous (cf. tests/atomicity.test.ts).
+ * callback awaits every statement in order (never fire-and-forget), so a
+ * throw rolls the whole save back (cf. tests/atomicity.test.ts).
  */
 export async function saveRoutineDraft(
   draft: RoutineDraft,
@@ -580,9 +581,9 @@ export async function saveRoutineDraft(
   const goal = draft.goal ?? null;
   const now = new Date();
 
-  db.transaction((tx) => {
+  await db.transaction(async (tx) => {
     if (original === null) {
-      tx.insert(routinesTable).values({
+      await tx.insert(routinesTable).values({
         id: draft.id,
         name,
         description,
@@ -591,16 +592,16 @@ export async function saveRoutineDraft(
         createdAt: now,
         updatedAt: now,
       }).run();
-      draft.days.forEach((day, dayIndex) => {
-        tx.insert(routineDaysTable).values({
+      for (const [dayIndex, day] of draft.days.entries()) {
+        await tx.insert(routineDaysTable).values({
           id: day.id,
           routineId: draft.id,
           name: day.name.trim(),
           position: dayIndex,
           updatedAt: now,
         }).run();
-        day.exercises.forEach((ex, exIndex) => {
-          tx.insert(routineExercisesTable).values({
+        for (const [exIndex, ex] of day.exercises.entries()) {
+          await tx.insert(routineExercisesTable).values({
             id: ex.id,
             routineDayId: day.id,
             exerciseId: ex.exerciseId,
@@ -613,25 +614,25 @@ export async function saveRoutineDraft(
             notes: ex.notes ?? null,
             updatedAt: now,
           }).run();
-        });
-      });
+        }
+      }
       return;
     }
 
     // --- Edit: gather current DB state (including soft-deleted rows, which
     // still hold their UNIQUE position slots) -------------------------------
-    const dbDays = tx
+    const dbDays = await tx
       .select()
       .from(routineDaysTable)
       .where(eq(routineDaysTable.routineId, draft.id))
       .all();
     const dbDayIds = dbDays.map((d) => d.id);
     const dbExercises: ExerciseRow[] = dbDayIds.length
-      ? tx
+      ? (await tx
           .select()
           .from(routineExercisesTable)
           .where(inArray(routineExercisesTable.routineDayId, dbDayIds))
-          .all()
+          .all())
       : [];
     const dbDayById = new Map(dbDays.map((d) => [d.id, d]));
     const dbExById = new Map(dbExercises.map((e) => [e.id, e]));
@@ -662,7 +663,7 @@ export async function saveRoutineDraft(
       description !== (original.description ?? null) ||
       goal !== (original.goal ?? null);
     if (routineChanged) {
-      tx
+      await tx
         .update(routinesTable)
         .set({ name, description, goal, updatedAt: now })
         .where(eq(routinesTable.id, draft.id)).run();
@@ -728,7 +729,7 @@ export async function saveRoutineDraft(
       if (!nowDeleted && !wasDeleted) continue;
       const collides = dayTargets.has(row.position);
       if (!nowDeleted && !collides) continue;
-      tx
+      await tx
         .update(routineDaysTable)
         .set({
           ...(nowDeleted ? { deletedAt: now } : {}),
@@ -743,7 +744,7 @@ export async function saveRoutineDraft(
       if (!nowDeleted && !wasDeleted) continue;
       const collides = exTargets.get(row.routineDayId)?.has(row.position) ?? false;
       if (!nowDeleted && !collides) continue;
-      tx
+      await tx
         .update(routineExercisesTable)
         .set({
           ...(nowDeleted ? { deletedAt: now } : {}),
@@ -756,7 +757,7 @@ export async function saveRoutineDraft(
     // --- Park moving live rows, then write final state ---------------------
     for (const u of dayUpdates) {
       if (dbDayById.get(u.id)!.position !== u.position) {
-        tx
+        await tx
           .update(routineDaysTable)
           .set({ position: takeNegative() })
           .where(eq(routineDaysTable.id, u.id)).run();
@@ -764,7 +765,7 @@ export async function saveRoutineDraft(
     }
     for (const u of exUpdates) {
       if (u.parked) {
-        tx
+        await tx
           .update(routineExercisesTable)
           .set({ position: takeNegative() })
           .where(eq(routineExercisesTable.id, u.id)).run();
@@ -772,7 +773,7 @@ export async function saveRoutineDraft(
     }
 
     for (const d of newDays) {
-      tx.insert(routineDaysTable).values({
+      await tx.insert(routineDaysTable).values({
         id: d.id,
         routineId: draft.id,
         name: d.name,
@@ -781,13 +782,13 @@ export async function saveRoutineDraft(
       }).run();
     }
     for (const u of dayUpdates) {
-      tx
+      await tx
         .update(routineDaysTable)
         .set({ name: u.name, position: u.position, updatedAt: now })
         .where(eq(routineDaysTable.id, u.id)).run();
     }
     for (const n of newExercises) {
-      tx.insert(routineExercisesTable).values({
+      await tx.insert(routineExercisesTable).values({
         id: n.ex.id,
         routineDayId: n.dayId,
         exerciseId: n.ex.exerciseId,
@@ -802,7 +803,7 @@ export async function saveRoutineDraft(
       }).run();
     }
     for (const u of exUpdates) {
-      tx
+      await tx
         .update(routineExercisesTable)
         .set({
           routineDayId: u.dayId,

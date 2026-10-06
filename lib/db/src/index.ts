@@ -5,7 +5,10 @@
 // server-side callers — so Metro/Expo never follows `pg` (Node-only,
 // requires `events` built-in not available in React Native).
 
+export * from "./client/asyncDb";
+export * from "./client/expoAsyncClient";
 export * from "./client/sqlite";
 export * from "./migrations";
+export * from "./migrator";
 export * from "./seed";
 export * as schema from "./schema";

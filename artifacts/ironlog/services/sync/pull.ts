@@ -1,10 +1,9 @@
 // Pull engine: fetches remote changes per table and applies them locally.
 //
 // All tables are fetched first (async), then applied per table in registry
-// (parent-first) order, in batches. Each batch is ONE short synchronous
-// transaction (see tests/atomicity.test.ts: drizzle's expo session commits when
-// the callback returns, so it must not be async) that also advances that
-// table's cursor, and the UI gets a turn between batches. A failing batch (e.g.
+// (parent-first) order, in batches. Each batch is ONE short transaction (every
+// statement awaited inside the callback, so a throw rolls the batch back) that
+// also advances that table's cursor, and the UI gets a turn between batches. A failing batch (e.g.
 // a deferred foreign-key violation at commit: a child whose parent has not
 // arrived yet) rolls back alone; earlier batches and cursors stay, applying
 // stops, and the next cycle resumes from the last committed cursor.
@@ -18,7 +17,11 @@ import type { DB } from "@workspace/db";
 
 import type { SyncProgressListener } from "./progress";
 import type { PulledChange, SyncRemote } from "./remote";
+import { tableColumns } from "./columns";
 import { SYNC_TABLES, type SyncTable } from "./tables";
+
+/** Anything that can run raw SQL: the root db or a transaction handle. */
+type Executor = Pick<DB, "all" | "run">;
 
 export type PullResult = { applied: number; error?: unknown };
 
@@ -33,28 +36,22 @@ const ident = (name: string) => sql.raw(`"${name}"`);
 
 const cursorKey = (table: string) => `pull_cursor:${table}`;
 
-function readCursor(db: DB, table: string): number {
-  const rows = db.all<{ value: string }>(
+async function readCursor(db: Executor, table: string): Promise<number> {
+  const rows = await db.all<[string]>(
     sql`SELECT value FROM _sync_state WHERE key = ${cursorKey(table)}`,
   );
-  return rows.length > 0 ? Number(rows[0].value) || 0 : 0;
+  return rows.length > 0 ? Number(rows[0][0]) || 0 : 0;
 }
 
-function writeCursor(db: DB, table: string, value: number): void {
-  db.run(
+async function writeCursor(db: Executor, table: string, value: number): Promise<void> {
+  await db.run(
     sql`INSERT INTO _sync_state (key, value) VALUES (${cursorKey(table)}, ${String(value)})
         ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
   );
 }
 
-function setApplying(db: DB, on: boolean): void {
-  db.run(sql`UPDATE _sync_state SET value = ${on ? "1" : "0"} WHERE key = 'applying'`);
-}
-
-function localColumns(db: DB, table: string): string[] {
-  return db
-    .all<{ name: string }>(sql`SELECT name FROM pragma_table_info(${table})`)
-    .map((c) => c.name);
+async function setApplying(db: Executor, on: boolean): Promise<void> {
+  await db.run(sql`UPDATE _sync_state SET value = ${on ? "1" : "0"} WHERE key = 'applying'`);
 }
 
 /** Max bound params per statement (SQLite's default limit is 999 on older builds). */
@@ -70,38 +67,46 @@ const inList = (values: readonly string[]) =>
   sql.join(values.map((v) => sql`${v}`), sql`, `);
 
 /** Local `updated_at` (0 when NULL) for the rows that exist, keyed by text pk. */
-function localUpdatedAtMap(db: DB, t: SyncTable, rowIds: string[]): Map<string, number> {
+async function localUpdatedAtMap(
+  db: Executor,
+  t: SyncTable,
+  rowIds: string[],
+): Promise<Map<string, number>> {
   const out = new Map<string, number>();
   for (const ids of chunks(rowIds)) {
-    const rows = db.all<{ id: string; updated_at: number | null }>(
+    const rows = await db.all<[string, number | null]>(
       sql`SELECT CAST(${ident(t.pk)} AS TEXT) AS id, updated_at FROM ${ident(t.name)}
           WHERE CAST(${ident(t.pk)} AS TEXT) IN (${inList(ids)})`,
     );
-    for (const r of rows) out.set(r.id, Number(r.updated_at ?? 0));
+    for (const [id, updatedAt] of rows) out.set(id, Number(updatedAt ?? 0));
   }
   return out;
 }
 
 /** `queued_at` of each pending local delete among the rows, keyed by row id. */
-function pendingDeleteMap(db: DB, table: string, rowIds: string[]): Map<string, number> {
+async function pendingDeleteMap(
+  db: Executor,
+  table: string,
+  rowIds: string[],
+): Promise<Map<string, number>> {
   const out = new Map<string, number>();
   for (const ids of chunks(rowIds, CHUNK - 2)) {
-    const rows = db.all<{ row_id: string; queued_at: number }>(
+    const rows = await db.all<[string, number]>(
       sql`SELECT row_id, queued_at FROM _outbox
           WHERE table_name = ${table} AND op = 'delete' AND row_id IN (${inList(ids)})`,
     );
-    for (const r of rows) out.set(r.row_id, Number(r.queued_at));
+    for (const [rowId, queuedAt] of rows) out.set(rowId, Number(queuedAt));
   }
   return out;
 }
 
 /** Upsert in place: REPLACE would delete the row and cascade-delete children. */
-function upsertRow(
-  db: DB,
+async function upsertRow(
+  db: Executor,
   t: SyncTable,
   columns: string[],
   data: Record<string, unknown>,
-): boolean {
+): Promise<boolean> {
   const cols = columns.filter((c) => c in data);
   if (!cols.includes(t.pk)) return false;
   const colList = sql.join(cols.map(ident), sql`, `);
@@ -113,7 +118,7 @@ function upsertRow(
   const onConflict = cols.length > 1
     ? sql`DO UPDATE SET ${sets}`
     : sql`DO NOTHING`;
-  db.run(
+  await db.run(
     sql`INSERT INTO ${ident(t.name)} (${colList}) VALUES (${values})
         ON CONFLICT (${ident(t.pk)}) ${onConflict}`,
   );
@@ -121,14 +126,14 @@ function upsertRow(
 }
 
 /** @returns whether the change was applied (remote won). */
-function applyChange(
-  db: DB,
+async function applyChange(
+  db: Executor,
   t: SyncTable,
   columns: string[],
   change: PulledChange,
   local: number | undefined,
   pendingDeleteAt: number,
-): boolean {
+): Promise<boolean> {
   if (local !== undefined && local > change.updatedAt) return false;
   // A pending local delete is a tombstone stamped with its `queued_at`; if it
   // is newer than the remote doc, applying the doc would resurrect the row.
@@ -136,10 +141,10 @@ function applyChange(
 
   if (change.deleted || change.data === null) {
     if (local === undefined) return false;
-    db.run(
+    await db.run(
       sql`DELETE FROM ${ident(t.name)} WHERE CAST(${ident(t.pk)} AS TEXT) = ${change.rowId}`,
     );
-  } else if (!upsertRow(db, t, columns, change.data)) {
+  } else if (!(await upsertRow(db, t, columns, change.data))) {
     return false;
   }
   return true;
@@ -151,27 +156,27 @@ function applyChange(
  * stale outbox entries of every row where remote won.
  * @returns the number of rows applied.
  */
-function applyBatch(
-  db: DB,
+async function applyBatch(
+  db: Executor,
   t: SyncTable,
   columns: string[],
   batch: PulledChange[],
-): number {
+): Promise<number> {
   const rowIds = [...new Set(batch.map((c) => c.rowId))];
-  const locals = localUpdatedAtMap(db, t, rowIds);
-  const pendingDeletes = pendingDeleteMap(db, t.name, rowIds);
+  const locals = await localUpdatedAtMap(db, t, rowIds);
+  const pendingDeletes = await pendingDeleteMap(db, t.name, rowIds);
 
   const won: string[] = [];
   for (const change of batch) {
     const local = locals.get(change.rowId);
-    if (applyChange(db, t, columns, change, local, pendingDeletes.get(change.rowId) ?? -1)) {
+    if (await applyChange(db, t, columns, change, local, pendingDeletes.get(change.rowId) ?? -1)) {
       won.push(change.rowId);
     }
   }
 
   // Remote won: a pending local entry would echo the stale value back.
   for (const ids of chunks(won, CHUNK - 1)) {
-    db.run(
+    await db.run(
       sql`DELETE FROM _outbox WHERE table_name = ${t.name} AND row_id IN (${inList(ids)})`,
     );
   }
@@ -198,13 +203,13 @@ export async function pullChanges(
   try {
     const fetched: { table: SyncTable; changes: PulledChange[] }[] = [];
     for (const table of SYNC_TABLES) {
-      const since = Math.max(0, readCursor(db, table.name) - overlapMs);
+      const since = Math.max(0, (await readCursor(db, table.name)) - overlapMs);
       const { changes } = await remote.pullSince(uid, table.name, since);
       fetched.push({ table, changes });
       onProgress?.({ phase: "pull-fetch", table: table.name, fetched: changes.length });
     }
 
-    // Per table (parent-first), per batch: one short synchronous transaction.
+    // Per table (parent-first), per batch: one short transaction.
     const batches: { table: SyncTable; changes: PulledChange[]; total: number }[] = [];
     for (const { table, changes } of fetched) {
       const sorted = [...changes].sort((a, b) => a.serverUpdatedAt - b.serverUpdatedAt);
@@ -223,20 +228,19 @@ export async function pullChanges(
     for (let i = 0; i < batches.length; i++) {
       const { table, changes, total } = batches[i];
       if (columnsFor !== table.name) {
-        columns = localColumns(db, table.name);
+        columns = await tableColumns(db, table.name);
         columnsFor = table.name;
       }
 
-      // Synchronous callback on purpose: see tests/atomicity.test.ts.
       let batchApplied = 0;
-      db.transaction((tx) => {
-        tx.run(sql`PRAGMA defer_foreign_keys = ON`);
-        setApplying(tx, true);
-        batchApplied = applyBatch(tx, table, columns, changes);
-        const before = readCursor(tx, table.name);
+      await db.transaction(async (tx) => {
+        await tx.run(sql`PRAGMA defer_foreign_keys = ON`);
+        await setApplying(tx, true);
+        batchApplied = await applyBatch(tx, table, columns, changes);
+        const before = await readCursor(tx, table.name);
         const max = Math.max(before, ...changes.map((c) => c.serverUpdatedAt));
-        if (max > before) writeCursor(tx, table.name, max);
-        setApplying(tx, false);
+        if (max > before) await writeCursor(tx, table.name, max);
+        await setApplying(tx, false);
       });
       applied += batchApplied;
 

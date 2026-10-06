@@ -1,14 +1,16 @@
 import { createSqliteDb, type DB } from "@workspace/db";
+import { Platform } from "react-native";
+
+import { enablePersistentJournal } from "./webJournal";
 
 /**
  * Process-wide IronLog SQLite handle, exposed as a Proxy.
  *
- * `createSqliteDb()` is async because on web the SQLite worker needs to be
- * warmed up via `openDatabaseAsync` before any sync ops will succeed (see
- * `lib/db/src/client/sqlite.ts`). All existing call sites import `db`
+ * `createSqliteDb()` is async (async open + async queries on every platform,
+ * see `lib/db/src/client/sqlite.ts`). All existing call sites import `db`
  * eagerly, so the Proxy delegates every operation to the real handle once
  * `initDb()` resolves — and throws a clear error if anyone touches it
- * before that. Native is unaffected: the async open completes immediately.
+ * before that.
  *
  * The schema migrations and seed bootstrap run AFTER `initDb()` resolves,
  * from `bootDatabase()` in `app/_layout.tsx`. Never query `db` outside the
@@ -19,7 +21,12 @@ let _instance: DB | null = null;
 
 export async function initDb(): Promise<void> {
   if (_instance) return;
-  _instance = await createSqliteDb();
+  _instance = await createSqliteDb("ironlog.db", {
+    // Async, so it runs while the main thread is free (see webJournal.ts).
+    onOpen: async (sqlite) => {
+      if (Platform.OS === "web") await enablePersistentJournal(sqlite);
+    },
+  });
 }
 
 export const db: DB = new Proxy({} as DB, {

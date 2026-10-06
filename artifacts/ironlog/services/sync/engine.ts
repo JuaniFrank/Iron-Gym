@@ -132,7 +132,7 @@ export function createSyncEngine({
       log("info", "Sync iniciado");
       setStatus({ ...current, state: "syncing", activity: { phase: "backfill" } });
 
-      const backfill = backfillIfNeeded(db, uid);
+      const backfill = await backfillIfNeeded(db, uid);
       if (backfill.status === "account_mismatch") {
         log("error", "Cuenta distinta: este dispositivo ya se sincronizó con otra cuenta");
         finishRun(startedAt, 0, 0);

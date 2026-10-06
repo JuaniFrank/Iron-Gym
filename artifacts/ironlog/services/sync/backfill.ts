@@ -33,15 +33,14 @@ const EXCLUDE: Readonly<Record<string, string>> = {
   routine_exercises: `routine_day_id NOT IN (${PRESET_DAY_IDS})`,
 };
 
-/** Synchronous callback on purpose: see tests/atomicity.test.ts. */
-export function backfillIfNeeded(db: DB, uid: string): BackfillResult {
-  return db.transaction((tx) => {
-    const rows = tx.all<{ value: string }>(
+export async function backfillIfNeeded(db: DB, uid: string): Promise<BackfillResult> {
+  return db.transaction(async (tx) => {
+    const rows = await tx.all<[string]>(
       sql`SELECT value FROM _sync_state WHERE key = ${KEY}`,
     );
     if (rows.length > 0) {
       return {
-        status: rows[0].value === uid ? "already_done" : "account_mismatch",
+        status: rows[0][0] === uid ? "already_done" : "account_mismatch",
         enqueued: 0,
       } as const;
     }
@@ -52,15 +51,17 @@ export function backfillIfNeeded(db: DB, uid: string): BackfillResult {
       // `WHERE` is always present: SQLite cannot parse `SELECT ... ON CONFLICT`
       // without it.
       const where = sql.raw(` WHERE ${EXCLUDE[t.name] ?? "1"}`);
-      const res = tx.run(
+      await tx.run(
         sql`INSERT INTO _outbox (table_name, row_id, op, queued_at)
             SELECT ${t.name}, CAST(${ident(t.pk)} AS TEXT), 'upsert', ${now}
             FROM ${ident(t.name)}${where}
             ON CONFLICT (table_name, row_id) DO NOTHING`,
-      ) as unknown as { changes?: number };
-      enqueued += res.changes ?? 0;
+      );
+      // The async client reports no row counts, so read them back.
+      const [changed] = await tx.all<[number]>(sql`SELECT changes()`);
+      enqueued += changed?.[0] ?? 0;
     }
-    tx.run(sql`INSERT INTO _sync_state (key, value) VALUES (${KEY}, ${uid})`);
+    await tx.run(sql`INSERT INTO _sync_state (key, value) VALUES (${KEY}, ${uid})`);
     return { status: "backfilled", enqueued } as const;
   });
 }

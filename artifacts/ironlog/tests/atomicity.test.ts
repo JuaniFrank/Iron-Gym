@@ -1,10 +1,9 @@
 // Transaction atomicity (ironlog-web-compat T4 / C1).
 //
-// drizzle's expo-sqlite session is synchronous: it commits as soon as the
-// transaction callback RETURNS. An `async` callback therefore commits at its
-// first `await`, and later statements run outside the transaction with no
-// rollback. The test DB helper reproduces that lifecycle exactly, so these
-// tests fail if any mutator regresses to an async transaction callback.
+// `db.transaction` (createAsyncDb) runs BEGIN, awaits the callback, then
+// COMMITs (ROLLBACK if it throws). A statement that is not awaited inside the
+// callback would run after the commit, outside the transaction, so these
+// tests fail if any mutator forgets an `await` or swallows an error.
 //
 // Failure injection: a SQLite trigger that aborts inserts/updates on
 // `routine_days`, so the FIRST statement of each mutator succeeds and a LATER
@@ -38,16 +37,16 @@ function abortOn(op: "INSERT" | "UPDATE") {
   );
 }
 
-function seedRoutine(withDay: boolean) {
+async function seedRoutine(withDay: boolean) {
   const now = new Date();
-  db.insert(routines)
+  await db.insert(routines)
     .values({ id: "r1", name: "Mine", isPreset: false, createdAt: now, updatedAt: now })
     .run();
   if (withDay) {
-    db.insert(routineDays)
+    await db.insert(routineDays)
       .values({ id: "d1", routineId: "r1", name: "Dia 1", position: 0, updatedAt: now })
       .run();
-    db.insert(exercises)
+    await db.insert(exercises)
       .values({
         id: "ex-1",
         name: "Bench",
@@ -59,7 +58,7 @@ function seedRoutine(withDay: boolean) {
         updatedAt: now,
       })
       .run();
-    db.insert(routineExercises)
+    await db.insert(routineExercises)
       .values({
         id: "re1",
         routineDayId: "d1",
@@ -79,24 +78,24 @@ describe("transaction atomicity", () => {
   it("createRoutine persists nothing when the day insert fails", async () => {
     abortOn("INSERT");
     await expect(createRoutine({ name: "Nueva" })).rejects.toThrow();
-    expect(db.select().from(routines).all()).toHaveLength(0);
+    expect((await db.select().from(routines).all())).toHaveLength(0);
   });
 
   it("deleteRoutine deletes nothing when a later step fails", async () => {
-    seedRoutine(true);
+    await seedRoutine(true);
     abortOn("UPDATE");
     await expect(deleteRoutine("r1")).rejects.toThrow();
-    const row = db.select().from(routines).where(eq(routines.id, "r1")).get();
+    const row = await db.select().from(routines).where(eq(routines.id, "r1")).get();
     expect(row?.deletedAt).toBeNull();
-    const ex = db.select().from(routineExercises).where(eq(routineExercises.id, "re1")).get();
+    const ex = await db.select().from(routineExercises).where(eq(routineExercises.id, "re1")).get();
     expect(ex?.deletedAt).toBeNull();
   });
 
   it("cloneRoutine persists nothing when a day insert fails", async () => {
-    seedRoutine(true);
+    await seedRoutine(true);
     abortOn("INSERT");
     await expect(cloneRoutine("r1")).rejects.toThrow();
-    expect(db.select().from(routines).all()).toHaveLength(1);
+    expect((await db.select().from(routines).all())).toHaveLength(1);
   });
 
   it("runSeedIfNeeded persists nothing when a later step fails", async () => {
@@ -138,7 +137,7 @@ describe("transaction atomicity", () => {
       },
     } as SeedPayload;
     await expect(runSeedIfNeeded(db, payload)).rejects.toThrow();
-    expect(db.select().from(exercises).all()).toHaveLength(0);
-    expect(db.select().from(routines).all()).toHaveLength(0);
+    expect((await db.select().from(exercises).all())).toHaveLength(0);
+    expect((await db.select().from(routines).all())).toHaveLength(0);
   });
 });

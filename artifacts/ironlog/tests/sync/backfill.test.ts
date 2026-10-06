@@ -42,8 +42,8 @@ beforeEach(() => {
 });
 
 describe("backfillIfNeeded", () => {
-  it("enqueues every existing user row as an upsert and records the uid", () => {
-    const result = backfillIfNeeded(db, "u1");
+  it("enqueues every existing user row as an upsert and records the uid", async () => {
+    const result = await backfillIfNeeded(db, "u1");
 
     expect(result.status).toBe("backfilled");
     expect(outboxKeys()).toEqual(
@@ -62,8 +62,8 @@ describe("backfillIfNeeded", () => {
     ).toBe("u1");
   });
 
-  it("excludes preset rows and the children of preset routines", () => {
-    backfillIfNeeded(db, "u1");
+  it("excludes preset rows and the children of preset routines", async () => {
+    await backfillIfNeeded(db, "u1");
     const keys = outboxKeys();
 
     expect(keys).not.toContain("exercises/ex-preset");
@@ -72,33 +72,33 @@ describe("backfillIfNeeded", () => {
     expect(keys).not.toContain("routine_exercises/re-preset");
   });
 
-  it("keeps existing pending entries untouched", () => {
+  it("keeps existing pending entries untouched", async () => {
     sqlite.exec(
       `INSERT INTO _outbox (table_name, row_id, op, queued_at)
        VALUES ('exercises', 'ex-user', 'delete', 42)`,
     );
 
-    backfillIfNeeded(db, "u1");
+    await backfillIfNeeded(db, "u1");
 
     const kept = outbox().find((r) => r.row_id === "ex-user");
     expect(kept).toMatchObject({ op: "delete", queued_at: 42 });
   });
 
-  it("is a no-op the second time for the same uid", () => {
-    backfillIfNeeded(db, "u1");
+  it("is a no-op the second time for the same uid", async () => {
+    await backfillIfNeeded(db, "u1");
     clearOutbox();
 
-    const again = backfillIfNeeded(db, "u1");
+    const again = await backfillIfNeeded(db, "u1");
 
     expect(again.status).toBe("already_done");
     expect(outbox()).toEqual([]);
   });
 
-  it("refuses a different uid without enqueueing", () => {
-    backfillIfNeeded(db, "u1");
+  it("refuses a different uid without enqueueing", async () => {
+    await backfillIfNeeded(db, "u1");
     clearOutbox();
 
-    const result = backfillIfNeeded(db, "u2");
+    const result = await backfillIfNeeded(db, "u2");
 
     expect(result.status).toBe("account_mismatch");
     expect(outbox()).toEqual([]);

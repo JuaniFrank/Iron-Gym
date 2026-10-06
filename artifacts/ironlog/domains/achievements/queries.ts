@@ -105,26 +105,26 @@ export async function loadAchievementState(
 ): Promise<AppStateForAchievements> {
   const [sessionsRows, setsRows, weightsRows, prsRows, streak] =
     await Promise.all([
-      database
+      (await database
         .select()
         .from(workoutSessions)
         .where(isNotNull(workoutSessions.endedAt))
-        .all(),
-      database
+        .all()),
+      (await database
         .select()
         .from(completedSets)
         .where(isNull(completedSets.deletedAt))
-        .all(),
-      database
+        .all()),
+      (await database
         .select()
         .from(bodyWeights)
         .where(isNull(bodyWeights.deletedAt))
-        .all(),
-      database
+        .all()),
+      (await database
         .select()
         .from(prRecords)
         .where(isNull(prRecords.deletedAt))
-        .all(),
+        .all()),
       computeStreak(database),
     ]);
 

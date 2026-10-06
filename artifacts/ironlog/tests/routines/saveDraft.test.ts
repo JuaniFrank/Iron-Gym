@@ -20,11 +20,11 @@ import { createTestDb, type TestDb } from "../helpers/db";
 let db: TestDb;
 let sqlite: ReturnType<typeof createTestDb>["sqlite"];
 
-beforeEach(() => {
+beforeEach(async () => {
   ({ db, sqlite } = createTestDb());
   const now = new Date();
   for (const id of ["bench", "fly", "dip", "squat"]) {
-    db.insert(exercises)
+    await db.insert(exercises)
       .values({
         id,
         name: id,
@@ -85,22 +85,22 @@ function outbox(): string[] {
   return rows.map((r) => `${r.table_name}:${r.row_id}`);
 }
 
-function dayRows(includeDeleted = false) {
-  return db
+async function dayRows(includeDeleted = false) {
+  return (await db
     .select()
     .from(routineDays)
     .orderBy(asc(routineDays.position))
-    .all()
+    .all())
     .filter((d) => includeDeleted || d.deletedAt === null);
 }
 
-function exRows(dayId: string) {
-  return db
+async function exRows(dayId: string) {
+  return (await db
     .select()
     .from(routineExercises)
     .where(eq(routineExercises.routineDayId, dayId))
     .orderBy(asc(routineExercises.position))
-    .all()
+    .all())
     .filter((e) => e.deletedAt === null);
 }
 
@@ -109,7 +109,7 @@ describe("saveRoutineDraft: create", () => {
     const id = await saveRoutineDraft(draft(), null);
     expect(id).toBe("r1");
 
-    const r = db.select().from(routines).where(eq(routines.id, "r1")).get();
+    const r = await db.select().from(routines).where(eq(routines.id, "r1")).get();
     expect(r).toMatchObject({
       name: "Push",
       description: "desc",
@@ -117,17 +117,17 @@ describe("saveRoutineDraft: create", () => {
       isPreset: false,
       deletedAt: null,
     });
-    expect(dayRows().map((d) => [d.id, d.name, d.position])).toEqual([
+    expect((await dayRows()).map((d) => [d.id, d.name, d.position])).toEqual([
       ["d1", "A", 0],
       ["d2", "B", 1],
       ["d3", "C", 2],
     ]);
-    expect(exRows("d1").map((e) => [e.id, e.exerciseId, e.position])).toEqual([
+    expect((await exRows("d1")).map((e) => [e.id, e.exerciseId, e.position])).toEqual([
       ["e1", "bench", 0],
       ["e2", "fly", 1],
       ["e3", "dip", 2],
     ]);
-    expect(exRows("d2").map((e) => e.id)).toEqual(["e4"]);
+    expect((await exRows("d2")).map((e) => e.id)).toEqual(["e4"]);
   });
 
   it("persists exercise fields and superset links", async () => {
@@ -142,7 +142,7 @@ describe("saveRoutineDraft: create", () => {
       { type: "toggleSuperset", dayId: "d1", id: "e1", withId: "e2" },
     );
     await saveRoutineDraft(d, null);
-    const [e1, e2] = exRows("d1");
+    const [e1, e2] = await exRows("d1");
     expect(e1).toMatchObject({
       targetSets: 5,
       targetReps: 6,
@@ -156,13 +156,13 @@ describe("saveRoutineDraft: create", () => {
 
   it("stores the trimmed name", async () => {
     await saveRoutineDraft({ ...draft(), name: "  Push  " }, null);
-    expect(db.select().from(routines).get()?.name).toBe("Push");
+    expect((await db.select().from(routines).get())?.name).toBe("Push");
   });
 
   it("writes nothing when the draft is invalid", async () => {
     await expect(saveRoutineDraft({ ...draft(), name: "  " }, null)).rejects.toThrow();
-    expect(db.select().from(routines).all()).toHaveLength(0);
-    expect(db.select().from(routineDays).all()).toHaveLength(0);
+    expect((await db.select().from(routines).all())).toHaveLength(0);
+    expect((await db.select().from(routineDays).all())).toHaveLength(0);
     expect(outbox()).toEqual([]);
   });
 
@@ -172,8 +172,8 @@ describe("saveRoutineDraft: create", () => {
        BEGIN SELECT RAISE(ABORT, 'boom'); END;`,
     );
     await expect(saveRoutineDraft(draft(), null)).rejects.toThrow();
-    expect(db.select().from(routines).all()).toHaveLength(0);
-    expect(db.select().from(routineDays).all()).toHaveLength(0);
+    expect((await db.select().from(routines).all())).toHaveLength(0);
+    expect((await db.select().from(routineDays).all())).toHaveLength(0);
     expect(outbox()).toEqual([]);
   });
 });
@@ -189,7 +189,7 @@ describe("saveRoutineDraft: edit", () => {
     const original = await seeded();
     await saveRoutineDraft(run(original, { type: "setName", name: "Pull" }), original);
     expect(outbox()).toEqual(["routines:r1"]);
-    expect(db.select().from(routines).get()?.name).toBe("Pull");
+    expect((await db.select().from(routines).get())?.name).toBe("Pull");
   });
 
   it("exercise stepper change updates only that exercise row", async () => {
@@ -202,7 +202,7 @@ describe("saveRoutineDraft: edit", () => {
     });
     await saveRoutineDraft(edited, original);
     expect(outbox()).toEqual(["routine_exercises:e2"]);
-    expect(exRows("d1")[1].targetReps).toBe(12);
+    expect((await exRows("d1"))[1].targetReps).toBe(12);
   });
 
   it("day rename updates only that day", async () => {
@@ -228,13 +228,13 @@ describe("saveRoutineDraft: edit", () => {
       "routine_exercises:e8",
       "routine_exercises:e9",
     ]);
-    expect(dayRows().map((d) => [d.id, d.position])).toEqual([
+    expect((await dayRows()).map((d) => [d.id, d.position])).toEqual([
       ["d1", 0],
       ["d2", 1],
       ["d3", 2],
       ["d4", 3],
     ]);
-    expect(exRows("d3")[0]).toMatchObject({ id: "e8", position: 0 });
+    expect((await exRows("d3"))[0]).toMatchObject({ id: "e8", position: 0 });
   });
 
   it("removes an exercise: soft delete and renumber siblings", async () => {
@@ -243,14 +243,14 @@ describe("saveRoutineDraft: edit", () => {
       run(original, { type: "removeExercise", dayId: "d1", id: "e1" }),
       original,
     );
-    const all = db
+    const all = await db
       .select()
       .from(routineExercises)
       .where(eq(routineExercises.routineDayId, "d1"))
       .all();
     const removed = all.find((e) => e.id === "e1");
     expect(removed?.deletedAt).toBeInstanceOf(Date);
-    expect(exRows("d1").map((e) => [e.id, e.position])).toEqual([
+    expect((await exRows("d1")).map((e) => [e.id, e.position])).toEqual([
       ["e2", 0],
       ["e3", 1],
     ]);
@@ -269,7 +269,7 @@ describe("saveRoutineDraft: edit", () => {
       { type: "addExercise", dayId: "d1", id: "e7", exerciseId: "squat" },
     );
     await saveRoutineDraft(edited, original);
-    expect(exRows("d1").map((e) => [e.id, e.position])).toEqual([
+    expect((await exRows("d1")).map((e) => [e.id, e.position])).toEqual([
       ["e1", 0],
       ["e2", 1],
       ["e7", 2],
@@ -279,13 +279,13 @@ describe("saveRoutineDraft: edit", () => {
   it("removes a day with its exercises (soft delete) and renumbers", async () => {
     const original = await seeded();
     await saveRoutineDraft(run(original, { type: "removeDay", dayId: "d1" }), original);
-    const days = dayRows(true);
+    const days = await dayRows(true);
     expect(days.find((d) => d.id === "d1")?.deletedAt).toBeInstanceOf(Date);
-    expect(dayRows().map((d) => [d.id, d.position])).toEqual([
+    expect((await dayRows()).map((d) => [d.id, d.position])).toEqual([
       ["d2", 0],
       ["d3", 1],
     ]);
-    const d1Exercises = db
+    const d1Exercises = await db
       .select()
       .from(routineExercises)
       .where(eq(routineExercises.routineDayId, "d1"))
@@ -299,7 +299,7 @@ describe("saveRoutineDraft: edit", () => {
       run(original, { type: "moveDay", fromIndex: 2, toIndex: 0 }),
       original,
     );
-    expect(dayRows().map((d) => [d.id, d.position])).toEqual([
+    expect((await dayRows()).map((d) => [d.id, d.position])).toEqual([
       ["d3", 0],
       ["d1", 1],
       ["d2", 2],
@@ -313,7 +313,7 @@ describe("saveRoutineDraft: edit", () => {
       run(original, { type: "moveExercise", dayId: "d1", fromIndex: 0, toIndex: 2 }),
       original,
     );
-    expect(exRows("d1").map((e) => [e.id, e.position])).toEqual([
+    expect((await exRows("d1")).map((e) => [e.id, e.position])).toEqual([
       ["e2", 0],
       ["e3", 1],
       ["e1", 2],
@@ -327,7 +327,7 @@ describe("saveRoutineDraft: edit", () => {
       original,
     );
     expect(outbox()).toEqual(["routine_exercises:e1", "routine_exercises:e2"]);
-    const [e1, e2] = exRows("d1");
+    const [e1, e2] = await exRows("d1");
     expect([e1.supersetWith, e2.supersetWith]).toEqual(["e2", "e1"]);
   });
 
@@ -353,12 +353,12 @@ describe("saveRoutineDraft: edit", () => {
       { type: "addDay", id: "d5" },
     );
     await saveRoutineDraft(next, afterRemove);
-    expect(exRows("d1").map((e) => [e.id, e.position])).toEqual([
+    expect((await exRows("d1")).map((e) => [e.id, e.position])).toEqual([
       ["e1", 0],
       ["e2", 1],
       ["e6", 2],
     ]);
-    expect(dayRows().map((d) => [d.id, d.position])).toEqual([
+    expect((await dayRows()).map((d) => [d.id, d.position])).toEqual([
       ["d1", 0],
       ["d2", 1],
       ["d5", 2],
@@ -371,7 +371,7 @@ describe("saveRoutineDraft: edit", () => {
       saveRoutineDraft(run(original, { type: "setName", name: "" }), original),
     ).rejects.toThrow();
     expect(outbox()).toEqual([]);
-    expect(db.select().from(routines).get()?.name).toBe("Push");
+    expect((await db.select().from(routines).get())?.name).toBe("Push");
   });
 
   it("rolls back every change when a later statement fails", async () => {
@@ -387,9 +387,9 @@ describe("saveRoutineDraft: edit", () => {
       { type: "updateExercise", dayId: "d1", id: "e1", patch: { targetSets: 4 } },
     );
     await expect(saveRoutineDraft(edited, original)).rejects.toThrow();
-    expect(db.select().from(routines).get()?.name).toBe("Push");
-    expect(dayRows().find((d) => d.id === "d2")?.name).toBe("B");
-    expect(exRows("d1")[0].targetSets).toBe(3);
+    expect((await db.select().from(routines).get())?.name).toBe("Push");
+    expect((await dayRows()).find((d) => d.id === "d2")?.name).toBe("B");
+    expect((await exRows("d1"))[0].targetSets).toBe(3);
     expect(outbox()).toEqual([]);
   });
 });

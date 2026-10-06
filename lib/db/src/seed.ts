@@ -178,11 +178,11 @@ export async function runSeedIfNeeded(
 
   const now = new Date();
 
-  await db.transaction((tx) => {
+  await db.transaction(async (tx) => {
     // Seed data is device-local: suppress the sync capture triggers for the
     // whole transaction (routine_days / routine_exercises / user_profile have
     // no `is_preset` column). A throw rolls the flag back with the rest.
-    tx.run(sql`UPDATE _sync_state SET value = '1' WHERE key = 'applying'`);
+    await tx.run(sql`UPDATE _sync_state SET value = '1' WHERE key = 'applying'`);
 
     // ---- exercises ------------------------------------------------------
     for (const ex of payload.exercises) {
@@ -196,7 +196,7 @@ export async function runSeedIfNeeded(
         isPreset: true,
         updatedAt: now,
       };
-      tx
+      await tx
         .insert(exercises)
         .values(row)
         .onConflictDoUpdate({
@@ -231,7 +231,7 @@ export async function runSeedIfNeeded(
         isPreset: true,
         updatedAt: now,
       };
-      tx
+      await tx
         .insert(foodItems)
         .values(row)
         .onConflictDoUpdate({
@@ -257,7 +257,7 @@ export async function runSeedIfNeeded(
         ? new Date(routine.createdAt)
         : now;
 
-      tx
+      await tx
         .insert(routines)
         .values({
           id: routine.id,
@@ -290,7 +290,7 @@ export async function runSeedIfNeeded(
         const day = routine.days[dayIdx];
         const dayRowId = buildRoutineDayId(routine.id, day.id);
 
-        tx
+        await tx
           .insert(routineDays)
           .values({
             id: dayRowId,
@@ -319,7 +319,7 @@ export async function runSeedIfNeeded(
             ? buildRoutineExerciseId(dayRowId, exIdx, re.supersetWith)
             : null;
 
-          tx
+          await tx
             .insert(routineExercises)
             .values({
               id: reId,
@@ -355,7 +355,7 @@ export async function runSeedIfNeeded(
     }
 
     // ---- user_profile (singleton, only on first boot) -------------------
-    tx
+    await tx
       .insert(userProfile)
       .values({
         id: "singleton",
@@ -365,10 +365,10 @@ export async function runSeedIfNeeded(
       })
       .onConflictDoNothing({ target: userProfile.id }).run();
 
-    tx.run(sql`UPDATE _sync_state SET value = '0' WHERE key = 'applying'`);
+    await tx.run(sql`UPDATE _sync_state SET value = '0' WHERE key = 'applying'`);
 
     // ---- _meta.seed_version --------------------------------------------
-    tx
+    await tx
       .insert(meta)
       .values({ key: "seed_version", value: String(payload.version) })
       .onConflictDoUpdate({

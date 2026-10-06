@@ -346,7 +346,8 @@ describe("pullChanges: batching", () => {
 
   it("applies each batch in its own transaction and advances the cursor per batch", async () => {
     seedExercises(60);
-    const begins = vi.spyOn(sqlite, "exec");
+    // The async db sends `begin` through the client (one per transaction).
+    const prepared = vi.spyOn(sqlite, "prepare");
     const seen: (unknown)[] = [];
     const yieldToUi = vi.fn(async () => {
       seen.push(cursor("exercises"));
@@ -355,7 +356,7 @@ describe("pullChanges: batching", () => {
     const res = await pullChanges(db, remote, UID, { batchSize: 25, yieldToUi });
 
     expect(res).toEqual({ applied: 60 });
-    expect(begins.mock.calls.filter(([q]) => q === "BEGIN")).toHaveLength(3);
+    expect(prepared.mock.calls.filter(([q]) => /^begin$/i.test(q))).toHaveLength(3);
     expect(yieldToUi).toHaveBeenCalledTimes(2);
     expect(seen).toEqual(["25", "50"]);
     expect(cursor("exercises")).toBe("60");

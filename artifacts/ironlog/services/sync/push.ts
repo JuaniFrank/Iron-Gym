@@ -11,6 +11,7 @@ import type { DB } from "@workspace/db";
 
 import type { SyncProgressListener } from "./progress";
 import type { RemoteChange, SyncRemote } from "./remote";
+import { tableColumns } from "./columns";
 import { getSyncTable } from "./tables";
 
 export type PushResult = { pushed: number; error?: unknown };
@@ -32,22 +33,27 @@ const defaultYieldToUi = () => new Promise<void>((resolve) => setTimeout(resolve
 const ident = (name: string) => sql.raw(`"${name}"`);
 
 /** Read the rows of one table for a round with a single query, keyed by text pk. */
-function readRows(
+async function readRows(
   db: DB,
   table: string,
   pk: string,
   rowIds: string[],
-): Map<string, Record<string, unknown>> {
+): Promise<Map<string, Record<string, unknown>>> {
   const out = new Map<string, Record<string, unknown>>();
+  const columns = await tableColumns(db, table);
   for (let i = 0; i < rowIds.length; i += MAX_PARAMS) {
     const ids = sql.join(
       rowIds.slice(i, i + MAX_PARAMS).map((id) => sql`${id}`),
       sql`, `,
     );
-    const rows = db.all<Record<string, unknown>>(
+    // Positional rows (see `tableColumns`): rebuild objects keyed by column.
+    const rows = await db.all<unknown[]>(
       sql`SELECT * FROM ${ident(table)} WHERE CAST(${ident(pk)} AS TEXT) IN (${ids})`,
     );
-    for (const row of rows) out.set(String(row[pk]), row);
+    for (const values of rows) {
+      const row = Object.fromEntries(columns.map((c, i) => [c, values[i]]));
+      out.set(String(row[pk]), row);
+    }
   }
   return out;
 }
@@ -77,11 +83,10 @@ function toChange(
   };
 }
 
-/** Synchronous callback on purpose: see tests/atomicity.test.ts. */
-function clearEntries(db: DB, entries: OutboxRow[]): void {
-  db.transaction((tx) => {
+async function clearEntries(db: DB, entries: OutboxRow[]): Promise<void> {
+  await db.transaction(async (tx) => {
     for (const e of entries) {
-      tx.run(
+      await tx.run(
         sql`DELETE FROM _outbox
             WHERE table_name = ${e.table_name}
               AND row_id = ${e.row_id}
@@ -108,15 +113,21 @@ export async function pushPending(
   let pushed = 0;
   // Only queried when someone listens, so the default path does no extra work.
   const total = onProgress
-    ? (db.all<{ n: number }>(sql`SELECT COUNT(*) AS n FROM _outbox`)[0]?.n ?? 0)
+    ? ((await db.all<[number]>(sql`SELECT COUNT(*) FROM _outbox`))[0]?.[0] ?? 0)
     : undefined;
   const perTable: Record<string, number> = {};
   try {
     for (;;) {
-      const entries = db.all<OutboxRow>(
+      const entryRows = await db.all<[string, string, OutboxRow["op"], number]>(
         sql`SELECT table_name, row_id, op, queued_at FROM _outbox
             ORDER BY queued_at, table_name, row_id LIMIT ${batchSize}`,
       );
+      const entries: OutboxRow[] = entryRows.map(([table_name, row_id, op, queued_at]) => ({
+        table_name,
+        row_id,
+        op,
+        queued_at,
+      }));
       if (entries.length === 0) return { pushed };
 
       // Entries naming a table outside the registry can never be pushed;
@@ -135,13 +146,13 @@ export async function pushPending(
       }
       for (const [name, wanted] of rows) {
         const t = getSyncTable(name)!;
-        rows.set(name, readRows(db, t.name, t.pk, [...wanted.keys()]));
+        rows.set(name, await readRows(db, t.name, t.pk, [...wanted.keys()]));
       }
 
       const changes = known.map((e) => toChange(e, rows) as RemoteChange);
       if (changes.length > 0) await remote.push(uid, changes);
 
-      clearEntries(db, [...known, ...unknown]);
+      await clearEntries(db, [...known, ...unknown]);
       pushed += known.length;
       if (onProgress) {
         for (const e of known) perTable[e.table_name] = (perTable[e.table_name] ?? 0) + 1;
