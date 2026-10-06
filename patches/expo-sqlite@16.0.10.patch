@@ -1,19 +1,106 @@
 diff --git a/web/WorkerChannel.ts b/web/WorkerChannel.ts
-index 7fba380..8692ebd 100644
+index 7fba380..3f224a9 100644
 --- a/web/WorkerChannel.ts
 +++ b/web/WorkerChannel.ts
-@@ -14,6 +14,9 @@ const deferredMap = new Map<number, Deferred>();
+@@ -1,6 +1,7 @@
+ // Copyright 2015-present 650 Industries. All rights reserved.
+ 
+ import { Deferred } from './Deferred';
++import { createDiagBoard, formatWorkerState } from './diagnostics';
+ import { serialize, deserialize } from './SyncSerializer';
+ import {
+   type SQLiteWorkerMessageType,
+@@ -14,8 +15,83 @@ const deferredMap = new Map<number, Deferred>();
  const PENDING = 1;
  const RESOLVED = 2;
  
 +/** Max time the main thread waits for a synchronous worker call. */
 +const SYNC_OPERATION_TIMEOUT_MS = 30_000;
 +
++const RESULT_BUFFER_SIZE = 1024 * 1024;
++
++/**
++ * Sync calls run on the main thread one at a time, so one lock/result pair is
++ * reused instead of allocating a 1 MB SharedArrayBuffer per call. The pair is
++ * dropped when a call times out: the worker may still answer late and must not
++ * write into the buffers of a later call.
++ */
++let syncBuffers: { lockBuffer: SharedArrayBuffer; resultBuffer: SharedArrayBuffer } | null = null;
++
  let hasWarnedSync = false;
  
++const MAX_DIAGNOSTIC_SQL_LENGTH = 160;
++
++/**
++ * SQL of each prepared statement, keyed by nativeStatementId. Statement-level
++ * calls (run, step, getAll...) carry only the id, so this lets a sync timeout
++ * name the SQL that hangs. Entries are removed when `finalize` is called, so
++ * the map does not grow across statements.
++ */
++const statementSources = new Map<number, string>();
++
++function trackStatementSource(type: string, data: any): void {
++  if (type === 'prepare' && typeof data?.source === 'string') {
++    statementSources.set(data.nativeStatementId, data.source);
++  } else if (type === 'finalize') {
++    statementSources.delete(data?.nativeStatementId);
++  }
++}
++
++function sourceOf(data: any): string | undefined {
++  return typeof data?.source === 'string' ? data.source : statementSources.get(data?.nativeStatementId);
++}
++
++function describeSql(data: any): string | null {
++  const source = sourceOf(data);
++  if (!source) return null;
++  const sql = source.replace(/\s+/g, ' ').trim();
++  return sql.length > MAX_DIAGNOSTIC_SQL_LENGTH
++    ? sql.slice(0, MAX_DIAGNOSTIC_SQL_LENGTH) + '…'
++    : sql;
++}
++
++/**
++ * Status board the worker writes to (current message id, running VFS op, op
++ * counters; see diagnostics.ts). Unlike the sync buffers it is NOT dropped on a
++ * timeout: it is not a reply channel, so a late worker cannot corrupt a later
++ * call through it. It is sent with every message.
++ */
++const diagBuffer = createDiagBoard();
++
++const MAX_REMEMBERED_CALLS = 64;
++
++/**
++ * Recent calls by message id (type + raw SQL), so a timeout can name the call
++ * the worker is still busy with when it differs from the call that timed out
++ * (e.g. a failing ROLLBACK that masks the statement that actually hangs).
++ */
++const recentCalls = new Map<number, { type: string; source: string | undefined }>();
++
++function rememberCall(id: number, type: string, data: any): void {
++  recentCalls.set(id, { type, source: sourceOf(data) });
++  if (recentCalls.size > MAX_REMEMBERED_CALLS) {
++    recentCalls.delete(recentCalls.keys().next().value as number);
++  }
++}
++
++function describeCall(id: number): string | null {
++  const call = recentCalls.get(id);
++  if (!call) return null;
++  const sql = describeSql({ source: call.source });
++  return `${call.type}${sql ? ': ' + sql : ''}`;
++}
++
  /**
-@@ -40,7 +43,9 @@ export function sendWorkerResult({
-     const resultJson = error != null ? serialize({ error }) : serialize({ result });
+  * For worker to send result to the main thread.
+  */
+@@ -37,10 +113,13 @@ export function sendWorkerResult({
+     const { lockBuffer, resultBuffer } = syncTrait;
+     const lock = new Int32Array(lockBuffer);
+     const resultArray = new Uint8Array(resultBuffer);
+-    const resultJson = error != null ? serialize({ error }) : serialize({ result });
++    // `JSON.stringify(new Error('x'))` is `{}`, so send the message string.
++    const resultJson = error != null ? serialize({ error: error.message }) : serialize({ result });
      const resultBytes = new TextEncoder().encode(resultJson);
      const length = resultBytes.length;
 -    resultArray.set(new Uint32Array([length]), 0);
@@ -23,15 +110,51 @@ index 7fba380..8692ebd 100644
      resultArray.set(resultBytes, 4);
      Atomics.store(lock, 0, RESOLVED);
    } else {
-@@ -116,24 +121,21 @@ export function invokeWorkerSync<T extends SQLiteWorkerMessageType & keyof Resul
+@@ -78,10 +157,12 @@ export async function invokeWorkerAsync<T extends SQLiteWorkerMessageType & keyo
+   type: T,
+   data: MessageTypeMap[T]['data']
+ ): Promise<ResultTypeMap[T]> {
++  trackStatementSource(type, data);
+   const id = messageId++;
++  rememberCall(id, type, data);
+   const deferred = new Deferred<ResultTypeMap[T]>();
+   deferredMap.set(id, deferred);
+-  worker.postMessage({ type, id, data, isSync: false });
++  worker.postMessage({ type, id, data, isSync: false, diagBuffer });
+   return deferred.getPromise();
+ }
+ 
+@@ -100,10 +181,15 @@ export function invokeWorkerSync<T extends SQLiteWorkerMessageType & keyof Resul
+     hasWarnedSync = true;
+   }
+ 
++  trackStatementSource(type, data);
+   const id = messageId++;
+-  const lockBuffer = new SharedArrayBuffer(4);
++  rememberCall(id, type, data);
++  syncBuffers ??= {
++    lockBuffer: new SharedArrayBuffer(4),
++    resultBuffer: new SharedArrayBuffer(RESULT_BUFFER_SIZE),
++  };
++  const { lockBuffer, resultBuffer } = syncBuffers;
+   const lock = new Int32Array(lockBuffer);
+-  const resultBuffer = new SharedArrayBuffer(1024 * 1024);
+   const resultArray = new Uint8Array(resultBuffer);
+ 
+   Atomics.store(lock, 0, PENDING);
+@@ -114,26 +200,34 @@ export function invokeWorkerSync<T extends SQLiteWorkerMessageType & keyof Resul
+     isSync: true,
+     lockBuffer,
      resultBuffer,
++    diagBuffer,
    });
  
 +  // Wall-clock deadline instead of upstream's iteration count: 1M
 +  // `Atomics.pause()` calls last only a few milliseconds, so slow devices (e.g.
 +  // iOS OPFS writes inside a large transaction) hit "Sync operation timeout" on
 +  // legitimate work.
-+  const deadline = Date.now() + SYNC_OPERATION_TIMEOUT_MS;
++  const startedAt = Date.now();
++  const deadline = startedAt + SYNC_OPERATION_TIMEOUT_MS;
    let i = 0;
    // @ts-expect-error: Remove this when TypeScript supports Atomics.pause
    const useAtomicsPause = typeof Atomics.pause === 'function';
@@ -39,7 +162,16 @@ index 7fba380..8692ebd 100644
 -    ++i;
 -
 +    if ((++i & 0x3ff) === 0 && Date.now() > deadline) {
-+      throw new Error('Sync operation timeout');
++      syncBuffers = null;
++      const sql = describeSql(data);
++      const now = Date.now();
++      const workerState = formatWorkerState(new Float64Array(diagBuffer), now, {
++        id,
++        describe: describeCall,
++      });
++      throw new Error(
++        `Sync operation timeout (${type}: ${sql ? sql + ', ' : ''}${now - startedAt} ms; ${workerState})`
++      );
 +    }
      if (useAtomicsPause) {
 -      if (i > 1_000_000) {
@@ -56,11 +188,80 @@ index 7fba380..8692ebd 100644
      }
    }
  
+@@ -141,7 +235,14 @@ export function invokeWorkerSync<T extends SQLiteWorkerMessageType & keyof Resul
+   const resultCopy = new Uint8Array(length);
+   resultCopy.set(new Uint8Array(resultArray.buffer, 4, length));
+   const resultJson = new TextDecoder().decode(resultCopy);
+-  const { result, error } = deserialize<{ result: ResultTypeMap[T]; error?: string }>(resultJson);
+-  if (error) throw new Error(error);
++  const { result, error } = deserialize<{ result: ResultTypeMap[T]; error?: unknown }>(resultJson);
++  if (error) throw new Error(formatWorkerError(error));
+   return result;
+ }
++
++function formatWorkerError(error: unknown): string {
++  if (typeof error === 'string') return error;
++  const message = (error as { message?: unknown } | null)?.message;
++  if (typeof message === 'string' && message) return message;
++  return JSON.stringify(error);
++}
+diff --git a/web/web.types.ts b/web/web.types.ts
+index b85e01b..ef53e76 100644
+--- a/web/web.types.ts
++++ b/web/web.types.ts
+@@ -15,11 +15,15 @@ export interface SyncWorkerMessage {
+   isSync: true;
+   lockBuffer: SharedArrayBuffer;
+   resultBuffer: SharedArrayBuffer;
++  /** Worker status board (see diagnostics.ts). */
++  diagBuffer?: SharedArrayBuffer;
+ }
+ 
+ export interface AsyncWorkerMessage {
+   id: number;
+   isSync: false;
++  /** Worker status board (see diagnostics.ts). */
++  diagBuffer?: SharedArrayBuffer;
+ }
+ 
+ export type BaseWorkerMessage = SyncWorkerMessage | AsyncWorkerMessage;
 diff --git a/web/worker.ts b/web/worker.ts
-index deaf721..8633314 100644
+index deaf721..f324c6b 100644
 --- a/web/worker.ts
 +++ b/web/worker.ts
-@@ -781,26 +781,31 @@ async function maybeInitAsync(): Promise<{
+@@ -7,6 +7,7 @@ import { SQLiteOptions } from './SQLiteOptions';
+ import { sendWorkerResult } from './WorkerChannel';
+ import { type Changeset } from '../src/NativeSession';
+ import { type SQLiteColumnNames, type SQLiteColumnValues } from '../src/NativeStatement';
++import { instrumentVfs, markMessageEnd, markMessageStart } from './diagnostics';
+ import { AccessHandlePoolVFS } from './wa-sqlite/AccessHandlePoolVFS';
+ import { MemoryVFS } from './wa-sqlite/MemoryVFS';
+ import * as SQLite from './wa-sqlite/sqlite-api';
+@@ -61,15 +62,23 @@ const sessionIdMap = new Map<number, SessionEntity>();
+ 
+ class SQLiteErrorException extends Error {}
+ 
++// Status board shared with the main thread (see diagnostics.ts).
++let diagBoard: Float64Array | null = null;
++
+ self.onmessage = async (event: MessageEvent<SQLiteWorkerMessage>) => {
+   let result: ResultType | null = null;
+   let error: Error | null = null;
++  if (event.data.diagBuffer && diagBoard?.buffer !== event.data.diagBuffer) {
++    diagBoard = new Float64Array(event.data.diagBuffer);
++  }
++  if (diagBoard) markMessageStart(diagBoard, event.data.id);
+   try {
+     const message = event.data as MessageTypeMap[typeof event.data.type];
+     result = await handleMessageImpl(message);
+   } catch (e) {
+     error = e instanceof Error ? e : new Error(String(e));
+   }
++  if (diagBoard) markMessageEnd(diagBoard, event.data.id);
+ 
+   const syncTrait = event.data.isSync
+     ? {
+@@ -781,26 +790,32 @@ async function maybeInitAsync(): Promise<{
      const module = await WaSQLiteFactory({
        locateFile: () => wasmModule,
      });
@@ -86,6 +287,7 @@ index deaf721..8633314 100644
 +      throw new Error('Failed to initialize AccessHandlePoolVFS');
      }
 -    _sqlite3.vfs_register(_vfs, true);
++    instrumentVfs(vfs, () => diagBoard);
 +    sqlite3.vfs_register(vfs, true);
  
 -    if (_vfsMemory == null) {
@@ -106,3 +308,160 @@ index deaf721..8633314 100644
    }
    if (_vfs == null || _vfsMemory == null) {
      throw new Error('Invalid VFS state');
+diff --git a/web/diagnostics.ts b/web/diagnostics.ts
+new file mode 100644
+index 0000000..0ddf6e2
+--- /dev/null
++++ b/web/diagnostics.ts
+@@ -0,0 +1,151 @@
++// Worker status board used to diagnose synchronous-call timeouts.
++//
++// The worker writes into a small Float64Array (over a SharedArrayBuffer the
++// main thread owns) which message it is running and which AccessHandlePoolVFS
++// operation is in progress. The main thread is busy-waiting on a sync call, so
++// it cannot receive messages, but it CAN read this board when its deadline
++// expires and append the worker's state to the timeout error.
++//
++// Board layout (Float64 slots; a zeroed buffer means "idle"):
++//   0  current message id + 1 (0 = idle)
++//   1  message start time (Date.now())
++//   2  running VFS op code (1-based index into VFS_OPS, 0 = none)
++//   3  running VFS op start time (Date.now())
++//   4  slowest completed VFS op code of this message (0 = none)
++//   5  slowest completed VFS op duration in ms
++//   6-7 reserved
++//   8..16   per-op completed count of this message (8 + op code - 1)
++//   17..25  per-op total ms of this message (17 + op code - 1)
++//   26-31 reserved
++
++export const VFS_OPS = [
++  'jOpen',
++  'jClose',
++  'jRead',
++  'jWrite',
++  'jTruncate',
++  'jSync',
++  'jFileSize',
++  'jDelete',
++  'jAccess',
++] as const;
++
++export const DIAG_SLOTS = 32;
++
++const SLOT_MESSAGE = 0;
++const SLOT_MESSAGE_START = 1;
++const SLOT_OP = 2;
++const SLOT_OP_START = 3;
++const SLOT_SLOWEST_OP = 4;
++const SLOT_SLOWEST_MS = 5;
++const SLOT_COUNT_BASE = 8;
++const SLOT_TOTAL_BASE = SLOT_COUNT_BASE + VFS_OPS.length;
++
++/** At most this many per-op totals are listed in the timeout message. */
++const MAX_LISTED_OPS = 4;
++
++export function createDiagBoard(): SharedArrayBuffer {
++  return new SharedArrayBuffer(DIAG_SLOTS * Float64Array.BYTES_PER_ELEMENT);
++}
++
++/** Worker: a message started. Resets the per-message op counters. */
++export function markMessageStart(board: Float64Array, id: number, now: number = Date.now()): void {
++  board.fill(0, SLOT_OP, DIAG_SLOTS);
++  board[SLOT_MESSAGE] = id + 1;
++  board[SLOT_MESSAGE_START] = now;
++}
++
++/** Worker: a message finished. Ignored if the board already moved on to another message. */
++export function markMessageEnd(board: Float64Array, id: number): void {
++  if (board[SLOT_MESSAGE] === id + 1) {
++    board[SLOT_MESSAGE] = 0;
++    board[SLOT_OP] = 0;
++  }
++}
++
++const AsyncFunction = (async () => {}).constructor;
++const instrumented = new WeakSet<object>();
++
++/**
++ * Wraps the synchronous AccessHandlePoolVFS methods so each call is recorded on
++ * the board. Return values and exceptions pass through untouched. Async methods
++ * are skipped because wa-sqlite detects them with `instanceof AsyncFunction`.
++ */
++export function instrumentVfs<T extends object>(
++  vfs: T,
++  getBoard: () => Float64Array | null,
++  now: () => number = Date.now
++): T {
++  if (instrumented.has(vfs)) return vfs;
++  instrumented.add(vfs);
++  const target = vfs as Record<string, any>;
++  VFS_OPS.forEach((name, index) => {
++    const original = target[name];
++    if (typeof original !== 'function' || original instanceof AsyncFunction) return;
++    const code = index + 1;
++    target[name] = function (this: unknown, ...args: unknown[]) {
++      const board = getBoard();
++      if (!board) return original.apply(this, args);
++      const startedAt = now();
++      board[SLOT_OP] = code;
++      board[SLOT_OP_START] = startedAt;
++      try {
++        return original.apply(this, args);
++      } finally {
++        const elapsed = now() - startedAt;
++        board[SLOT_OP] = 0;
++        board[SLOT_COUNT_BASE + index] += 1;
++        board[SLOT_TOTAL_BASE + index] += elapsed;
++        if (elapsed > board[SLOT_SLOWEST_MS]) {
++          board[SLOT_SLOWEST_OP] = code;
++          board[SLOT_SLOWEST_MS] = elapsed;
++        }
++      }
++    };
++  });
++  return vfs;
++}
++
++/**
++ * Main thread: renders the board for a timed-out call. `call.describe` returns
++ * a description ("type: SQL") of an earlier call by id, when known.
++ */
++export function formatWorkerState(
++  board: Float64Array,
++  now: number,
++  call: { id: number; describe: (id: number) => string | null }
++): string {
++  const current = board[SLOT_MESSAGE] - 1;
++  if (current < 0) return 'worker: idle';
++
++  const parts: string[] = [];
++  const running = Math.max(0, now - board[SLOT_MESSAGE_START]);
++  if (current === call.id) {
++    parts.push(`running this call for ${running} ms`);
++  } else {
++    parts.push(`still on #${current} ${call.describe(current) ?? '(unknown call)'} for ${running} ms`);
++  }
++
++  const opCode = board[SLOT_OP];
++  if (opCode > 0) {
++    parts.push(`in ${VFS_OPS[opCode - 1]} for ${Math.max(0, now - board[SLOT_OP_START])} ms`);
++  } else {
++    parts.push('no VFS op active');
++  }
++
++  if (board[SLOT_SLOWEST_OP] > 0) {
++    parts.push(`slowest ${VFS_OPS[board[SLOT_SLOWEST_OP] - 1]} ${board[SLOT_SLOWEST_MS]} ms`);
++  }
++
++  const totals = VFS_OPS.map((name, index) => ({
++    name,
++    count: board[SLOT_COUNT_BASE + index],
++    ms: board[SLOT_TOTAL_BASE + index],
++  }))
++    .filter((op) => op.count > 0)
++    .sort((a, b) => b.ms - a.ms)
++    .slice(0, MAX_LISTED_OPS);
++  for (const op of totals) parts.push(`${op.name}×${op.count} ${op.ms} ms`);
++
++  return `worker: ${parts.join(', ')}`;
++}
