@@ -33,7 +33,8 @@ import {
 } from "@/domains/routines/draft";
 import { registerDraft, unregisterDraft } from "@/domains/routines/draftStore";
 import { deleteRoutine, saveRoutineDraft } from "@/domains/routines/mutators";
-import { useAllRoutines } from "@/domains/routines/queries";
+import { resolveEditorLoad } from "@/domains/routines/editorLoad";
+import { useAllRoutinesState } from "@/domains/routines/queries";
 import { startWorkout } from "@/domains/workout/mutators";
 import { useActiveWorkoutId } from "@/domains/workout/queries";
 
@@ -57,7 +58,7 @@ export default function RoutineDetailScreen() {
   const params = useLocalSearchParams<{ id: string; template?: string }>();
   const isNew = params.id === "new";
   const templateId = isNew ? params.template : undefined;
-  const allRoutines = useAllRoutines();
+  const { routines: allRoutines, loaded: routinesLoaded } = useAllRoutinesState();
   const allExercises = useAllExercises();
   const activeWorkoutId = useActiveWorkoutId();
   const exerciseById = useMemo(
@@ -65,8 +66,15 @@ export default function RoutineDetailScreen() {
     [allExercises],
   );
 
+  const load = resolveEditorLoad({
+    isNew,
+    id: params.id,
+    templateId,
+    loaded: routinesLoaded,
+    routines: allRoutines,
+  });
   // The persisted routine (edit mode / presets). New routines have none.
-  const routine = isNew ? null : (allRoutines.find((r) => r.id === params.id) ?? null);
+  const routine = load.status === "edit" ? load.routine : null;
 
   const [draft, dispatchScreen] = useReducer(screenReducer, undefined, emptyDraft);
   /** Last saved state; null while the routine does not exist in the DB yet. */
@@ -75,30 +83,26 @@ export default function RoutineDetailScreen() {
   const [showErrors, setShowErrors] = useState(false);
   const [activeDayId, setActiveDayId] = useState<string | null>(null);
 
-  // Load the draft once; later live-query emissions must not reset edits.
+  // Load the draft once, and only from fully loaded data; later live-query
+  // emissions must not reset edits.
   const loadedRef = useRef(false);
   useEffect(() => {
-    if (loadedRef.current) return;
-    if (isNew) {
-      if (!templateId) {
-        loadedRef.current = true;
-        return;
-      }
-      const template = allRoutines.find((r) => r.id === templateId);
-      if (template) {
-        loadedRef.current = true;
-        const d = draftFromTemplate(template);
-        dispatchScreen({ type: "load", draft: d });
-        setActiveDayId(d.days[0]?.id ?? null);
-      }
-    } else if (routine) {
+    if (loadedRef.current || load.status === "loading") return;
+    if (load.status === "blank") {
       loadedRef.current = true;
-      const d = draftFromRoutine(routine);
+    } else if (load.status === "template") {
+      loadedRef.current = true;
+      const d = draftFromTemplate(load.routine);
+      dispatchScreen({ type: "load", draft: d });
+      setActiveDayId(d.days[0]?.id ?? null);
+    } else if (load.status === "edit") {
+      loadedRef.current = true;
+      const d = draftFromRoutine(load.routine);
       dispatchScreen({ type: "load", draft: d });
       setOriginal(d);
       setActiveDayId(d.days[0]?.id ?? null);
     }
-  }, [isNew, templateId, routine, allRoutines]);
+  }, [load]);
 
   // Fresh empty draft: select its only day.
   useEffect(() => {
@@ -142,9 +146,11 @@ export default function RoutineDetailScreen() {
     return (
       <Screen noPadding>
         <Header title="Rutina" back />
-        <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>
-          <EmptyState icon="alert-circle" title="Rutina no encontrada" />
-        </View>
+        {load.status === "loading" ? null : (
+          <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>
+            <EmptyState icon="alert-circle" title="Rutina no encontrada" />
+          </View>
+        )}
       </Screen>
     );
   }

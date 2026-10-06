@@ -35,6 +35,12 @@ import {
   upsertSessionPlan,
 } from "@/domains/schedule/mutators";
 import { useSessionPlan } from "@/domains/schedule/queries";
+import {
+  initialPlanExercises,
+  isPlanDataLoaded,
+  shouldAutoSavePlan,
+  buildInitialSets,
+} from "@/domains/schedule/planInit";
 import { getLastSetsForExercise } from "@/domains/workout/helpers";
 import { startWorkout } from "@/domains/workout/mutators";
 import {
@@ -80,24 +86,25 @@ export default function PlanWorkoutScreen() {
     [routine, params.dayId],
   );
 
-  // Local state of the plan — auto-saves on each change.
-  const [exercises, setExercises] = useState<PlannedExercise[]>(() => {
-    if (existing) return existing.exercises;
-    if (!day) return [];
-    return day.exercises.map((re) => ({
-      exerciseId: re.exerciseId,
-      sets: buildInitialSets(re, getLastSetsForExercise(sessions, re.exerciseId)),
-    }));
-  });
-
-  // Auto-save on each user edit (skip the initial mount so a quick "look and
-  // leave" doesn't persist a plan).
-  const skipNextSaveRef = useRef(true);
+  // Local state of the plan — auto-saves on each change. `null` until seeded:
+  // the routine and the persisted plan are live queries, so seeding on first
+  // render would freeze a partial (empty) view.
+  const [exercises, setExercises] = useState<PlannedExercise[] | null>(null);
+  // The array the state was seeded with; saving is skipped while unchanged so
+  // a quick "look and leave" doesn't persist a plan.
+  const baselineRef = useRef<PlannedExercise[] | null>(null);
+  const dataLoaded = isPlanDataLoaded(routine, existing);
   useEffect(() => {
-    if (skipNextSaveRef.current) {
-      skipNextSaveRef.current = false;
-      return;
-    }
+    if (!dataLoaded || baselineRef.current) return;
+    const initial = initialPlanExercises(day, existing ?? null, sessions);
+    baselineRef.current = initial;
+    setExercises(initial);
+  }, [dataLoaded, day, existing, sessions]);
+
+  // Auto-save on each user edit.
+  useEffect(() => {
+    if (!shouldAutoSavePlan(exercises, baselineRef.current)) return;
+    if (!exercises) return;
     if (!params.dateKey || !params.routineId || !params.dayId) return;
     if (!day) return;
     void upsertSessionPlan({
@@ -114,7 +121,11 @@ export default function PlanWorkoutScreen() {
     day,
   ]);
 
-  if (!routine || !day || !params.dateKey || !params.routineId || !params.dayId) {
+  if (!dataLoaded || (day && exercises === null)) {
+    return <Screen>{null}</Screen>;
+  }
+
+  if (!routine || !day || !exercises || !params.dateKey || !params.routineId || !params.dayId) {
     return (
       <Screen>
         <EmptyState
@@ -133,7 +144,7 @@ export default function PlanWorkoutScreen() {
 
   const updateExercise = (exId: string, updater: (ex: PlannedExercise) => PlannedExercise) => {
     setExercises((prev) =>
-      prev.map((ex) => (ex.exerciseId === exId ? updater(ex) : ex)),
+      (prev ?? []).map((ex) => (ex.exerciseId === exId ? updater(ex) : ex)),
     );
   };
 
@@ -910,29 +921,6 @@ function NumericCell({
 
 // ---------------------------------------------------------------------------
 // Helpers
-
-function buildInitialSets(
-  re: RoutineExercise,
-  lastSets: CompletedSet[],
-): PlannedSet[] {
-  const sets: PlannedSet[] = [];
-  for (let i = 0; i < re.warmupSets; i++) {
-    sets.push({ isWarmup: true });
-  }
-  // Seed work sets from last session if available, falling back to routine
-  // targets. This makes the first edit feel like "preset for me" rather than
-  // a blank slate.
-  for (let i = 0; i < re.targetSets; i++) {
-    const ref = lastSets[i] ?? lastSets[lastSets.length - 1];
-    sets.push({
-      isWarmup: false,
-      weight: ref?.weight,
-      reps: ref?.reps ?? re.targetReps,
-      rpe: ref?.rpe,
-    });
-  }
-  return sets;
-}
 
 function buildRecommendation(lastSets: CompletedSet[]): string | null {
   if (lastSets.length === 0) return "Empezá liviano y observá cómo va.";

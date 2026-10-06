@@ -48,7 +48,7 @@ import {
   useActiveWorkoutId,
   useSessions,
 } from "@/domains/workout/queries";
-import { dateKey, formatDuration } from "@/utils/date";
+import { dateKey, elapsedMs, formatDuration } from "@/utils/date";
 
 export default function ActiveWorkoutScreen() {
   const colors = useThemeColors();
@@ -130,7 +130,7 @@ export default function ActiveWorkoutScreen() {
     );
   }
 
-  const elapsed = now - session.startedAt;
+  const elapsed = elapsedMs(now, session.startedAt);
   const completedSets = session.sets;
   const completedSetsCount = completedSets.filter(
     (s) => !s.isWarmup && !skippedSet.has(s.exerciseId),

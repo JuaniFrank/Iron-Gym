@@ -12,6 +12,15 @@ export function dateKey(timestamp: number): string {
   return `${y}-${m}-${day}`;
 }
 
+/**
+ * Elapsed milliseconds since `startedAt`, never negative. A session can be
+ * created after the screen's ticking `now` was sampled, so `startedAt` may be
+ * slightly ahead of `now` for up to one tick.
+ */
+export function elapsedMs(now: number, startedAt: number): number {
+  return Math.max(0, now - startedAt);
+}
+
 export function formatDuration(ms: number): string {
   const total = Math.floor(ms / 1000);
   const h = Math.floor(total / 3600);

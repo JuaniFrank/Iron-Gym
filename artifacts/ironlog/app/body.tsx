@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Dimensions, Image, Modal, Platform, Pressable, ScrollView, View } from "react-native";
 import { showAlert } from "@/utils/alert";
 
@@ -43,7 +43,10 @@ export default function BodyScreen() {
   const [tab, setTab] = useState<"weight" | "measurements" | "photos">("weight");
   const [showWeightForm, setShowWeightForm] = useState(false);
   const [showMeasureForm, setShowMeasureForm] = useState(false);
-  const [weightInput, setWeightInput] = useState(String(profile.weightKg));
+  // Last logged value; until the user logs one, follow the (live) profile
+  // weight instead of freezing the loading-time default.
+  const [loggedWeight, setLoggedWeight] = useState<string | null>(null);
+  const weightInput = loggedWeight ?? String(profile.weightKg);
 
   const screenWidth = Dimensions.get("window").width - 76;
   const sortedWeights = [...bodyWeights].sort((a, b) => a.date - b.date);
@@ -371,7 +374,7 @@ export default function BodyScreen() {
         initial={weightInput}
         onSave={(v) => {
           logBodyWeight(v);
-          setWeightInput(String(v));
+          setLoggedWeight(String(v));
           setShowWeightForm(false);
         }}
       />
@@ -400,6 +403,11 @@ function WeightFormModal({
   onSave: (v: number) => void;
 }) {
   const [v, setV] = useState(initial);
+  // The modal stays mounted: re-seed from the current value every time it opens.
+  useEffect(() => {
+    if (visible) setV(initial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   return (
     <Modal

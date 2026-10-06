@@ -73,3 +73,19 @@ export function useDefaultRestSeconds(): number {
   }
   return DEFAULT_REST_SECONDS;
 }
+
+/**
+ * True once both the profile row and the default-rest row have been read at
+ * least once. Screens that seed form state from `useUserProfile()` /
+ * `useDefaultRestSeconds()` (which return defaults while loading) must wait
+ * for this, or they freeze the defaults instead of the stored values.
+ */
+export function useProfileSettingsLoaded(): boolean {
+  const profileQ = useLiveQuery(
+    db.select().from(userProfile).where(eq(userProfile.id, "singleton")),
+  );
+  const restQ = useLiveQuery(
+    db.select().from(keyValue).where(eq(keyValue.key, "default_rest_seconds")),
+  );
+  return !!profileQ.updatedAt && !!restQ.updatedAt;
+}

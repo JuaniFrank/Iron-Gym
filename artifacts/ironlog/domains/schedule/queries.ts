@@ -86,7 +86,7 @@ export function useSessionPlan(
   date: string | null | undefined,
   routineId?: string,
   routineDayId?: string,
-): SessionPlan | null {
+): SessionPlan | null | undefined {
   const query = useMemo(
     () =>
       db
@@ -96,15 +96,17 @@ export function useSessionPlan(
         .limit(1),
     [date],
   );
-  const { data } = useLiveQuery(query, [date]);
+  const { data, updatedAt } = useLiveQuery(query, [date]);
   return useMemo(() => {
     if (!date) return null;
+    // `undefined` while the first result has not arrived (not "no plan").
+    if (!updatedAt) return undefined;
     const row = data?.[0];
     if (!row) return null;
     if (routineId && row.routineId !== routineId) return null;
     if (routineDayId && row.routineDayId !== routineDayId) return null;
     return rowToPlan(row);
-  }, [data, date, routineId, routineDayId]);
+  }, [data, updatedAt, date, routineId, routineDayId]);
 }
 
 /**

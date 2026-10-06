@@ -8,7 +8,20 @@ import {
 import { useMemo } from "react";
 
 import { db } from "@/services/db";
-import type { Routine, RoutineDay, RoutineExercise } from "@/types";
+import type { Routine } from "@/types";
+
+import { combineRoutineTree } from "./tree";
+
+/**
+ * Data of a live query once it has resolved at least once, `undefined`
+ * before. `useLiveQuery` starts with `data = []` and sets `updatedAt` on the
+ * first result, so `data` alone cannot tell "loading" from "empty".
+ */
+type Live<T> = { data: T[] | undefined; updatedAt?: Date };
+
+function loadedData<T>(q: Live<T>) {
+  return q.updatedAt ? q.data : undefined;
+}
 
 /**
  * Routines, days and exercises are normalized in 3 tables (DDB-9). The
@@ -27,57 +40,36 @@ import type { Routine, RoutineDay, RoutineExercise } from "@/types";
  * React reconciliation drops the rebuild cost.
  */
 
-function buildRoutineTree(
-  routines: readonly (typeof routinesTable.$inferSelect)[],
-  days: readonly (typeof routineDaysTable.$inferSelect)[],
-  exs: readonly (typeof routineExercisesTable.$inferSelect)[],
-): Routine[] {
-  const exsByDay = new Map<string, RoutineExercise[]>();
-  for (const ex of exs) {
-    const arr = exsByDay.get(ex.routineDayId) ?? [];
-    arr.push({
-      id: ex.id,
-      exerciseId: ex.exerciseId,
-      targetSets: ex.targetSets,
-      targetReps: ex.targetReps,
-      warmupSets: ex.warmupSets,
-      supersetWith: ex.supersetWith ?? undefined,
-      restSeconds: ex.restSeconds,
-      notes: ex.notes ?? undefined,
-    });
-    exsByDay.set(ex.routineDayId, arr);
-  }
-  // Each list is already sorted by `position` thanks to the ORDER BY in the
-  // exercises query — preserve the array order received here.
+export interface RoutinesState {
+  routines: Routine[];
+  loaded: boolean;
+}
 
-  const daysByRoutine = new Map<string, RoutineDay[]>();
-  for (const day of days) {
-    const arr = daysByRoutine.get(day.routineId) ?? [];
-    arr.push({
-      id: day.id,
-      name: day.name,
-      exercises: exsByDay.get(day.id) ?? [],
-    });
-    daysByRoutine.set(day.routineId, arr);
-  }
+const NO_ROUTINES: Routine[] = [];
 
-  return routines.map((r) => ({
-    id: r.id,
-    name: r.name,
-    description: r.description ?? undefined,
-    days: daysByRoutine.get(r.id) ?? [],
-    isPreset: r.isPreset,
-    goal: r.goal ?? undefined,
-    createdAt:
-      r.createdAt instanceof Date ? r.createdAt.getTime() : r.createdAt,
-  }));
+function useRoutinesState(
+  routinesQuery: Live<typeof routinesTable.$inferSelect>,
+  daysQuery: Live<typeof routineDaysTable.$inferSelect>,
+  exercisesQuery: Live<typeof routineExercisesTable.$inferSelect>,
+): RoutinesState {
+  const routinesData = loadedData(routinesQuery);
+  const daysData = loadedData(daysQuery);
+  const exercisesData = loadedData(exercisesQuery);
+  return useMemo(() => {
+    const tree = combineRoutineTree(routinesData, daysData, exercisesData);
+    return tree
+      ? { routines: tree, loaded: true }
+      : { routines: NO_ROUTINES, loaded: false };
+  }, [routinesData, daysData, exercisesData]);
 }
 
 /**
  * All non-deleted routines (presets + custom) with their days + exercises
- * hydrated. Replaces `useIronLog().allRoutines`.
+ * hydrated. Replaces `useIronLog().allRoutines`. `loaded` is false until all
+ * three subscriptions resolved — never a partial tree; screens that seed
+ * state from the list must wait for it.
  */
-export function useAllRoutines(): Routine[] {
+export function useAllRoutinesState(): RoutinesState {
   const routinesQuery = useLiveQuery(
     db
       .select()
@@ -100,15 +92,12 @@ export function useAllRoutines(): Routine[] {
       .orderBy(asc(routineExercisesTable.position)),
   );
 
-  return useMemo(
-    () =>
-      buildRoutineTree(
-        routinesQuery.data ?? [],
-        daysQuery.data ?? [],
-        exercisesQuery.data ?? [],
-      ),
-    [routinesQuery.data, daysQuery.data, exercisesQuery.data],
-  );
+  return useRoutinesState(routinesQuery, daysQuery, exercisesQuery);
+}
+
+/** `useAllRoutinesState()` without the loaded flag (`[]` while loading). */
+export function useAllRoutines(): Routine[] {
+  return useAllRoutinesState().routines;
 }
 
 /**
@@ -143,23 +132,18 @@ export function useCustomRoutines(): Routine[] {
       .orderBy(asc(routineExercisesTable.position)),
   );
 
-  return useMemo(
-    () =>
-      buildRoutineTree(
-        routinesQuery.data ?? [],
-        daysQuery.data ?? [],
-        exercisesQuery.data ?? [],
-      ),
-    [routinesQuery.data, daysQuery.data, exercisesQuery.data],
-  );
+  return useRoutinesState(routinesQuery, daysQuery, exercisesQuery).routines;
 }
 
 /**
- * One routine by id with days + exercises. Returns null when missing or
- * soft-deleted. Each subscription is keyed off the id; React triggers a
- * re-render on any of the three table changes.
+ * One routine by id with days + exercises. Returns `undefined` while any of
+ * the three subscriptions is still loading (never a partial tree), `null`
+ * when missing or soft-deleted. Each subscription is keyed off the id; React
+ * triggers a re-render on any of the three table changes.
  */
-export function useRoutineById(id: string | null | undefined): Routine | null {
+export function useRoutineById(
+  id: string | null | undefined,
+): Routine | null | undefined {
   const routineQuery = useMemo(
     () =>
       db
@@ -225,15 +209,14 @@ export function useRoutineById(id: string | null | undefined): Routine | null {
   const daysRes = useLiveQuery(daysQ, [id]);
   const exsRes = useLiveQuery(exsQ, [id]);
 
+  const routineData = loadedData(routineRes);
+  const daysData = loadedData(daysRes);
+  const exsData = loadedData(exsRes);
+
   return useMemo(() => {
     if (!id) return null;
-    const routine = routineRes.data?.[0];
-    if (!routine) return null;
-    const tree = buildRoutineTree(
-      [routine],
-      daysRes.data ?? [],
-      exsRes.data ?? [],
-    );
+    const tree = combineRoutineTree(routineData, daysData, exsData);
+    if (!tree) return undefined;
     return tree[0] ?? null;
-  }, [id, routineRes.data, daysRes.data, exsRes.data]);
+  }, [id, routineData, daysData, exsData]);
 }

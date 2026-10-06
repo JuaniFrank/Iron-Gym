@@ -22,11 +22,29 @@ import { useFeatureDiscoveries } from "@/domains/discovery/queries";
 import { clearAllNotes } from "@/domains/notes/mutators";
 import { useAllNotes } from "@/domains/notes/queries";
 import { updateProfile } from "@/domains/profile/mutators";
-import { useDefaultRestSeconds, useUserProfile } from "@/domains/profile/queries";
+import {
+  useDefaultRestSeconds,
+  useProfileSettingsLoaded,
+  useUserProfile,
+} from "@/domains/profile/queries";
 import { setDefaultRest } from "@/domains/workout/mutators";
 import { calorieGoalForGoal, calculateTDEE, macroSplitForGoal } from "@/utils/calculations";
 
 export default function SettingsScreen() {
+  // The form fields below are seeded once from the profile; wait until the
+  // stored values have loaded so they don't freeze the loading-time defaults.
+  const loaded = useProfileSettingsLoaded();
+  if (!loaded) {
+    return (
+      <Screen noPadding>
+        <Header title="" back compact />
+      </Screen>
+    );
+  }
+  return <SettingsForm />;
+}
+
+function SettingsForm() {
   const colors = useThemeColors();
   const profile = useUserProfile();
   const defaultRestSeconds = useDefaultRestSeconds();
