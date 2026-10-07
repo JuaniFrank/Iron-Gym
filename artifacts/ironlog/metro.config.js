@@ -1,4 +1,5 @@
 const http = require("http");
+const { TOOL_DIR_BLOCK_PATTERNS, mergeBlockList } = require("./metro.blocklist");
 const { getDefaultConfig } = require("expo/metro-config");
 
 // `expo start --web` HMR client registers itself using the HTML page URL
@@ -78,6 +79,24 @@ tryPatch(
 const config = getDefaultConfig(__dirname);
 
 config.resolver.assetExts = [...config.resolver.assetExts, "wasm"];
+
+// Monorepo: also watch the repo root so edits under other workspace packages
+// (e.g. `lib/*`) trigger rebuilds. Expo's default already lists the workspace
+// packages and the root `node_modules` but not the root itself, so merge
+// (de-duplicated) instead of replacing. Do not add resolver.nodeModulesPaths
+// here unless you follow Expo's pnpm monorepo guide: a sparse root
+// `node_modules` can confuse resolution.
+config.watchFolders = [
+  ...new Set([...(config.watchFolders ?? []), workspaceRoot]),
+];
+
+// The workspace root is watched now: skip tool folders in it that are rewritten
+// constantly (`.codegraph/` sqlite index, `.atl/`). Merged, not replaced: Expo's
+// own blockList patterns stay.
+config.resolver.blockList = mergeBlockList(
+  config.resolver.blockList,
+  TOOL_DIR_BLOCK_PATTERNS,
+);
 
 // expo-sqlite on web requires SharedArrayBuffer (used by `openDatabaseSync`).
 // The browser only exposes SharedArrayBuffer when the document is
