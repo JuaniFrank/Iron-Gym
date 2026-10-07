@@ -665,6 +665,7 @@ function PlanExerciseCard({
             label="Repetir última"
             active={false}
             onPress={() => applyAutofill("repeat")}
+            style={history.length ? undefined : { opacity: 0.5 }}
           />
           <Chip
             label="+ 2,5 kg"
