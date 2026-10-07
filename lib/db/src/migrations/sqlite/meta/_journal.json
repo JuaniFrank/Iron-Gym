@@ -29,6 +29,20 @@
       "when": 1790918922499,
       "tag": "0003_sync_capture_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1791319956025,
+      "tag": "0004_session_set_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1791320155875,
+      "tag": "0005_rest_notification_columns",
+      "breakpoints": true
     }
   ]
 }

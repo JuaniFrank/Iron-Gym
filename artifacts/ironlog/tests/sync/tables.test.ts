@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { SYNC_TABLES } from "@/services/sync/tables";
+import { LOCAL_ONLY_TABLES, SYNC_TABLES } from "@/services/sync/tables";
 
 import { createTestDb } from "../helpers/db";
 
@@ -48,6 +48,28 @@ describe("sync table registry", () => {
           index.get(t.name)!,
         );
       }
+    }
+  });
+
+  it("classifies every table of a migrated database as sync or local-only, never both", () => {
+    const { sqlite } = createTestDb();
+    const tables = (
+      sqlite
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> '__drizzle_migrations'",
+        )
+        .all() as { name: string }[]
+    ).map((r) => r.name);
+    const sync = new Set(SYNC_TABLES.map((t) => t.name));
+    const local = new Set(LOCAL_ONLY_TABLES);
+
+    for (const name of tables) {
+      const classes = Number(sync.has(name)) + Number(local.has(name));
+      expect(classes, `${name} must be in exactly one of SYNC_TABLES / LOCAL_ONLY_TABLES`).toBe(1);
+    }
+    // No stale entries either: every classified name is a real table.
+    for (const name of [...sync, ...local]) {
+      expect(tables, `${name} is classified but missing from the schema`).toContain(name);
     }
   });
 });

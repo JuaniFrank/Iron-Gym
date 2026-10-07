@@ -63,3 +63,34 @@ export async function updateProfile(
     .set({ ...validated, updatedAt: new Date() })
     .where(eq(userProfile.id, "singleton"));
 }
+
+const RestNotificationConfigSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    type: z.enum(["sound_only", "rich"]).optional(),
+    sound: z.enum(["default", "silent"]).optional(),
+  })
+  .strict();
+
+/**
+ * Patch the rest-notification preferences on the singleton profile row. Only
+ * the fields present in `patch` are written; an empty patch writes nothing.
+ * Bumps `updatedAt`, which is what makes the change win last-write-wins sync.
+ */
+export async function updateRestNotificationConfig(patch: {
+  enabled?: boolean;
+  type?: "sound_only" | "rich";
+  sound?: "default" | "silent";
+}): Promise<void> {
+  const validated = RestNotificationConfigSchema.parse(patch);
+  const updates: Partial<typeof userProfile.$inferInsert> = {};
+  if (validated.enabled !== undefined) updates.restNotificationEnabled = validated.enabled;
+  if (validated.type !== undefined) updates.restNotificationType = validated.type;
+  if (validated.sound !== undefined) updates.restNotificationSound = validated.sound;
+  if (Object.keys(updates).length === 0) return;
+  await db
+    .update(userProfile)
+    .set({ ...updates, updatedAt: new Date() })
+    .where(eq(userProfile.id, "singleton"))
+    .run();
+}

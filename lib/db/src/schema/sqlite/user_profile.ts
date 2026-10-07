@@ -42,6 +42,24 @@ export const userProfile = sqliteTable("user_profile", {
   volumeTargets: text("volume_targets", { mode: "json" }).$type<
     Partial<Record<MuscleGroup, VolumeTarget>>
   >(),
+  // Rest notification preferences: what to do when the rest timer ends.
+  // Synced with the profile (last write wins via `updatedAt`). Additive: the
+  // defaults cover rows that existed before these columns.
+  restNotificationEnabled: integer("rest_notification_enabled", {
+    mode: "boolean",
+  })
+    .default(true)
+    .notNull(),
+  /** "sound_only" -> sound + haptic only; "rich" -> banner + sound + haptic. */
+  restNotificationType: text("rest_notification_type")
+    .$type<"sound_only" | "rich">()
+    .default("rich")
+    .notNull(),
+  /** "default" -> system sound; "silent" -> no sound (haptic + visual pulse only). */
+  restNotificationSound: text("rest_notification_sound")
+    .$type<"default" | "silent">()
+    .default("default")
+    .notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
 

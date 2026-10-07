@@ -19,6 +19,7 @@ import {
   scheduleOverrides,
   sessionNotes,
   sessionPlans,
+  sessionSetDrafts,
   workoutSessions,
 } from "@workspace/db/schema";
 
@@ -47,6 +48,7 @@ export async function resetAll(): Promise<void> {
   await db.transaction(async (tx) => {
     // Children first (sets/notes/PRs cascade-deletable via session anyway,
     // but explicit deletes are safe).
+    await tx.delete(sessionSetDrafts).run();
     await tx.delete(prRecords).run();
     await tx.delete(sessionNotes).run();
     await tx.delete(completedSets).run();

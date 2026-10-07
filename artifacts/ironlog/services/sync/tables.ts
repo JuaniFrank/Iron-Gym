@@ -30,6 +30,22 @@ export const SYNC_TABLES: readonly SyncTable[] = [
   { name: "user_profile", pk: "id" },
 ];
 
+/**
+ * Tables that deliberately never sync: device bookkeeping and device-ephemeral
+ * state. Every table in the schema must appear in exactly one of `SYNC_TABLES`
+ * and `LOCAL_ONLY_TABLES` (enforced by `tests/sync/tables.test.ts`), so adding
+ * a table forces an explicit sync decision.
+ */
+export const LOCAL_ONLY_TABLES: readonly string[] = [
+  "_meta",
+  "key_value",
+  "feature_discoveries",
+  // Autosaved set inputs: device-ephemeral, never leave the device.
+  "session_set_drafts",
+  "_outbox",
+  "_sync_state",
+];
+
 const BY_NAME: ReadonlyMap<string, SyncTable> = new Map(
   SYNC_TABLES.map((t) => [t.name, t]),
 );

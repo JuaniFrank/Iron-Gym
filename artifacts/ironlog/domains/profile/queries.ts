@@ -52,6 +52,52 @@ export function useUserProfile(): UserProfile {
   }, [row]);
 }
 
+/** What to do when the rest timer ends (synced with the profile). */
+export interface RestNotificationConfig {
+  enabled: boolean;
+  type: "sound_only" | "rich";
+  sound: "default" | "silent";
+}
+
+const DEFAULT_REST_NOTIFICATION_CONFIG: RestNotificationConfig = {
+  enabled: true,
+  type: "rich",
+  sound: "default",
+};
+
+/**
+ * Pure mapping behind `useRestNotificationConfig`. `undefined` rows mean the
+ * query has not resolved yet and stay `undefined` (loading); defaults apply
+ * only to a resolved result with no profile row.
+ */
+export function resolveRestNotificationConfig(
+  rows: (typeof userProfile.$inferSelect)[] | undefined,
+): RestNotificationConfig | undefined {
+  if (!rows) return undefined;
+  const row = rows[0];
+  if (!row) return { ...DEFAULT_REST_NOTIFICATION_CONFIG };
+  return {
+    enabled: row.restNotificationEnabled,
+    type: row.restNotificationType,
+    sound: row.restNotificationSound,
+  };
+}
+
+/**
+ * Rest-notification preferences. Returns `undefined` while loading so callers
+ * never seed UI or arm notifications from defaults standing in for stored
+ * values; defaults only when loaded and the profile row is missing.
+ */
+export function useRestNotificationConfig(): RestNotificationConfig | undefined {
+  const { data, updatedAt } = useLiveQuery(
+    db.select().from(userProfile).where(eq(userProfile.id, "singleton")),
+  );
+  return useMemo(
+    () => (updatedAt ? resolveRestNotificationConfig(data) : undefined),
+    [data, updatedAt],
+  );
+}
+
 /**
  * Default rest seconds for new routine exercises. Stored in `key_value`
  * under the key `default_rest_seconds`. Returns 90 (legacy default) when the
