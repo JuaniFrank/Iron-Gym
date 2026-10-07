@@ -9,6 +9,7 @@ import {
   routineDays as routineDaysTable,
   routineExercises as routineExercisesTable,
   routines as routinesTable,
+  sessionSetDrafts,
   workoutSessions,
 } from "@workspace/db/schema";
 import { z } from "zod";
@@ -217,6 +218,12 @@ export async function startEmptyWorkout(
 export async function cancelWorkout(sessionId: string): Promise<void> {
   z.string().min(1).parse(sessionId);
   await db.transaction(async (tx) => {
+    // Drafts are deleted explicitly: the FK cascade only fires when the
+    // connection enforces foreign keys, which expo-sqlite does not by default.
+    await tx
+      .delete(sessionSetDrafts)
+      .where(eq(sessionSetDrafts.sessionId, sessionId))
+      .run();
     await tx.delete(workoutSessions).where(eq(workoutSessions.id, sessionId)).run();
     await setActiveWorkoutId(tx, null);
   });
@@ -260,6 +267,18 @@ export async function logSet(
       completedAt: now,
       updatedAt: now,
     }).run();
+    // The draft of this slot no longer applies: the set is now in the history.
+    await tx
+      .delete(sessionSetDrafts)
+      .where(
+        and(
+          eq(sessionSetDrafts.sessionId, sessionId),
+          eq(sessionSetDrafts.exerciseId, validated.exerciseId),
+          eq(sessionSetDrafts.setIndex, validated.setIndex),
+          eq(sessionSetDrafts.isWarmup, validated.isWarmup),
+        ),
+      )
+      .run();
     // Append to exerciseOrder if missing.
     const session = await tx
       .select({
@@ -842,10 +861,134 @@ export async function finishWorkout(
       prsAchieved: detectedPrs,
     };
 
+    // Pending drafts are meaningless once the session is closed.
+    await tx
+      .delete(sessionSetDrafts)
+      .where(eq(sessionSetDrafts.sessionId, sessionId))
+      .run();
+
     return {
       session: finalSession,
       prs: detectedPrs,
       newAchievements: newUnlocks,
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Session set drafts — autosaved kg/reps/rpe per slot while the set is not
+// completed yet (cf. `session_set_drafts.ts`). Local-only: never synced.
+// ---------------------------------------------------------------------------
+
+const DraftSlotSchema = z.object({
+  sessionId: z.string().min(1),
+  exerciseId: z.string().min(1),
+  setIndex: z.number().int().min(1),
+  isWarmup: z.boolean(),
+});
+
+const DraftPatchSchema = z.object({
+  weight: z.number().nullable().optional(),
+  reps: z.number().int().nullable().optional(),
+  rpe: z.number().nullable().optional(),
+});
+
+export interface DraftSlotKey {
+  sessionId: string;
+  exerciseId: string;
+  setIndex: number;
+  isWarmup: boolean;
+}
+
+export interface DraftPatch {
+  weight?: number | null;
+  reps?: number | null;
+  rpe?: number | null;
+}
+
+const DRAFT_FIELDS = ["weight", "reps", "rpe"] as const;
+
+function draftSlotWhere(slot: DraftSlotKey) {
+  return and(
+    eq(sessionSetDrafts.sessionId, slot.sessionId),
+    eq(sessionSetDrafts.exerciseId, slot.exerciseId),
+    eq(sessionSetDrafts.setIndex, slot.setIndex),
+    eq(sessionSetDrafts.isWarmup, slot.isWarmup),
+  );
+}
+
+/**
+ * Upsert the draft of one slot. Only the fields present in `patch` are
+ * written; the others keep their stored value. `NaN` (an unparsable input) is
+ * treated as "empty". When no field has a value afterwards the draft row is
+ * removed, so clearing every input never leaves an orphan row behind.
+ */
+export async function upsertSessionSetDraft(
+  slot: DraftSlotKey,
+  patch: DraftPatch,
+): Promise<void> {
+  const validatedSlot = DraftSlotSchema.parse(slot);
+  const validatedPatch = DraftPatchSchema.parse(
+    Object.fromEntries(
+      Object.entries(patch).map(([k, v]) => [
+        k,
+        typeof v === "number" && Number.isNaN(v) ? null : v,
+      ]),
+    ),
+  );
+  const provided: Partial<Record<(typeof DRAFT_FIELDS)[number], number | null>> = {};
+  for (const field of DRAFT_FIELDS) {
+    if (validatedPatch[field] !== undefined) provided[field] = validatedPatch[field];
+  }
+  const now = new Date();
+
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(sessionSetDrafts)
+      .values({
+        id: uid(),
+        ...validatedSlot,
+        weight: provided.weight ?? null,
+        reps: provided.reps ?? null,
+        rpe: provided.rpe ?? null,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [
+          sessionSetDrafts.sessionId,
+          sessionSetDrafts.exerciseId,
+          sessionSetDrafts.setIndex,
+          sessionSetDrafts.isWarmup,
+        ],
+        set: { ...provided, updatedAt: now },
+      })
+      .run();
+    // Nothing left to remember for this slot → drop the row.
+    await tx
+      .delete(sessionSetDrafts)
+      .where(
+        and(
+          draftSlotWhere(validatedSlot),
+          isNull(sessionSetDrafts.weight),
+          isNull(sessionSetDrafts.reps),
+          isNull(sessionSetDrafts.rpe),
+        ),
+      )
+      .run();
+  });
+}
+
+/** Delete one slot's draft (e.g. the user un-completes a set and starts over). */
+export async function clearSessionSetDraft(slot: DraftSlotKey): Promise<void> {
+  const validated = DraftSlotSchema.parse(slot);
+  await db.delete(sessionSetDrafts).where(draftSlotWhere(validated)).run();
+}
+
+/** Delete every draft of a session. */
+export async function clearDraftsForSession(sessionId: string): Promise<void> {
+  z.string().min(1).parse(sessionId);
+  await db
+    .delete(sessionSetDrafts)
+    .where(eq(sessionSetDrafts.sessionId, sessionId))
+    .run();
 }

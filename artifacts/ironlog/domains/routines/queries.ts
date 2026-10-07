@@ -7,6 +7,7 @@ import {
 } from "@workspace/db/schema";
 import { useMemo } from "react";
 
+import { useKeyedLiveQuery } from "@/hooks/useKeyedLiveQuery";
 import { db } from "@/services/db";
 import type { Routine } from "@/types";
 
@@ -205,13 +206,20 @@ export function useRoutineById(
     [id],
   );
 
-  const routineRes = useLiveQuery(routineQuery, [id]);
-  const daysRes = useLiveQuery(daysQ, [id]);
-  const exsRes = useLiveQuery(exsQ, [id]);
+  // Keyed by id: right after `id` changes (e.g. the session arrives) results
+  // of the previous id must not count as loaded.
+  const key = id ?? "";
+  const routineRes = useKeyedLiveQuery(routineQuery, [routinesTable], key);
+  const daysRes = useKeyedLiveQuery(daysQ, [routineDaysTable], key);
+  const exsRes = useKeyedLiveQuery(
+    exsQ,
+    [routineExercisesTable, routineDaysTable],
+    key,
+  );
 
-  const routineData = loadedData(routineRes);
-  const daysData = loadedData(daysRes);
-  const exsData = loadedData(exsRes);
+  const routineData = routineRes.data;
+  const daysData = daysRes.data;
+  const exsData = exsRes.data;
 
   return useMemo(() => {
     if (!id) return null;

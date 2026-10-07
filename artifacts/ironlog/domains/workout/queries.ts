@@ -4,11 +4,14 @@ import {
   completedSets,
   keyValue,
   prRecords,
+  sessionSetDrafts,
   workoutSessions,
 } from "@workspace/db/schema";
 import { useMemo } from "react";
 
 import { db } from "@/services/db";
+import { resolveActiveSessionPhase } from "@/domains/workout/activeSessionState";
+import { useKeyedLiveQuery } from "@/hooks/useKeyedLiveQuery";
 import type { CompletedSet, PRRecord, WorkoutSession } from "@/types";
 import { dateKey } from "@/utils/date";
 
@@ -86,15 +89,32 @@ function buildSession(
 // Hooks
 // ---------------------------------------------------------------------------
 
+/** `key_value.active_workout_id` → string id, or null when unset/invalid. */
+function parseActiveWorkoutId(
+  row: { value: unknown } | undefined,
+): string | null {
+  if (!row) return null;
+  if (typeof row.value === "string") return row.value;
+  if (row.value && typeof row.value === "object" && "id" in row.value) {
+    const id = (row.value as { id: unknown }).id;
+    return typeof id === "string" ? id : null;
+  }
+  return null;
+}
+
 /**
- * Active workout session (or null when no `active_workout_id` is set OR the
- * referenced session no longer exists).
+ * Active workout session.
+ *   - `undefined`: still loading (active id or the session/sets/prs queries
+ *     have not delivered a result for the current id) - never seed screens or
+ *     show "no session" from it;
+ *   - `null`: loaded and there is none (no `active_workout_id`, or the
+ *     referenced session no longer exists).
  *
  * Two-step subscription pattern: read `key_value.active_workout_id`, then
  * subscribe to that session + its sets + prs. The legacy context cached
  * `activeWorkoutId` as a state slice; here it's a row in `key_value`.
  */
-export function useActiveSession(): WorkoutSession | null {
+export function useActiveSession(): WorkoutSession | null | undefined {
   // Active workout id from key_value.
   const activeIdQ = useLiveQuery(
     db
@@ -103,16 +123,11 @@ export function useActiveSession(): WorkoutSession | null {
       .where(eq(keyValue.key, "active_workout_id"))
       .limit(1),
   );
-  const activeId = useMemo<string | null>(() => {
-    const row = activeIdQ.data?.[0];
-    if (!row) return null;
-    if (typeof row.value === "string") return row.value;
-    if (row.value && typeof row.value === "object" && "id" in row.value) {
-      const id = (row.value as { id: unknown }).id;
-      return typeof id === "string" ? id : null;
-    }
-    return null;
-  }, [activeIdQ.data]);
+  const activeIdLoaded = !!activeIdQ.updatedAt;
+  const activeId = useMemo<string | null>(
+    () => parseActiveWorkoutId(activeIdQ.data?.[0]),
+    [activeIdQ.data],
+  );
 
   // Subscribe to the session itself, sets, and prs filtered by sessionId.
   const sessionQ = useMemo(
@@ -157,16 +172,27 @@ export function useActiveSession(): WorkoutSession | null {
     [activeId],
   );
 
-  const session = useLiveQuery(sessionQ, [activeId]);
-  const sets = useLiveQuery(setsQ, [activeId]);
-  const prs = useLiveQuery(prsQ, [activeId]);
+  // The three queries resolve independently: until all of them delivered a
+  // result FOR THE CURRENT ID the session would be exposed with empty/stale
+  // sets and prs (partially loaded), which screens must not seed state from.
+  const key = activeId ?? "";
+  const session = useKeyedLiveQuery(sessionQ, [workoutSessions], key);
+  const sets = useKeyedLiveQuery(setsQ, [completedSets], key);
+  const prs = useKeyedLiveQuery(prsQ, [prRecords], key);
+  const dataLoaded = session.loaded && sets.loaded && prs.loaded;
 
   return useMemo(() => {
-    if (!activeId) return null;
     const row = session.data?.[0];
-    if (!row) return null;
+    const phase = resolveActiveSessionPhase({
+      activeIdLoaded,
+      activeId,
+      dataLoaded,
+      sessionRowId: row?.id,
+    });
+    if (phase === "loading") return undefined;
+    if (phase === "none" || !row) return null;
     return buildSession(row, sets.data ?? [], prs.data ?? []);
-  }, [activeId, session.data, sets.data, prs.data]);
+  }, [activeIdLoaded, activeId, dataLoaded, session.data, sets.data, prs.data]);
 }
 
 /**
@@ -181,6 +207,19 @@ export function useActiveSession(): WorkoutSession | null {
  * + per-session subscription, but that's a Step 5+ concern.
  */
 export function useSessions(): WorkoutSession[] {
+  return useSessionsWithStatus().sessions;
+}
+
+/**
+ * Same as `useSessions` plus a `loaded` flag that turns true once the three
+ * underlying queries delivered their first result. Screens that derive
+ * one-shot state from the history (e.g. "previous" values prefilled into set
+ * inputs) must wait for it instead of seeding from a partially loaded list.
+ */
+export function useSessionsWithStatus(): {
+  sessions: WorkoutSession[];
+  loaded: boolean;
+} {
   const sessionsQ = useLiveQuery(
     db
       .select()
@@ -199,7 +238,9 @@ export function useSessions(): WorkoutSession[] {
     db.select().from(prRecords).where(isNull(prRecords.deletedAt)),
   );
 
-  return useMemo(() => {
+  const loaded = !!sessionsQ.updatedAt && !!setsQ.updatedAt && !!prsQ.updatedAt;
+
+  const sessions = useMemo(() => {
     const setsBySession = new Map<
       string,
       (typeof completedSets.$inferSelect)[]
@@ -223,6 +264,8 @@ export function useSessions(): WorkoutSession[] {
       ),
     );
   }, [sessionsQ.data, setsQ.data, prsQ.data]);
+
+  return { sessions, loaded };
 }
 
 /**
@@ -442,23 +485,88 @@ export function usePRsForSession(
 /**
  * Synthetic `activeWorkoutId` slice — replaces `useIronLog().activeWorkoutId`
  * for screens that only need the id (not the hydrated session).
+ *
+ * `undefined` while the first read is pending (falsy like `null`, so plain
+ * truthiness checks keep working); `null` once loaded with no active workout.
+ * Anything that STARTS a workout must wait for `=== null`.
  */
-export function useActiveWorkoutId(): string | null {
-  const { data } = useLiveQuery(
+export function useActiveWorkoutId(): string | null | undefined {
+  const { data, updatedAt } = useLiveQuery(
     db
       .select()
       .from(keyValue)
       .where(eq(keyValue.key, "active_workout_id"))
       .limit(1),
   );
-  return useMemo<string | null>(() => {
-    const row = data?.[0];
-    if (!row) return null;
-    if (typeof row.value === "string") return row.value;
-    if (row.value && typeof row.value === "object" && "id" in row.value) {
-      const id = (row.value as { id: unknown }).id;
-      return typeof id === "string" ? id : null;
-    }
-    return null;
-  }, [data]);
+  return useMemo<string | null | undefined>(() => {
+    if (!updatedAt) return undefined;
+    return parseActiveWorkoutId(data?.[0]);
+  }, [data, updatedAt]);
+}
+
+// ---------------------------------------------------------------------------
+// Set-input drafts
+// ---------------------------------------------------------------------------
+
+/** Autosaved inputs of a slot that is not completed yet. */
+export interface DraftValues {
+  weight?: number;
+  reps?: number;
+  rpe?: number;
+}
+
+/** Lookup key of a draft slot within one session: `exercise::setIndex::isWarmup`. */
+export function buildDraftKey(
+  exerciseId: string,
+  setIndex: number,
+  isWarmup: boolean,
+): string {
+  return `${exerciseId}::${setIndex}::${isWarmup ? 1 : 0}`;
+}
+
+/**
+ * Index draft rows by slot key. `undefined` rows (query not resolved yet)
+ * stay `undefined`, so callers can tell "loading" from "no drafts".
+ */
+export function draftRowsToMap(
+  rows: (typeof sessionSetDrafts.$inferSelect)[] | undefined,
+): Map<string, DraftValues> | undefined {
+  if (!rows) return undefined;
+  const map = new Map<string, DraftValues>();
+  for (const row of rows) {
+    map.set(buildDraftKey(row.exerciseId, row.setIndex, row.isWarmup), {
+      weight: row.weight ?? undefined,
+      reps: row.reps ?? undefined,
+      rpe: row.rpe ?? undefined,
+    });
+  }
+  return map;
+}
+
+/**
+ * Drafts of a session keyed by `buildDraftKey`. Returns `undefined` until the
+ * first result arrives, so a screen can wait instead of seeding inputs from a
+ * partially loaded set (a nullish `sessionId` has nothing to load: empty map).
+ */
+export function useDraftsBySession(
+  sessionId: string | null | undefined,
+): Map<string, DraftValues> | undefined {
+  const query = useMemo(
+    () =>
+      db
+        .select()
+        .from(sessionSetDrafts)
+        .where(eq(sessionSetDrafts.sessionId, sessionId ?? "")),
+    [sessionId],
+  );
+  const { data, loaded } = useKeyedLiveQuery(
+    query,
+    [sessionSetDrafts],
+    sessionId ?? "",
+  );
+  return useMemo(() => {
+    if (!sessionId) return new Map<string, DraftValues>();
+    if (!loaded) return undefined;
+    return draftRowsToMap(data);
+  }, [data, loaded, sessionId]);
 }

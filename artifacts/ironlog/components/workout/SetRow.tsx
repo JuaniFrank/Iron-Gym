@@ -1,20 +1,41 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React, { useState } from "react";
-import { Platform, Pressable, StyleSheet, TextInput, View } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Platform,
+  Pressable,
+  StyleSheet,
+  TextInput,
+  useWindowDimensions,
+  View,
+} from "react-native";
 
 import { Text } from "@/components/ui/Text";
+import { TermHint } from "@/components/workout/TermHint";
 import { useThemeColors } from "@/contexts/ThemeContext";
+import {
+  parseCompletion,
+  parseDraftPatch,
+  type ParsedDraftPatch,
+  type SetInputStrings,
+} from "@/domains/workout/setInputs";
+
+/** Debounce of the draft autosave while the user is typing. */
+const DRAFT_DEBOUNCE_MS = 300;
 
 interface SetRowProps {
   index: number;
   isWarmup?: boolean;
-  initialWeight?: number;
-  initialReps?: number;
+  /** Initial text of the inputs, resolved by the screen with
+   *  `resolveSetInputs` (completed > draft > planned > previous). The inputs
+   *  are seeded once on mount, so the screen must only render the row after
+   *  the plan and drafts have loaded. For a completed row the text follows the
+   *  logged values (read-only). */
+  initialInputs: SetInputStrings;
   previousWeight?: number;
   previousReps?: number;
-  /** Pre-defined target values from a SessionPlan. Used to pre-fill the
-   *  inputs before the set is completed, with priority over `previousX`. */
+  /** Target values from a SessionPlan. Only used to style the row as
+   *  "planned"; the prefill itself arrives through `initialInputs`. */
   plannedWeight?: number;
   plannedReps?: number;
   plannedRpe?: number;
@@ -33,13 +54,17 @@ interface SetRowProps {
   /** Long-press en el botón check. Si se omite, fallback al onRemove
    *  (preserva comportamiento legacy). */
   onCheckLongPress?: () => void;
+  /** Debounced (300ms) autosave of the inputs of a not-completed row. Fires
+   *  only after the user typed (never from values that came from the plan or
+   *  previous session) and flushes any pending change on unmount. Omit to
+   *  disable draft persistence. */
+  onDraftChange?: (patch: ParsedDraftPatch) => void;
 }
 
 export function SetRow({
   index,
   isWarmup,
-  initialWeight,
-  initialReps,
+  initialInputs,
   previousWeight,
   previousReps,
   plannedWeight,
@@ -54,31 +79,74 @@ export function SetRow({
   onRemove,
   onNotePress,
   onCheckLongPress,
+  onDraftChange,
 }: SetRowProps) {
   const colors = useThemeColors();
-  // Pre-fill priority for not-yet-completed sets: plan > previous > empty.
-  // When completed, we always show the actual value (`initialX`).
-  const [weight, setWeight] = useState<string>(
-    initialWeight != null
-      ? String(initialWeight)
-      : plannedWeight != null
-        ? String(plannedWeight)
-        : previousWeight != null
-          ? String(previousWeight)
-          : "",
-  );
-  const [reps, setReps] = useState<string>(
-    initialReps != null
-      ? String(initialReps)
-      : plannedReps != null
-        ? String(plannedReps)
-        : previousReps != null
-          ? String(previousReps)
-          : "",
-  );
-  const [rpe, setRpe] = useState<string>(
-    plannedRpe != null && !completed ? String(plannedRpe) : "",
-  );
+  // Small phones (iPhone 13 Pro = 390pt and below) cannot fit "42.5" in one
+  // line once the note pencil is visible, so only they get tighter padding and
+  // font; larger phones and tablets keep the regular sizing.
+  const { width: windowWidth } = useWindowDimensions();
+  const compact = windowWidth < 400;
+  const inputFontSize = compact ? 13 : 14;
+  const inputPaddingH = compact ? 4 : 6;
+  const inputsGap = compact ? 4 : 6;
+  const [weight, setWeight] = useState<string>(initialInputs.weight);
+  const [reps, setReps] = useState<string>(initialInputs.reps);
+  const [rpe, setRpe] = useState<string>(initialInputs.rpe);
+
+  // Latest typed values + draft debounce bookkeeping. Refs, so the unmount
+  // flush and the timer never read a stale closure.
+  const valuesRef = useRef<SetInputStrings>(initialInputs);
+  const draftPendingRef = useRef(false);
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onDraftChangeRef = useRef(onDraftChange);
+  onDraftChangeRef.current = onDraftChange;
+
+  const cancelDraft = useCallback(() => {
+    if (draftTimerRef.current) {
+      clearTimeout(draftTimerRef.current);
+      draftTimerRef.current = null;
+    }
+    draftPendingRef.current = false;
+  }, []);
+
+  const flushDraft = useCallback(() => {
+    if (draftTimerRef.current) {
+      clearTimeout(draftTimerRef.current);
+      draftTimerRef.current = null;
+    }
+    if (!draftPendingRef.current) return;
+    draftPendingRef.current = false;
+    const v = valuesRef.current;
+    onDraftChangeRef.current?.(parseDraftPatch(v.weight, v.reps, v.rpe));
+  }, []);
+
+  // Persist whatever is still pending when the row goes away (collapse,
+  // navigation) so the last <=300ms of typing is not lost.
+  useEffect(() => flushDraft, [flushDraft]);
+
+  // A completed row is read-only and the DB is its source of truth: follow the
+  // logged values (e.g. when an earlier set is removed and rows shift).
+  const { weight: initW, reps: initR, rpe: initE } = initialInputs;
+  useEffect(() => {
+    if (!completed) return;
+    cancelDraft();
+    valuesRef.current = { weight: initW, reps: initR, rpe: initE };
+    setWeight(initW);
+    setReps(initR);
+    setRpe(initE);
+  }, [completed, initW, initR, initE, cancelDraft]);
+
+  const edit = (field: keyof SetInputStrings, text: string) => {
+    valuesRef.current = { ...valuesRef.current, [field]: text };
+    if (field === "weight") setWeight(text);
+    else if (field === "reps") setReps(text);
+    else setRpe(text);
+    if (!onDraftChangeRef.current) return;
+    draftPendingRef.current = true;
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(flushDraft, DRAFT_DEBOUNCE_MS);
+  };
 
   const isPlanned =
     !completed &&
@@ -87,12 +155,13 @@ export function SetRow({
   const setLabel = isWarmup ? "C" : String(index);
 
   const handleComplete = () => {
-    const w = parseFloat(weight) || 0;
-    const r = parseInt(reps, 10) || 0;
-    if (r === 0) return;
-    const rpeVal = rpe ? parseFloat(rpe) : undefined;
+    // A rejected completion keeps its pending draft (still unfinished input).
+    const parsed = parseCompletion(weight, reps, rpe);
+    if (!parsed) return;
+    // logSet clears the slot's draft; a pending autosave would resurrect it.
+    cancelDraft();
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    onComplete(w, r, rpeVal);
+    onComplete(parsed.weight, parsed.reps, parsed.rpe);
   };
 
   // Set badge fill: warmup → orange-yellow, completed work → lime, otherwise outline.
@@ -148,9 +217,17 @@ export function SetRow({
           },
         ]}
       >
-        <Text variant="label" weight="bold" color={badgeText}>
-          {setLabel}
-        </Text>
+        {isPr ? (
+          // Tappable trophy: opens the PR explanation. Keeps the completed
+          // badge look and replaces the set number with the icon.
+          <TermHint term="PR">
+            <Feather name="award" size={14} color={colors.accentInk} />
+          </TermHint>
+        ) : (
+          <Text variant="label" weight="bold" color={badgeText}>
+            {setLabel}
+          </Text>
+        )}
       </View>
 
       <View style={styles.previousContainer}>
@@ -161,10 +238,10 @@ export function SetRow({
         </Text>
       </View>
 
-      <View style={styles.inputsContainer}>
+      <View style={[styles.inputsContainer, { gap: inputsGap }]}>
         <TextInput
           value={weight}
-          onChangeText={setWeight}
+          onChangeText={(t) => edit("weight", t)}
           keyboardType="decimal-pad"
           placeholder="—"
           placeholderTextColor={colors.muted}
@@ -176,12 +253,14 @@ export function SetRow({
               backgroundColor: cellBg,
               borderColor: cellBorder,
               borderWidth: cellBorderWidth,
+              fontSize: inputFontSize,
+              paddingHorizontal: inputPaddingH,
             },
           ]}
         />
         <TextInput
           value={reps}
-          onChangeText={setReps}
+          onChangeText={(t) => edit("reps", t)}
           keyboardType="number-pad"
           placeholder="—"
           placeholderTextColor={colors.muted}
@@ -193,13 +272,15 @@ export function SetRow({
               backgroundColor: cellBg,
               borderColor: cellBorder,
               borderWidth: cellBorderWidth,
+              fontSize: inputFontSize,
+              paddingHorizontal: inputPaddingH,
             },
           ]}
         />
         {!isWarmup ? (
           <TextInput
             value={rpe}
-            onChangeText={setRpe}
+            onChangeText={(t) => edit("rpe", t)}
             keyboardType="decimal-pad"
             placeholder="—"
             placeholderTextColor={colors.muted}
@@ -210,6 +291,8 @@ export function SetRow({
                 color: colors.ink,
                 backgroundColor: cellBg,
                 borderColor: cellBorder,
+                fontSize: inputFontSize,
+                paddingHorizontal: inputPaddingH,
               },
             ]}
           />
@@ -224,6 +307,7 @@ export function SetRow({
                 opacity: 0.4,
                 alignItems: "center",
                 justifyContent: "center",
+                paddingHorizontal: inputPaddingH,
               },
             ]}
           >

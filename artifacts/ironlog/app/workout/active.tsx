@@ -18,7 +18,7 @@ import { Text } from "@/components/ui/Text";
 import { NoteSheet } from "@/components/notes/NoteSheet";
 import { QuickNoteMenu } from "@/components/notes/QuickNoteMenu";
 import { ExerciseActionSheet } from "@/components/workout/ExerciseActionSheet";
-import { RestTimer } from "@/components/workout/RestTimer";
+import { RestTimer, type RestTimerState } from "@/components/workout/RestTimer";
 import { SetRow } from "@/components/workout/SetRow";
 import { TermHint } from "@/components/workout/TermHint";
 import { useThemeColors } from "@/contexts/ThemeContext";
@@ -26,9 +26,12 @@ import { useAllExercises } from "@/domains/exercises/queries";
 import { useAllNotes } from "@/domains/notes/queries";
 import {
   useDefaultRestSeconds,
+  useRestNotificationConfig,
 } from "@/domains/profile/queries";
 import { useRoutineById } from "@/domains/routines/queries";
 import { useSessionPlan } from "@/domains/schedule/queries";
+import { isFinished, planRestStart } from "@/domains/workout/restTimer";
+import { withSessionEnding } from "@/domains/workout/sessionEnd";
 import {
   getLastSetsForExercise,
   getMaxWeightForExercise,
@@ -42,19 +45,36 @@ import {
   reorderSessionExercises,
   setSessionExerciseSkipped,
   startWorkout,
+  upsertSessionSetDraft,
 } from "@/domains/workout/mutators";
 import {
+  buildDraftKey,
   useActiveSession,
   useActiveWorkoutId,
-  useSessions,
+  useDraftsBySession,
+  useSessionsWithStatus,
 } from "@/domains/workout/queries";
+import { activeScreenView } from "@/domains/workout/activeSessionState";
+import {
+  computeExerciseRows,
+  draftSlotCounts,
+  isActiveWorkoutDataLoaded,
+  nextExtraWork,
+  rowKey,
+} from "@/domains/workout/sessionRows";
+import { parseDraftPatch, resolveSetInputs } from "@/domains/workout/setInputs";
+import {
+  cancelRestNotification,
+  scheduleRestNotification,
+} from "@/services/notifications";
 import { dateKey, elapsedMs, formatDuration } from "@/utils/date";
+import { errorDetail } from "@/utils/errorDetail";
 
 export default function ActiveWorkoutScreen() {
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ routineId?: string; dayId?: string }>();
-  const sessions = useSessions();
+  const { sessions, loaded: sessionsLoaded } = useSessionsWithStatus();
   const activeWorkoutId = useActiveWorkoutId();
   const session = useActiveSession();
   const allExercises = useAllExercises();
@@ -66,6 +86,9 @@ export default function ActiveWorkoutScreen() {
   const routine = useRoutineById(session?.routineId ?? null);
   const defaultRestSeconds = useDefaultRestSeconds();
   const notes = useAllNotes();
+  // `undefined` = still loading (never "empty"): the list below waits for it.
+  const drafts = useDraftsBySession(session?.id);
+  const restNotifConfig = useRestNotificationConfig();
   const sessionPlan = useSessionPlan(
     session ? dateKey(session.startedAt) : null,
     session?.routineId,
@@ -89,11 +112,18 @@ export default function ActiveWorkoutScreen() {
     setIndex: number;
   } | null>(null);
 
+  // Opened with routine/day params: start that workout, but only once the
+  // active id has loaded (`null`, not `undefined`) so an already active
+  // workout is never duplicated.
   const startedRef = useRef(false);
+  const [startFailed, setStartFailed] = useState(false);
   useEffect(() => {
-    if (!activeWorkoutId && params.routineId && params.dayId && !startedRef.current) {
+    if (activeWorkoutId === null && params.routineId && params.dayId && !startedRef.current) {
       startedRef.current = true;
-      startWorkout(params.routineId, params.dayId);
+      startWorkout(params.routineId, params.dayId).catch((e) => {
+        console.warn("[active] startWorkout failed:", e);
+        setStartFailed(true);
+      });
     }
   }, [activeWorkoutId, params.routineId, params.dayId, startWorkout]);
 
@@ -105,7 +135,132 @@ export default function ActiveWorkoutScreen() {
     return () => clearInterval(id);
   }, []);
 
-  const [restingFor, setRestingFor] = useState<number | null>(null);
+  // Rest timer. `restingEndsAt` is the source of truth (a timestamp, so it
+  // survives background); pause state and pin live here too, so pinning, which
+  // moves the timer between the inline slot and the sticky overlay and
+  // therefore re-mounts it, never loses them.
+  const [restingEndsAt, setRestingEndsAt] = useState<number | null>(null);
+  const [restingPausedAt, setRestingPausedAt] = useState<number | null>(null);
+  const [restingDuration, setRestingDuration] = useState(0);
+  const [restingPinned, setRestingPinned] = useState(false);
+  // Id of the scheduled end-of-rest notification, to cancel it on close/adjust.
+  const restingNotifIdRef = useRef<string | null>(null);
+  const restHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notifQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const restNotifConfigRef = useRef(restNotifConfig);
+  restNotifConfigRef.current = restNotifConfig;
+  // Set right before leaving the screen after finishing/discarding, so the
+  // unmount flush of a row's pending draft does not write into a closed session.
+  const sessionEndedRef = useRef(false);
+
+  const clearRestHideTimeout = () => {
+    if (restHideTimeoutRef.current) {
+      clearTimeout(restHideTimeoutRef.current);
+      restHideTimeoutRef.current = null;
+    }
+  };
+  useEffect(() => clearRestHideTimeout, []);
+
+  // Cancel the previous notification and schedule one for `endsAt` (or none).
+  // Serialized so quick close/start/adjust sequences cannot interleave. Nothing
+  // is scheduled until the notification prefs are loaded.
+  const syncRestNotification = (endsAt: number | null) => {
+    notifQueueRef.current = notifQueueRef.current.then(async () => {
+      try {
+        await cancelRestNotification(restingNotifIdRef.current);
+        restingNotifIdRef.current = null;
+        const config = restNotifConfigRef.current;
+        if (endsAt != null && config) {
+          restingNotifIdRef.current = await scheduleRestNotification(endsAt, config);
+        }
+      } catch (e) {
+        console.warn("[active] rest notification sync failed:", e);
+      }
+    });
+  };
+
+  const startRest = (seconds: number) => {
+    const plan = planRestStart(seconds, Date.now());
+    // 0 s = no rest: a new set still replaces the previous timer, but nothing
+    // new is shown (it would sit at 0:00).
+    if (!plan) {
+      closeRest();
+      return;
+    }
+    clearRestHideTimeout();
+    setRestingEndsAt(plan.endsAt);
+    setRestingPausedAt(null);
+    setRestingDuration(plan.durationSeconds);
+    syncRestNotification(plan.endsAt);
+  };
+
+  const closeRest = () => {
+    clearRestHideTimeout();
+    setRestingEndsAt(null);
+    setRestingPausedAt(null);
+    syncRestNotification(null);
+  };
+
+  // Pause / resume / +-15 from the timer. A paused timer has no notification.
+  const handleRestChange = (next: RestTimerState) => {
+    clearRestHideTimeout();
+    setRestingEndsAt(next.endsAt);
+    setRestingPausedAt(next.pausedAt);
+    syncRestNotification(next.pausedAt == null ? next.endsAt : null);
+  };
+
+  const handleRestComplete = () => {
+    // The notification (if any) was consumed; do not try to cancel it later.
+    restingNotifIdRef.current = null;
+    if (restingPinned) return;
+    // Let the pulse animation finish before hiding the inline card.
+    clearRestHideTimeout();
+    restHideTimeoutRef.current = setTimeout(() => {
+      restHideTimeoutRef.current = null;
+      setRestingEndsAt(null);
+      setRestingPausedAt(null);
+    }, 800);
+  };
+
+  const handleTogglePin = () => {
+    clearRestHideTimeout();
+    // Unpinning an already finished timer just dismisses it.
+    if (
+      restingPinned &&
+      restingEndsAt != null &&
+      isFinished(restingEndsAt, restingPausedAt ?? Date.now())
+    ) {
+      closeRest();
+    }
+    setRestingPinned((p) => !p);
+  };
+
+  // Extra empty work rows added with "Añadir set" (on top of the plan); logged
+  // sets and drafts grow the rows by themselves (drafts also restore them after
+  // a restart, see `computeExerciseRows`).
+  const [extraWorkSetsByExercise, setExtraWorkSetsByExercise] = useState<
+    Record<string, number>
+  >({});
+
+  // Accordion: "Finalizar serie" (only offered once every work set is done)
+  // collapses the card to a compact header; tapping the header expands it.
+  const [collapsedByExercise, setCollapsedByExercise] = useState<
+    Record<string, boolean>
+  >({});
+
+  const handleFinishSet = (exId: string) => {
+    if (Platform.OS !== "web") {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+    setCollapsedByExercise((prev) => ({ ...prev, [exId]: true }));
+  };
+
+  const expandExercise = (exId: string) => {
+    if (Platform.OS !== "web") {
+      Haptics.selectionAsync();
+    }
+    setCollapsedByExercise((prev) => ({ ...prev, [exId]: false }));
+  };
 
   // Hooks must run unconditionally — keep these before the early return below.
   const skippedSet = useMemo(
@@ -113,6 +268,19 @@ export default function ActiveWorkoutScreen() {
     [session?.skippedExerciseIds],
   );
 
+  // `undefined` = still loading: never flash "Sin sesión activa" meanwhile
+  // (also while a workout requested through the route params is starting).
+  const view = activeScreenView({
+    session,
+    startPending: !!params.routineId && !!params.dayId && !startFailed,
+  });
+  if (view === "loading") {
+    return (
+      <Screen noPadding>
+        <Header title="Sesión" back />
+      </Screen>
+    );
+  }
   if (!session) {
     return (
       <Screen noPadding>
@@ -129,6 +297,15 @@ export default function ActiveWorkoutScreen() {
       </Screen>
     );
   }
+
+  // Rows seed their inputs once on mount, so the exercise list waits until
+  // every source (plan, drafts, routine, history) has loaded.
+  const dataLoaded = isActiveWorkoutDataLoaded({
+    plan: sessionPlan,
+    drafts,
+    routine,
+    sessionsLoaded,
+  });
 
   const elapsed = elapsedMs(now, session.startedAt);
   const completedSets = session.sets;
@@ -163,7 +340,20 @@ export default function ActiveWorkoutScreen() {
           if (Platform.OS !== "web") {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           }
-          const result = await finishWorkout(session.id);
+          // The flag goes up before awaiting (a row unmounting or its debounce
+          // firing while the session closes must not write a draft into it)
+          // and comes back down if finishing fails.
+          let result: Awaited<ReturnType<typeof finishWorkout>>;
+          try {
+            result = await withSessionEnding(sessionEndedRef, () =>
+              finishWorkout(session.id),
+            );
+          } catch (e) {
+            console.warn("[active] finishWorkout failed:", e);
+            showAlert("No se pudo terminar", errorDetail(e));
+            return;
+          }
+          closeRest();
           const achievementIds = result.newAchievements.map((a) => a.id);
           router.replace(
             `/workout/summary?sessionId=${result.session.id}&prs=${result.prs.length}&achievements=${achievementIds.join(",")}`,
@@ -183,7 +373,16 @@ export default function ActiveWorkoutScreen() {
           text: "Descartar",
           style: "destructive",
           onPress: async () => {
-            await cancelWorkout(session.id);
+            try {
+              await withSessionEnding(sessionEndedRef, () =>
+                cancelWorkout(session.id),
+              );
+            } catch (e) {
+              console.warn("[active] cancelWorkout failed:", e);
+              showAlert("No se pudo descartar", errorDetail(e));
+              return;
+            }
+            closeRest();
             router.replace("/workout");
           },
         },
@@ -216,9 +415,35 @@ export default function ActiveWorkoutScreen() {
         <IconButton icon="x" onPress={handleCancel} color={colors.danger} />
       </View>
 
+      {/* Sticky rest timer: only while pinned, floating above the scroll. */}
+      {restingEndsAt != null && restingPinned ? (
+        <View
+          style={{
+            position: "absolute",
+            top: insets.top + 60,
+            left: 16,
+            right: 16,
+            zIndex: 10,
+          }}
+        >
+          <RestTimer
+            endsAt={restingEndsAt}
+            pausedAt={restingPausedAt}
+            durationSeconds={restingDuration}
+            onChange={handleRestChange}
+            onComplete={handleRestComplete}
+            onClose={closeRest}
+            pinned={restingPinned}
+            onTogglePin={handleTogglePin}
+          />
+        </View>
+      ) : null}
+
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: 20,
+          // Leave room for the pinned timer overlay so it hides no content.
+          paddingTop: restingEndsAt != null && restingPinned ? 240 : 0,
           paddingBottom: 120 + insets.bottom,
         }}
         showsVerticalScrollIndicator={false}
@@ -256,18 +481,24 @@ export default function ActiveWorkoutScreen() {
           </Row>
         </Card>
 
-        {restingFor != null ? (
+        {restingEndsAt != null && !restingPinned ? (
           <View style={{ marginBottom: 12 }}>
             <RestTimer
-              durationSeconds={restingFor}
-              onClose={() => setRestingFor(null)}
-              onComplete={() => setRestingFor(null)}
+              endsAt={restingEndsAt}
+              pausedAt={restingPausedAt}
+              durationSeconds={restingDuration}
+              onChange={handleRestChange}
+              onComplete={handleRestComplete}
+              onClose={closeRest}
+              pinned={restingPinned}
+              onTogglePin={handleTogglePin}
             />
           </View>
         ) : null}
 
         <Col gap={12}>
-          {session.exerciseOrder.map((exId, idx) => {
+          {dataLoaded
+            ? session.exerciseOrder.map((exId, idx) => {
             const ex = getExerciseById(exId);
             if (!ex) return null;
             const isSkipped = skippedSet.has(exId);
@@ -338,6 +569,58 @@ export default function ActiveWorkoutScreen() {
             const warmupSets = re?.warmupSets ?? 0;
             const restSeconds = re?.restSeconds ?? defaultRestSeconds;
 
+            // Collapsed accordion card: same header as the expanded one with a
+            // chevron; the whole card is the tap target.
+            if (collapsedByExercise[exId] ?? false) {
+              return (
+                <Card key={exId}>
+                  <Pressable
+                    onPress={() => expandExercise(exId)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Expandir ${ex.name}`}
+                    style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+                  >
+                    <Row jc="space-between" ai="center">
+                      <Row gap={10} flex={1}>
+                        <View
+                          style={{
+                            width: 36,
+                            height: 36,
+                            borderRadius: 10,
+                            backgroundColor: colors.accentSoft,
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <Feather name="check" size={16} color={colors.accentEdge} />
+                        </View>
+                        <Col gap={2} flex={1}>
+                          <Text variant="title" numberOfLines={1}>
+                            {ex.name}
+                          </Text>
+                          <Text variant="caption" muted>
+                            {targetSets} × {targetReps} · {restSeconds}s
+                          </Text>
+                        </Col>
+                      </Row>
+                      <View
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 16,
+                          alignItems: "center",
+                          justifyContent: "center",
+                          backgroundColor: colors.surfaceAlt,
+                        }}
+                      >
+                        <Feather name="chevron-down" size={16} color={colors.muted} />
+                      </View>
+                    </Row>
+                  </Pressable>
+                </Card>
+              );
+            }
+
             const plannedExercise = sessionPlan?.exercises.find(
               (p) => p.exerciseId === exId,
             );
@@ -358,23 +641,25 @@ export default function ActiveWorkoutScreen() {
               session.id,
             );
 
-            // Effective row counts: plan wins over routine defaults; we still
-            // grow if the user logged more sets than planned.
-            const effectiveWarmup = plannedWarmupSets?.length ?? warmupSets;
-            const effectiveWork = plannedWorkSets?.length ?? targetSets;
-            const totalRows = Math.max(
-              effectiveWarmup + effectiveWork,
-              completedForExercise.length + 1,
-            );
-            const rows: { isWarmup: boolean; index: number }[] = [];
-            for (let i = 0; i < effectiveWarmup; i++) {
-              rows.push({ isWarmup: true, index: i + 1 });
-            }
-            let workIndex = 0;
-            for (let i = effectiveWarmup; i < totalRows; i++) {
-              workIndex++;
-              rows.push({ isWarmup: false, index: workIndex });
-            }
+            // Rows: plan wins over routine defaults; warm-up and work grow
+            // independently when more sets were logged, plus manual extras.
+            const completedWarmupCount = completedForExercise.filter(
+              (s) => s.isWarmup,
+            ).length;
+            // Drafts keep rows added with "Añadir set" alive after a restart.
+            const draftCounts = draftSlotCounts(drafts, exId);
+            const rowsArgs = {
+              plannedWarmup: plannedWarmupSets?.length ?? null,
+              plannedWork: plannedWorkSets?.length ?? null,
+              targetSets,
+              warmupSets,
+              completedWarmup: completedWarmupCount,
+              completedWork: completedForExercise.length - completedWarmupCount,
+              extraWork: extraWorkSetsByExercise[exId] ?? 0,
+              draftWarmupCount: draftCounts.warmup,
+              draftWorkCount: draftCounts.work,
+            };
+            const { rows, allWorkSetsDone } = computeExerciseRows(rowsArgs);
 
             // First incomplete row → active.
             const firstIncomplete = rows.findIndex((row) => {
@@ -471,13 +756,24 @@ export default function ActiveWorkoutScreen() {
                     const setNotesCount = completedSet
                       ? notes.filter((n) => n.setId === completedSet.id).length
                       : 0;
+                    // Autosaved kg/reps/rpe of a not-completed slot (survives
+                    // background → kill). A completed set always wins.
+                    const draft = drafts?.get(
+                      buildDraftKey(exId, row.index, row.isWarmup),
+                    );
+                    const initialInputs = resolveSetInputs({
+                      completed: completedSet,
+                      draft,
+                      planned: plannedSet,
+                      previous,
+                      isWarmup: row.isWarmup,
+                    });
                     return (
                       <SetRow
-                        key={`${exId}-${i}`}
+                        key={rowKey(exId, row)}
                         index={row.index}
                         isWarmup={row.isWarmup}
-                        initialWeight={completedSet?.weight}
-                        initialReps={completedSet?.reps}
+                        initialInputs={initialInputs}
                         previousWeight={previous?.weight}
                         previousReps={previous?.reps}
                         plannedWeight={plannedSet?.weight}
@@ -517,8 +813,24 @@ export default function ActiveWorkoutScreen() {
                             setIndex: row.index,
                           });
                           if (!row.isWarmup) {
-                            setRestingFor(restSeconds);
+                            startRest(restSeconds);
                           }
+                        }}
+                        onDraftChange={(patch) => {
+                          if (sessionEndedRef.current) return;
+                          // Fire-and-forget: a failed autosave must never
+                          // surface as an unhandled rejection.
+                          upsertSessionSetDraft(
+                            {
+                              sessionId: session.id,
+                              exerciseId: exId,
+                              setIndex: row.index,
+                              isWarmup: row.isWarmup,
+                            },
+                            patch,
+                          ).catch((e) => {
+                            console.warn("[active] draft autosave failed:", e);
+                          });
                         }}
                         onUncomplete={() => {
                           if (completedSet) removeSet(session.id, completedSet.id);
@@ -540,7 +852,33 @@ export default function ActiveWorkoutScreen() {
                   })}
                 </Col>
 
+                {allWorkSetsDone ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Finalizar serie de ${ex.name}`}
+                    style={({ pressed }) => ({
+                      marginTop: 12,
+                      height: 44,
+                      borderRadius: 12,
+                      backgroundColor: colors.accent,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      opacity: pressed ? 0.85 : 1,
+                    })}
+                    onPress={() => handleFinishSet(exId)}
+                  >
+                    <Feather name="check-circle" size={16} color={colors.accentInk} />
+                    <Text variant="label" weight="semibold" color={colors.accentInk}>
+                      Finalizar serie
+                    </Text>
+                  </Pressable>
+                ) : null}
+
                 <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Añadir set a ${ex.name}`}
                   style={({ pressed }) => ({
                     marginTop: 10,
                     height: 38,
@@ -555,8 +893,13 @@ export default function ActiveWorkoutScreen() {
                     opacity: pressed ? 0.6 : 1,
                   })}
                   onPress={() => {
-                    // Adding a set is just allowing the existing extra row to be filled —
-                    // nothing to do here unless we want to scroll/focus the next input.
+                    if (Platform.OS !== "web") {
+                      Haptics.selectionAsync();
+                    }
+                    setExtraWorkSetsByExercise((prev) => ({
+                      ...prev,
+                      [exId]: nextExtraWork(rowsArgs),
+                    }));
                   }}
                 >
                   <Feather name="plus" size={12} color={colors.muted} />
@@ -566,7 +909,8 @@ export default function ActiveWorkoutScreen() {
                 </Pressable>
               </Card>
             );
-          })}
+          })
+            : null}
         </Col>
 
         <Button

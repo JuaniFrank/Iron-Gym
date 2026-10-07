@@ -7,6 +7,7 @@ import {
 } from "@workspace/db/schema";
 import { useMemo } from "react";
 
+import { useKeyedLiveQuery } from "@/hooks/useKeyedLiveQuery";
 import { db } from "@/services/db";
 import type {
   ResolvedPlan,
@@ -55,10 +56,23 @@ function rowToPlan(row: typeof sessionPlans.$inferSelect): SessionPlan {
  * (cf. db-integration.md §8).
  */
 export function useSchedule(): ScheduledRoutine[] {
-  const { data } = useLiveQuery(
+  return useScheduleWithStatus().schedule;
+}
+
+/**
+ * Same as `useSchedule` plus a `loaded` flag (true once the first result
+ * arrived). Screens that ACT on the schedule (e.g. the day swap sheet) must
+ * wait for it: `[]` while loading looks exactly like "no schedule".
+ */
+export function useScheduleWithStatus(): {
+  schedule: ScheduledRoutine[];
+  loaded: boolean;
+} {
+  const { data, updatedAt } = useLiveQuery(
     db.select().from(scheduledRoutines).orderBy(asc(scheduledRoutines.dayOfWeek)),
   );
-  return useMemo(() => (data ?? []).map(rowToScheduled), [data]);
+  const schedule = useMemo(() => (data ?? []).map(rowToScheduled), [data]);
+  return { schedule, loaded: !!updatedAt };
 }
 
 /**
@@ -67,13 +81,22 @@ export function useSchedule(): ScheduledRoutine[] {
  * consumers don't see ghost rows.
  */
 export function useScheduleOverrides(): ScheduleOverride[] {
-  const { data } = useLiveQuery(
+  return useScheduleOverridesWithStatus().overrides;
+}
+
+/** `useScheduleOverrides` plus a `loaded` flag (see `useScheduleWithStatus`). */
+export function useScheduleOverridesWithStatus(): {
+  overrides: ScheduleOverride[];
+  loaded: boolean;
+} {
+  const { data, updatedAt } = useLiveQuery(
     db
       .select()
       .from(scheduleOverrides)
       .where(isNull(scheduleOverrides.deletedAt)),
   );
-  return useMemo(() => (data ?? []).map(rowToOverride), [data]);
+  const overrides = useMemo(() => (data ?? []).map(rowToOverride), [data]);
+  return { overrides, loaded: !!updatedAt };
 }
 
 /**
@@ -96,17 +119,19 @@ export function useSessionPlan(
         .limit(1),
     [date],
   );
-  const { data, updatedAt } = useLiveQuery(query, [date]);
+  // Keyed by date: right after `date` changes (e.g. the session arrives) the
+  // previous date's result must not count as loaded.
+  const { data, loaded } = useKeyedLiveQuery(query, [sessionPlans], date ?? "");
   return useMemo(() => {
     if (!date) return null;
-    // `undefined` while the first result has not arrived (not "no plan").
-    if (!updatedAt) return undefined;
+    // `undefined` while the result for THIS date has not arrived (not "no plan").
+    if (!loaded) return undefined;
     const row = data?.[0];
     if (!row) return null;
     if (routineId && row.routineId !== routineId) return null;
     if (routineDayId && row.routineDayId !== routineDayId) return null;
     return rowToPlan(row);
-  }, [data, updatedAt, date, routineId, routineDayId]);
+  }, [data, loaded, date, routineId, routineDayId]);
 }
 
 /**

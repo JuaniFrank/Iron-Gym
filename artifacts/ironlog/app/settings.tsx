@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import { Linking, Platform, Pressable, ScrollView, View } from "react-native";
 import { showAlert } from "@/utils/alert";
 
 import { Button } from "@/components/ui/Button";
@@ -21,30 +21,46 @@ import {
 import { useFeatureDiscoveries } from "@/domains/discovery/queries";
 import { clearAllNotes } from "@/domains/notes/mutators";
 import { useAllNotes } from "@/domains/notes/queries";
-import { updateProfile } from "@/domains/profile/mutators";
+import {
+  updateProfile,
+  updateRestNotificationConfig,
+} from "@/domains/profile/mutators";
 import {
   useDefaultRestSeconds,
   useProfileSettingsLoaded,
+  useRestNotificationConfig,
   useUserProfile,
+  type RestNotificationConfig,
 } from "@/domains/profile/queries";
 import { setDefaultRest } from "@/domains/workout/mutators";
+import {
+  REST_NOTIFICATIONS_AVAILABLE,
+  ensureNotificationPermissions,
+  getNotificationPermissionStatus,
+} from "@/services/notifications";
 import { calorieGoalForGoal, calculateTDEE, macroSplitForGoal } from "@/utils/calculations";
 
 export default function SettingsScreen() {
   // The form fields below are seeded once from the profile; wait until the
   // stored values have loaded so they don't freeze the loading-time defaults.
   const loaded = useProfileSettingsLoaded();
-  if (!loaded) {
+  // `undefined` while loading: never render the toggles from defaults.
+  const restNotifConfig = useRestNotificationConfig();
+  if (!loaded || !restNotifConfig) {
     return (
       <Screen noPadding>
         <Header title="" back compact />
       </Screen>
     );
   }
-  return <SettingsForm />;
+  return <SettingsForm restNotifConfig={restNotifConfig} />;
 }
 
-function SettingsForm() {
+function SettingsForm({
+  restNotifConfig,
+}: {
+  restNotifConfig: RestNotificationConfig;
+}) {
   const colors = useThemeColors();
   const profile = useUserProfile();
   const defaultRestSeconds = useDefaultRestSeconds();
@@ -60,6 +76,39 @@ function SettingsForm() {
   const [carGoal, setCarGoal] = useState(String(profile.carbsGoalG ?? defaultMacros.carbs));
   const [fatGoal, setFatGoal] = useState(String(profile.fatGoalG ?? defaultMacros.fat));
   const [rest, setRest] = useState(String(defaultRestSeconds));
+
+  // OS permission status, checked on mount (the user may have changed it in the
+  // system settings). `cancelled` avoids a state update after unmount.
+  const [notifPermStatus, setNotifPermStatus] = useState<
+    "granted" | "denied" | "undetermined"
+  >("undetermined");
+  useEffect(() => {
+    let cancelled = false;
+    getNotificationPermissionStatus()
+      .then((status) => {
+        if (!cancelled) setNotifPermStatus(status);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const handleRequestPerms = async () => {
+    try {
+      const granted = await ensureNotificationPermissions();
+      setNotifPermStatus(granted ? "granted" : "denied");
+    } catch {
+      setNotifPermStatus("denied");
+    }
+  };
+  const handleOpenOSSettings = () => {
+    Linking.openSettings().catch(() => {
+      showAlert(
+        "No se pudo abrir los ajustes",
+        "Abre los ajustes del sistema manualmente para activar las notificaciones.",
+      );
+    });
+  };
 
   const saveNutrition = () => {
     updateProfile({
@@ -125,6 +174,114 @@ function SettingsForm() {
           <Text variant="caption" muted style={{ marginTop: 8 }}>
             Tiempo entre series cuando no se especifica.
           </Text>
+
+          {REST_NOTIFICATIONS_AVAILABLE ? (
+            <>
+              <View
+                style={{
+                  height: 1,
+                  backgroundColor: colors.border,
+                  marginVertical: 14,
+                }}
+              />
+
+              <Text variant="tiny" color={colors.muted} style={{ marginBottom: 8 }}>
+                NOTIFICACIÓN AL TERMINAR
+              </Text>
+
+              <FeatureToggleRow
+                label="Activar"
+                hint="Avisa cuando termina el descanso aunque la app esté cerrada."
+                activated={restNotifConfig.enabled}
+                onToggle={(on) => {
+                  updateRestNotificationConfig({ enabled: on }).catch(() => {});
+                  if (on && notifPermStatus !== "granted") {
+                    void handleRequestPerms();
+                  }
+                }}
+              />
+
+              {restNotifConfig.enabled ? (
+                <>
+                  <View style={{ height: 12 }} />
+                  <Text variant="tiny" color={colors.muted} style={{ marginBottom: 6 }}>
+                    TIPO
+                  </Text>
+                  <SegmentedControl
+                    options={[
+                      { label: "Solo sonido", value: "sound_only" as const },
+                      { label: "Banner + sonido", value: "rich" as const },
+                    ]}
+                    value={restNotifConfig.type}
+                    onChange={(v) => {
+                      updateRestNotificationConfig({ type: v }).catch(() => {});
+                    }}
+                  />
+
+                  <View style={{ height: 12 }} />
+                  <Text variant="tiny" color={colors.muted} style={{ marginBottom: 6 }}>
+                    SONIDO
+                  </Text>
+                  <SegmentedControl
+                    options={[
+                      { label: "Sistema", value: "default" as const },
+                      { label: "Silencioso", value: "silent" as const },
+                    ]}
+                    value={restNotifConfig.sound}
+                    onChange={(v) => {
+                      updateRestNotificationConfig({ sound: v }).catch(() => {});
+                    }}
+                  />
+                  <Text variant="caption" muted style={{ marginTop: 6 }}>
+                    Más sonidos en próxima versión.
+                  </Text>
+
+                  {notifPermStatus === "denied" ? (
+                    <View
+                      style={{
+                        marginTop: 14,
+                        padding: 12,
+                        borderRadius: 12,
+                        backgroundColor: colors.surfaceAlt,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                      }}
+                    >
+                      <Row gap={10} ai="center">
+                        <Feather name="alert-circle" size={16} color={colors.danger} />
+                        <Col flex={1} gap={2}>
+                          <Text variant="label" weight="semibold">
+                            Permisos denegados
+                          </Text>
+                          <Text variant="caption" muted>
+                            No vas a recibir avisos hasta activar las notificaciones
+                            desde los ajustes del sistema.
+                          </Text>
+                        </Col>
+                      </Row>
+                      {Platform.OS !== "web" ? (
+                        <Button
+                          label="Abrir ajustes del sistema"
+                          icon="external-link"
+                          variant="outline"
+                          onPress={handleOpenOSSettings}
+                          style={{ marginTop: 10 }}
+                        />
+                      ) : null}
+                    </View>
+                  ) : notifPermStatus === "undetermined" ? (
+                    <Button
+                      label="Pedir permisos ahora"
+                      icon="bell"
+                      variant="outline"
+                      onPress={handleRequestPerms}
+                      style={{ marginTop: 12 }}
+                    />
+                  ) : null}
+                </>
+              ) : null}
+            </>
+          ) : null}
         </Card>
 
         <Card style={{ marginBottom: 12 }}>

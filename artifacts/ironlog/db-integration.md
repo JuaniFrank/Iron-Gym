@@ -790,7 +790,7 @@ resetAll(): Promise<void>                                                  // de
 
 ```ts
 // domains/workout/queries.ts
-useActiveSession(): WorkoutSession | null
+useActiveSession(): WorkoutSession | null | undefined // undefined = loading
 useSessionById(id: string): WorkoutSession | null
 useFinishedSessions(opts?: { limit?: number }): WorkoutSession[]
 useTodaySessions(): WorkoutSession[]
