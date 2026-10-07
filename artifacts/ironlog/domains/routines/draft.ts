@@ -49,7 +49,14 @@ export type DraftAction =
   | { type: "renameDay"; dayId: string; name: string }
   | { type: "removeDay"; dayId: string }
   | { type: "moveDay"; fromIndex: number; toIndex: number }
-  | { type: "addExercise"; dayId: string; id: string; exerciseId: string }
+  | {
+      type: "addExercise";
+      dayId: string;
+      id: string;
+      exerciseId: string;
+      /** The user's default rest; falls back to `DEFAULT_REST_SECONDS`. */
+      restSeconds?: number;
+    }
   | { type: "removeExercise"; dayId: string; id: string }
   | { type: "updateExercise"; dayId: string; id: string; patch: ExercisePatch }
   | { type: "moveExercise"; dayId: string; fromIndex: number; toIndex: number }
@@ -183,7 +190,7 @@ export function draftReducer(
             targetSets: DEFAULT_TARGET_SETS,
             targetReps: DEFAULT_TARGET_REPS,
             warmupSets: DEFAULT_WARMUP_SETS,
-            restSeconds: DEFAULT_REST_SECONDS,
+            restSeconds: action.restSeconds ?? DEFAULT_REST_SECONDS,
             notes: null,
             supersetWith: null,
           },
@@ -341,6 +348,34 @@ export function validateDraft(draft: RoutineDraft): DraftValidation {
 // ---------------------------------------------------------------------------
 // Screen helpers (pure so they can be unit tested without React)
 // ---------------------------------------------------------------------------
+
+/**
+ * Result of the in-place day name editor: the trimmed name to dispatch with
+ * `renameDay`, or `null` when there is nothing to apply (blank, over the
+ * length limit or unchanged) and the current name stays.
+ */
+export function resolveDayRename(current: string, input: string): string | null {
+  const name = input.trim();
+  if (name.length < 1 || name.length > 200) return null;
+  return name === current.trim() ? null : name;
+}
+
+/**
+ * The draft with the still-open day name editor applied: used when the user
+ * saves or switches day without confirming the rename, so the typed name is
+ * not lost. Returns `draft` itself when there is nothing to apply.
+ */
+export function applyPendingDayRename(
+  draft: RoutineDraft,
+  dayId: string,
+  input: string,
+): RoutineDraft {
+  const day = draft.days.find((d) => d.id === dayId);
+  if (!day) return draft;
+  const name = resolveDayRename(day.name, input);
+  if (name === null) return draft;
+  return draftReducer(draft, { type: "renameDay", dayId, name });
+}
 
 export function saveButtonLabel(original: RoutineDraft | null): string {
   return original === null ? "Guardar rutina" : "Guardar cambios";

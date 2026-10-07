@@ -25,6 +25,8 @@ import {
   draftFromTemplate,
   draftReducer,
   emptyDraft,
+  applyPendingDayRename,
+  resolveDayRename,
   saveButtonLabel,
   shouldPromptOnLeave,
   validateDraft,
@@ -32,6 +34,7 @@ import {
   type RoutineDraft,
 } from "@/domains/routines/draft";
 import { registerDraft, unregisterDraft } from "@/domains/routines/draftStore";
+import { formatRestSeconds } from "@/domains/routines/restSeconds";
 import { deleteRoutine, saveRoutineDraft } from "@/domains/routines/mutators";
 import { resolveEditorLoad } from "@/domains/routines/editorLoad";
 import { useAllRoutinesState } from "@/domains/routines/queries";
@@ -82,6 +85,9 @@ export default function RoutineDetailScreen() {
   const [saving, setSaving] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
   const [activeDayId, setActiveDayId] = useState<string | null>(null);
+  // In-place day name editor (applies to the draft; saved with the routine).
+  const [editingDayName, setEditingDayName] = useState(false);
+  const [dayNameInput, setDayNameInput] = useState("");
 
   // Load the draft once, and only from fully loaded data; later live-query
   // emissions must not reset edits.
@@ -103,6 +109,12 @@ export default function RoutineDetailScreen() {
       setActiveDayId(d.days[0]?.id ?? null);
     }
   }, [load]);
+
+  // Switching day with the editor open closes it, so the typed name is never
+  // applied to a day that is no longer the active one.
+  useEffect(() => {
+    setEditingDayName(false);
+  }, [activeDayId]);
 
   // Fresh empty draft: select its only day.
   useEffect(() => {
@@ -157,12 +169,37 @@ export default function RoutineDetailScreen() {
 
   const isPreset = !isNew && !!routine?.isPreset;
   const exists = original !== null;
-  const dirty = canSaveDraft(draft, original, false);
-  const errors = showErrors ? validateDraft(draft) : null;
-  const fieldErrors = errors && !errors.ok ? errors.errors : null;
   const activeDay = draft.days.find((d) => d.id === activeDayId) ?? draft.days[0];
+  // The draft as the user sees it: a day name still being edited counts (it is
+  // committed on Save / day switch), so Save enables and validation/leave
+  // checks look at it.
+  const pendingDraft =
+    !isPreset && editingDayName && activeDay
+      ? applyPendingDayRename(draft, activeDay.id, dayNameInput)
+      : draft;
+  draftRef.current = pendingDraft;
+  const dirty = canSaveDraft(pendingDraft, original, false);
+  const errors = showErrors ? validateDraft(pendingDraft) : null;
+  const fieldErrors = errors && !errors.ok ? errors.errors : null;
   const goalLabel = draft.goal ? GOAL_LABELS[draft.goal] : null;
   const totalEx = draft.days.reduce((sum, d) => sum + d.exercises.length, 0);
+
+  // Apply the in-place day name to the draft (blank/unchanged is discarded).
+  const commitDayName = () => {
+    if (activeDay) {
+      const name = resolveDayRename(activeDay.name, dayNameInput);
+      if (name !== null) {
+        dispatchScreen({ type: "renameDay", dayId: activeDay.id, name });
+      }
+    }
+    setEditingDayName(false);
+  };
+
+  // Switching day (or adding one) with the editor open keeps the typed name.
+  const selectDay = (id: string) => {
+    if (editingDayName) commitDayName();
+    setActiveDayId(id);
+  };
 
   const openPicker = () => {
     if (!activeDay) return;
@@ -171,14 +208,18 @@ export default function RoutineDetailScreen() {
 
   const handleSave = async () => {
     if (saving || isPreset) return;
-    const validation = validateDraft(draft);
+    // A day name still being edited is part of what the user is saving. The
+    // reducer state is async, so save the explicitly renamed draft and also
+    // dispatch the rename to keep the screen state in line with it.
+    const snapshot = pendingDraft;
+    if (editingDayName) commitDayName();
+    const validation = validateDraft(snapshot);
     if (!validation.ok) {
       setShowErrors(true);
       return;
     }
     setShowErrors(false);
     setSaving(true);
-    const snapshot = draft;
     try {
       const id = await saveRoutineDraft(snapshot, original);
       if (original === null) {
@@ -324,7 +365,7 @@ export default function RoutineDetailScreen() {
             return (
               <Pressable
                 key={d.id}
-                onPress={() => setActiveDayId(d.id)}
+                onPress={() => selectDay(d.id)}
                 style={({ pressed }) => ({
                   paddingHorizontal: 18,
                   paddingVertical: 10,
@@ -349,6 +390,7 @@ export default function RoutineDetailScreen() {
             <Pressable
               onPress={() => {
                 const id = uid();
+                if (editingDayName) commitDayName();
                 dispatchScreen({ type: "addDay", id });
                 setActiveDayId(id);
               }}
@@ -370,18 +412,43 @@ export default function RoutineDetailScreen() {
         {activeDay ? (
           <>
             <Row jc="space-between" style={{ paddingVertical: 6 }}>
-              <Col gap={2}>
-                <Text variant="h3">{activeDay.name}</Text>
-                <Text variant="caption" muted>
-                  {activeDay.exercises.length}{" "}
-                  {activeDay.exercises.length === 1 ? "ejercicio" : "ejercicios"}
-                </Text>
-                {fieldErrors?.dayNames?.[activeDay.id] ? (
-                  <Text variant="caption" color={colors.danger}>
-                    {fieldErrors.dayNames[activeDay.id]}
+              {!isPreset && editingDayName ? (
+                <Row gap={8} style={{ flex: 1 }}>
+                  <View style={{ flex: 1 }}>
+                    <Input
+                      value={dayNameInput}
+                      onChangeText={setDayNameInput}
+                      placeholder="Nombre del día"
+                      autoFocus
+                      returnKeyType="done"
+                      onSubmitEditing={commitDayName}
+                    />
+                  </View>
+                  <Button label="Listo" onPress={commitDayName} />
+                </Row>
+              ) : (
+                <Col gap={2} flex={1}>
+                  <Pressable
+                    disabled={isPreset}
+                    accessibilityLabel="Editar nombre del día"
+                    onPress={() => {
+                      setDayNameInput(activeDay.name);
+                      setEditingDayName(true);
+                    }}
+                  >
+                    <Text variant="h3">{activeDay.name}</Text>
+                  </Pressable>
+                  <Text variant="caption" muted>
+                    {activeDay.exercises.length}{" "}
+                    {activeDay.exercises.length === 1 ? "ejercicio" : "ejercicios"}
                   </Text>
-                ) : null}
-              </Col>
+                  {fieldErrors?.dayNames?.[activeDay.id] ? (
+                    <Text variant="caption" color={colors.danger}>
+                      {fieldErrors.dayNames[activeDay.id]}
+                    </Text>
+                  ) : null}
+                </Col>
+              )}
             </Row>
 
             <Col gap={8} style={{ marginTop: 8 }}>
@@ -467,6 +534,17 @@ export default function RoutineDetailScreen() {
                                 onChange={(v) => patch({ warmupSets: v })}
                                 min={0}
                                 max={5}
+                              />
+                              <SmallStepper
+                                label="Desc."
+                                value={re.restSeconds}
+                                onChange={(v) => patch({ restSeconds: v })}
+                                min={0}
+                                // Never below the current value so a longer
+                                // stored rest is not clamped down by "+".
+                                max={Math.max(600, re.restSeconds)}
+                                step={15}
+                                formatValue={formatRestSeconds}
                               />
                             </Row>
                           ) : null}
@@ -564,7 +642,7 @@ export default function RoutineDetailScreen() {
               label={saveButtonLabel(original)}
               size="lg"
               fullWidth
-              disabled={!canSaveDraft(draft, original, saving)}
+              disabled={!canSaveDraft(pendingDraft, original, saving)}
               loading={saving}
               onPress={handleSave}
             />
@@ -581,12 +659,17 @@ function SmallStepper({
   onChange,
   min,
   max,
+  step = 1,
+  formatValue,
 }: {
   label: string;
   value: number;
   onChange: (v: number) => void;
   min: number;
   max: number;
+  step?: number;
+  /** Display formatter (e.g. seconds -> "1:30"); raw number when omitted. */
+  formatValue?: (v: number) => string;
 }) {
   const colors = useThemeColors();
   return (
@@ -606,7 +689,7 @@ function SmallStepper({
         <Pressable
           onPress={() => {
             if (Platform.OS !== "web") Haptics.selectionAsync();
-            onChange(Math.max(min, value - 1));
+            onChange(Math.max(min, value - step));
           }}
           style={({ pressed }) => ({
             width: 24,
@@ -620,12 +703,12 @@ function SmallStepper({
           <Feather name="minus" size={12} color={colors.ink} />
         </Pressable>
         <Text variant="label" weight="semibold" style={{ flex: 1, textAlign: "center" }}>
-          {value}
+          {formatValue ? formatValue(value) : value}
         </Text>
         <Pressable
           onPress={() => {
             if (Platform.OS !== "web") Haptics.selectionAsync();
-            onChange(Math.min(max, value + 1));
+            onChange(Math.min(max, value + step));
           }}
           style={({ pressed }) => ({
             width: 24,

@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, isNull, max } from "drizzle-orm";
 import {
+  keyValue,
   routineDays as routineDaysTable,
   routineExercises as routineExercisesTable,
   routines as routinesTable,
@@ -12,6 +13,7 @@ import {
   type ExerciseDraft,
   type RoutineDraft,
 } from "@/domains/routines/draft";
+import { parseRestSeconds } from "@/domains/routines/restSeconds";
 import type { Routine, RoutineDay, RoutineExercise } from "@/types";
 import { uid } from "@/utils/id";
 
@@ -51,6 +53,25 @@ const UpdateExerciseSchema = z
   .strict();
 
 const DEFAULT_REST_SECONDS = 90;
+
+/** Same as `db`, or a transaction of it (both can run `select`). */
+type ReadExecutor = Pick<typeof db, "select">;
+
+/**
+ * The user's default rest (`key_value.default_rest_seconds`, Settings), or 90
+ * when the row is missing or not a positive integer. Reads the DB directly so
+ * callers never depend on a live query having loaded.
+ */
+export async function readDefaultRestSeconds(
+  executor: ReadExecutor = db,
+): Promise<number> {
+  const row = await executor
+    .select({ value: keyValue.value })
+    .from(keyValue)
+    .where(eq(keyValue.key, "default_rest_seconds"))
+    .get();
+  return parseRestSeconds(row?.value) ?? DEFAULT_REST_SECONDS;
+}
 
 /**
  * Convert a `routines` row into the legacy `Routine` shape. Days/exercises
@@ -398,6 +419,7 @@ export async function addExerciseToDay(
   z.string().min(1).parse(exerciseId);
   const id = uid();
   const now = new Date();
+  let restSeconds = DEFAULT_REST_SECONDS;
   await db.transaction(async (tx) => {
     const row = await tx
       .select({ p: max(routineExercisesTable.position) })
@@ -405,6 +427,8 @@ export async function addExerciseToDay(
       .where(eq(routineExercisesTable.routineDayId, dayId))
       .get();
     const position = (row?.p ?? -1) + 1;
+    // New exercises are born with the user's default rest (Settings), not 90.
+    restSeconds = await readDefaultRestSeconds(tx);
     await tx.insert(routineExercisesTable).values({
       id,
       routineDayId: dayId,
@@ -414,7 +438,7 @@ export async function addExerciseToDay(
       targetReps: 10,
       warmupSets: 0,
       supersetWith: null,
-      restSeconds: DEFAULT_REST_SECONDS,
+      restSeconds,
       notes: null,
       updatedAt: now,
     }).run();
@@ -425,7 +449,7 @@ export async function addExerciseToDay(
     targetSets: 3,
     targetReps: 10,
     warmupSets: 0,
-    restSeconds: DEFAULT_REST_SECONDS,
+    restSeconds,
   };
 }
 

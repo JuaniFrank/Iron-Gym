@@ -4,10 +4,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_REST_SECONDS,
   draftFromRoutine,
   draftReducer,
   emptyDraft,
   isDirty,
+  applyPendingDayRename,
+  resolveDayRename,
   validateDraft,
   type DraftAction,
   type RoutineDraft,
@@ -136,6 +139,36 @@ describe("draftReducer: days", () => {
   });
 });
 
+describe("resolveDayRename (in-place day name editor)", () => {
+  it("returns the trimmed new name", () => {
+    expect(resolveDayRename("Día 1", "  Pull  ")).toBe("Pull");
+  });
+
+  it("returns null for a blank input (the old name stays)", () => {
+    expect(resolveDayRename("Día 1", "")).toBeNull();
+    expect(resolveDayRename("Día 1", "   ")).toBeNull();
+  });
+
+  it("returns null when nothing changed", () => {
+    expect(resolveDayRename("Pull", "Pull")).toBeNull();
+    expect(resolveDayRename("Pull", " Pull ")).toBeNull();
+  });
+
+  it("returns null for a name over the 200 char limit", () => {
+    expect(resolveDayRename("A", "x".repeat(201))).toBeNull();
+    expect(resolveDayRename("A", "x".repeat(200))).toBe("x".repeat(200));
+  });
+
+  it("renaming through the reducer is a draft change (dirty) until saved", () => {
+    const b = base();
+    const name = resolveDayRename("A", "Pull");
+    expect(name).toBe("Pull");
+    const d = run(b, { type: "renameDay", dayId: "d1", name: name! });
+    expect(isDirty(d, b)).toBe(true);
+    expect(d.days[0].name).toBe("Pull");
+  });
+});
+
 describe("draftReducer: exercises", () => {
   it("appends an exercise with defaults", () => {
     const d = run(base(), { type: "addExercise", dayId: "d2", id: "n1", exerciseId: "squat" });
@@ -151,6 +184,43 @@ describe("draftReducer: exercises", () => {
         supersetWith: null,
       },
     ]);
+  });
+
+  it("addExercise uses the given restSeconds (user default rest)", () => {
+    const d = run(base(), {
+      type: "addExercise",
+      dayId: "d2",
+      id: "n1",
+      exerciseId: "squat",
+      restSeconds: 180,
+    });
+    expect(d.days[1].exercises[0].restSeconds).toBe(180);
+  });
+
+  it("addExercise without restSeconds falls back to the 90s default", () => {
+    const d = run(base(), {
+      type: "addExercise",
+      dayId: "d2",
+      id: "n1",
+      exerciseId: "squat",
+      restSeconds: undefined,
+    });
+    expect(d.days[1].exercises[0].restSeconds).toBe(DEFAULT_REST_SECONDS);
+  });
+
+  it("updateExercise changes only restSeconds, leaving the rest of the row", () => {
+    const d = run(base(), {
+      type: "updateExercise",
+      dayId: "d1",
+      id: "e2",
+      patch: { restSeconds: 150 },
+    });
+    expect(d.days[0].exercises[1]).toMatchObject({
+      restSeconds: 150,
+      targetSets: 3,
+      targetReps: 10,
+    });
+    expect(d.days[0].exercises[0].restSeconds).toBe(90);
   });
 
   it("updates sets, reps, warmup, rest and notes", () => {
@@ -287,6 +357,25 @@ describe("validateDraft", () => {
     const res = validateDraft(d);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(Object.keys(res.errors.dayNames ?? {})).toEqual(["d2"]);
+  });
+
+  it("accepts the rest range of the 'Desc.' stepper (0..600) and rejects > 900", () => {
+    for (const restSeconds of [0, 15, 600]) {
+      const d = run(base(), {
+        type: "updateExercise",
+        dayId: "d1",
+        id: "e1",
+        patch: { restSeconds },
+      });
+      expect(validateDraft(d)).toEqual({ ok: true });
+    }
+    const bad = run(base(), {
+      type: "updateExercise",
+      dayId: "d1",
+      id: "e1",
+      patch: { restSeconds: 901 },
+    });
+    expect(validateDraft(bad).ok).toBe(false);
   });
 
   it("rejects out-of-range exercise values, reporting the row id", () => {
@@ -467,5 +556,34 @@ describe("save/leave helpers", () => {
     expect(shouldPromptOnLeave(changed, orig, false)).toBe(true);
     expect(shouldPromptOnLeave(changed, orig, true)).toBe(false);
     expect(shouldPromptOnLeave(emptyDraft(), null, false)).toBe(false);
+  });
+});
+
+describe("applyPendingDayRename (day name editor still open on Save / day switch)", () => {
+  it("applies a valid changed name to the draft", () => {
+    const b = base();
+    const d = applyPendingDayRename(b, "d1", "  Pull  ");
+    expect(d.days[0].name).toBe("Pull");
+    expect(d.days[1].name).toBe("Día 2");
+    expect(isDirty(d, b)).toBe(true);
+  });
+
+  it("returns the same draft when there is nothing to apply", () => {
+    const b = base();
+    expect(applyPendingDayRename(b, "d1", "")).toBe(b);
+    expect(applyPendingDayRename(b, "d1", "Día 1")).toBe(b);
+    expect(applyPendingDayRename(b, "d1", "x".repeat(201))).toBe(b);
+  });
+
+  it("returns the same draft for an unknown day", () => {
+    const b = base();
+    expect(applyPendingDayRename(b, "nope", "Pull")).toBe(b);
+  });
+
+  it("the renamed draft is what gets saved and validated", () => {
+    const b = base();
+    const d = applyPendingDayRename(b, "d2", "Piernas");
+    expect(validateDraft(d).ok).toBe(true);
+    expect(d.days.map((x) => x.name)).toEqual(["Día 1", "Piernas", "Día 3"]);
   });
 });

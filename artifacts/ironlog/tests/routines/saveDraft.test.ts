@@ -205,6 +205,46 @@ describe("saveRoutineDraft: edit", () => {
     expect((await exRows("d1"))[1].targetReps).toBe(12);
   });
 
+  it("changed restSeconds persists and touches only that exercise row", async () => {
+    const original = await seeded();
+    const edited = run(original, {
+      type: "updateExercise",
+      dayId: "d1",
+      id: "e3",
+      patch: { restSeconds: 210 },
+    });
+    await saveRoutineDraft(edited, original);
+    expect(outbox()).toEqual(["routine_exercises:e3"]);
+    expect((await exRows("d1")).map((e) => e.restSeconds)).toEqual([90, 90, 210]);
+  });
+
+  it("an exercise added with the user's default rest persists that rest", async () => {
+    const original = await seeded();
+    const edited = run(original, {
+      type: "addExercise",
+      dayId: "d3",
+      id: "e9",
+      exerciseId: "squat",
+      restSeconds: 180,
+    });
+    await saveRoutineDraft(edited, original);
+    expect((await exRows("d3")).map((e) => [e.id, e.restSeconds])).toEqual([["e9", 180]]);
+  });
+
+  it("a renamed day persists its trimmed-in-place name; a blank one is rejected", async () => {
+    const original = await seeded();
+    await saveRoutineDraft(
+      run(original, { type: "renameDay", dayId: "d2", name: "Pull" }),
+      original,
+    );
+    expect((await dayRows()).map((d) => d.name)).toEqual(["A", "Pull", "C"]);
+
+    sqlite.exec("DELETE FROM _outbox");
+    const blank = run(original, { type: "renameDay", dayId: "d2", name: "   " });
+    await expect(saveRoutineDraft(blank, original)).rejects.toThrow();
+    expect(outbox()).toEqual([]);
+  });
+
   it("day rename updates only that day", async () => {
     const original = await seeded();
     await saveRoutineDraft(

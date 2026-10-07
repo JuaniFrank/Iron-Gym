@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { showAlert } from "@/utils/alert";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -26,8 +26,9 @@ import {
   useAllExercises,
   useExerciseById,
 } from "@/domains/exercises/queries";
-import { addExerciseToDay } from "@/domains/routines/mutators";
+import { addExerciseToDay, readDefaultRestSeconds } from "@/domains/routines/mutators";
 import { dispatchToDraft } from "@/domains/routines/draftStore";
+import { runOnce } from "@/utils/runOnce";
 import { uid } from "@/utils/id";
 import {
   addExerciseToActiveWorkout,
@@ -96,7 +97,12 @@ export default function ExercisesScreen() {
     setShowCustom(true);
   };
 
-  const handlePick = async (exId: string) => {
+  // Picking awaits the DB before navigating back: a second tap in that window
+  // must not add the exercise again (nor navigate back twice).
+  const pickingRef = useRef(false);
+  const handlePick = (exId: string) =>
+    runOnce(pickingRef, () => pickExercise(exId));
+  const pickExercise = async (exId: string) => {
     if (isReplaceMode && params.replaceSessionId && params.replaceExerciseId) {
       if (exId === params.replaceExerciseId) {
         // No-op — same exercise picked.
@@ -114,11 +120,14 @@ export default function ExercisesScreen() {
     if (params.draftKey && params.dayId) {
       // Draft mode: hand the exercise to the routine screen's in-memory
       // draft. Nothing is written to the DB until the user saves there.
+      // The user's default rest is read straight from the DB (not from a live
+      // hook) so a not-yet-loaded setting can never fall back to 90s.
       dispatchToDraft(params.draftKey, {
         type: "addExercise",
         dayId: params.dayId,
         id: uid(),
         exerciseId: exId,
+        restSeconds: await readDefaultRestSeconds(),
       });
       router.back();
     } else if (params.routineId && params.dayId) {
