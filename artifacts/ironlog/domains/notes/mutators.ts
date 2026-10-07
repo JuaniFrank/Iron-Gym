@@ -60,7 +60,10 @@ const NoteInputSchema = z.object({
   severity: z.number().int().min(1).max(10).optional(),
   resolved: z.boolean().optional(),
   resolvedAt: z.number().int().optional(),
-  text: z.string().min(1),
+  // text may be "": the domain accepts chip-only, mood-only and pain-only
+  // notes (severity + bodyPart without free text). The recap, for example,
+  // records a mood without text.
+  text: z.string().default(""),
   source: z.enum(SOURCES as [NoteSource, ...NoteSource[]]),
   audioUri: z.string().min(1).optional(),
 });

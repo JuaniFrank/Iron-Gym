@@ -42,7 +42,9 @@ export function MoodSelector({ value, onChange }: MoodSelectorProps) {
                 opacity: pressed ? 0.7 : 1,
               })}
             >
-              <Text style={{ fontSize: 28 }}>{emoji}</Text>
+              <Text style={{ fontSize: 28, lineHeight: 34, textAlign: "center" }}>
+                {emoji}
+              </Text>
             </Pressable>
           );
         })}

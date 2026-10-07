@@ -7,6 +7,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   TextInput,
   View,
 } from "react-native";
@@ -325,7 +326,15 @@ export function NoteSheet({
               </View>
             ) : (
               <>
-              <View style={{ paddingHorizontal: 22, paddingTop: 14, paddingBottom: 14, gap: 16 }}>
+              {/* Inner scroll: without it, expanding "Dolor + todas las zonas"
+                  pushes the footer out of the sheet's 92% maxHeight and the
+                  Guardar/Cancelar buttons end up behind the screen's CTA. */}
+              <ScrollView
+                style={{ flexShrink: 1 }}
+                contentContainerStyle={{ paddingHorizontal: 22, paddingTop: 14, paddingBottom: 14, gap: 16 }}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
               {/* Categoría */}
               <View style={{ gap: 8 }}>
                 <Text variant="tiny" color={colors.muted}>
@@ -428,7 +437,7 @@ export function NoteSheet({
                   />
                 </View>
               ) : null}
-            </View>
+            </ScrollView>
 
             <View style={{ height: 1, backgroundColor: colors.border }} />
 
