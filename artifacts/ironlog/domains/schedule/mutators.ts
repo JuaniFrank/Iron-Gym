@@ -6,6 +6,7 @@ import {
 } from "@workspace/db/schema";
 import { z } from "zod";
 
+import type { DayMutation } from "@/domains/schedule/daySwap";
 import { db } from "@/services/db";
 import type {
   PlannedExercise,
@@ -207,6 +208,21 @@ export async function swapDates(
     await writePlan(kA, planB);
     await writePlan(kB, planA);
   });
+}
+
+/**
+ * Run the one schedule mutation a day-swap interaction maps to (see
+ * `domains/schedule/daySwap.ts`). Awaiting it means the write is committed.
+ */
+export async function applyDayMutation(mutation: DayMutation): Promise<void> {
+  switch (mutation.kind) {
+    case "swap":
+      return swapDates(mutation.fromTs, mutation.toTs);
+    case "setOverride":
+      return setOverrideForDate(mutation.ts, mutation.plan);
+    case "clearOverride":
+      return clearOverrideForDate(mutation.ts);
+  }
 }
 
 // ---------------------------------------------------------------------------
