@@ -18,6 +18,7 @@ import { useThemeColors } from "@/contexts/ThemeContext";
 import { logFood } from "@/domains/nutrition/mutators";
 import { useAllFoods } from "@/domains/nutrition/queries";
 import type { FoodItem, MealType } from "@/types";
+import { parseNonNegativeDecimal } from "@/utils/parseNumber";
 
 export default function FoodAddScreen() {
   const colors = useThemeColors();
@@ -39,7 +40,7 @@ export default function FoodAddScreen() {
     [allFoods, search],
   );
 
-  const gramsNum = parseFloat(grams) || 0;
+  const gramsNum = parseNonNegativeDecimal(grams) ?? 0;
   const factor = gramsNum / 100;
 
   if (selected) {

@@ -14,14 +14,34 @@ import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { useThemeColors } from "@/contexts/ThemeContext";
 import { updateProfile } from "@/domains/profile/mutators";
-import { useUserProfile } from "@/domains/profile/queries";
+import { useProfileSettingsLoaded, useUserProfile } from "@/domains/profile/queries";
 import type { UserProfile } from "@/types";
 import { calculateBMR, calculateTDEE } from "@/utils/calculations";
+import { parseNonNegativeDecimal, parseNonNegativeWhole } from "@/utils/parseNumber";
 
 export default function ProfileScreen() {
   const colors = useThemeColors();
+  const loaded = useProfileSettingsLoaded();
+  // The form seeds its state once from the stored profile; `useUserProfile`
+  // returns defaults until the row is read, so wait for it.
+  if (!loaded) {
+    return (
+      <Screen noPadding>
+        <Header title="" back compact />
+      </Screen>
+    );
+  }
+  return <ProfileForm />;
+}
+
+function ProfileForm() {
+  const colors = useThemeColors();
   const profile = useUserProfile();
   const [draft, setDraft] = useState<UserProfile>(profile);
+  // The decimal fields keep their own text: re-rendering them from the parsed
+  // number would eat a trailing "." / "," while the user is still typing.
+  const [heightText, setHeightText] = useState(String(profile.heightCm));
+  const [weightText, setWeightText] = useState(String(profile.weightKg));
 
   const tdee = calculateTDEE(draft);
   const bmr = calculateBMR(draft);
@@ -48,7 +68,7 @@ export default function ProfileScreen() {
                 <Input
                   fieldLabel="EDAD"
                   value={String(draft.age)}
-                  onChangeText={(v) => set("age", parseInt(v, 10) || 0)}
+                  onChangeText={(v) => set("age", parseNonNegativeWhole(v) ?? 0)}
                   keyboardType="number-pad"
                   suffix="años"
                 />
@@ -56,8 +76,11 @@ export default function ProfileScreen() {
               <View style={{ flex: 1 }}>
                 <Input
                   fieldLabel="ALTURA"
-                  value={String(draft.heightCm)}
-                  onChangeText={(v) => set("heightCm", parseFloat(v) || 0)}
+                  value={heightText}
+                  onChangeText={(v) => {
+                    setHeightText(v);
+                    set("heightCm", parseNonNegativeDecimal(v) ?? 0);
+                  }}
                   keyboardType="decimal-pad"
                   suffix="cm"
                 />
@@ -65,8 +88,11 @@ export default function ProfileScreen() {
               <View style={{ flex: 1 }}>
                 <Input
                   fieldLabel="PESO"
-                  value={String(draft.weightKg)}
-                  onChangeText={(v) => set("weightKg", parseFloat(v) || 0)}
+                  value={weightText}
+                  onChangeText={(v) => {
+                    setWeightText(v);
+                    set("weightKg", parseNonNegativeDecimal(v) ?? 0);
+                  }}
                   keyboardType="decimal-pad"
                   suffix="kg"
                 />

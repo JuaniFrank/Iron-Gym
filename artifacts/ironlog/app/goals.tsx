@@ -16,6 +16,7 @@ import { useThemeColors } from "@/contexts/ThemeContext";
 import { addGoal, deleteGoal, toggleGoal } from "@/domains/goals/mutators";
 import { useGoals } from "@/domains/goals/queries";
 import { formatRelativeDate } from "@/utils/date";
+import { parseNonNegativeWhole } from "@/utils/parseNumber";
 
 export default function GoalsScreen() {
   const colors = useThemeColors();
@@ -227,7 +228,7 @@ export default function GoalsScreen() {
                   showAlert("Falta título", "Escribe un título para la meta.");
                   return;
                 }
-                const dn = parseInt(days, 10) || 30;
+                const dn = parseNonNegativeWhole(days) || 30;
                 addGoal({
                   title: title.trim(),
                   description: description.trim() || undefined,

@@ -11,6 +11,7 @@ import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { useThemeColors } from "@/contexts/ThemeContext";
 import { createCustomFood } from "@/domains/nutrition/mutators";
+import { parseNonNegativeDecimal } from "@/utils/parseNumber";
 
 export default function FoodNewScreen() {
   const colors = useThemeColors();
@@ -25,17 +26,17 @@ export default function FoodNewScreen() {
       showAlert("Falta nombre", "Escribe el nombre del alimento.");
       return;
     }
-    const calN = parseFloat(cal);
-    if (isNaN(calN) || calN < 0) {
+    const calN = parseNonNegativeDecimal(cal);
+    if (calN == null || calN < 0) {
       showAlert("Calorías inválidas", "Introduce un valor numérico.");
       return;
     }
     await createCustomFood({
       name: name.trim(),
       caloriesPer100g: calN,
-      proteinPer100g: parseFloat(pro) || 0,
-      carbsPer100g: parseFloat(car) || 0,
-      fatPer100g: parseFloat(fat) || 0,
+      proteinPer100g: parseNonNegativeDecimal(pro) ?? 0,
+      carbsPer100g: parseNonNegativeDecimal(car) ?? 0,
+      fatPer100g: parseNonNegativeDecimal(fat) ?? 0,
     });
     router.back();
   };

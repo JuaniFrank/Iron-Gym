@@ -32,6 +32,7 @@ import {
 import { useUserProfile } from "@/domains/profile/queries";
 import { formatLength, formatWeight, navyBodyFat } from "@/utils/calculations";
 import { formatDateShort } from "@/utils/date";
+import { parseDecimal, parseNonNegativeDecimal } from "@/utils/parseNumber";
 
 export default function BodyScreen() {
   const colors = useThemeColors();
@@ -442,8 +443,8 @@ function WeightFormModal({
             size="lg"
             style={{ marginTop: 18 }}
             onPress={() => {
-              const n = parseFloat(v);
-              if (isNaN(n) || n <= 0) return;
+              const n = parseDecimal(v);
+              if (n == null || n <= 0) return;
               onSave(n);
             }}
           />
@@ -472,7 +473,7 @@ function MeasurementFormModal({
   const [leftThigh, setLeftThigh] = useState("");
   const [rightThigh, setRightThigh] = useState("");
 
-  const num = (v: string) => (v.trim() === "" ? undefined : parseFloat(v));
+  const num = (v: string) => parseNonNegativeDecimal(v) ?? undefined;
 
   return (
     <Modal
