@@ -17,13 +17,23 @@ describe("resolveSetInputs", () => {
     });
   });
 
-  it("prefills from the plan when the set is not completed", () => {
+  it("prefills weight and reps from the plan, never the RPE (it is recorded after the set)", () => {
     expect(
       resolveSetInputs({
         isWarmup: false,
         planned: { weight: 60, reps: 8, rpe: 7 },
       }),
-    ).toEqual({ weight: "60", reps: "8", rpe: "7" });
+    ).toEqual({ weight: "60", reps: "8", rpe: "" });
+  });
+
+  it("still restores a drafted RPE for the slot", () => {
+    expect(
+      resolveSetInputs({
+        isWarmup: false,
+        draft: { rpe: 8 },
+        planned: { weight: 60, reps: 8, rpe: 7 },
+      }).rpe,
+    ).toBe("8");
   });
 
   it("falls back to the previous session only for weight and reps", () => {
@@ -64,7 +74,7 @@ describe("resolveSetInputs", () => {
         planned: { weight: 60, reps: 8, rpe: 7 },
         previous: { weight: 50, reps: 10 },
       }),
-    ).toEqual({ weight: "60", reps: "5", rpe: "7" });
+    ).toEqual({ weight: "60", reps: "5", rpe: "" });
   });
 
   it("a completed set shows its logged values, ignoring draft, plan and previous", () => {
@@ -166,5 +176,41 @@ describe("parseCompletion", () => {
     expect(parseCompletion("60", "0", "")).toBeNull();
     expect(parseCompletion("60", "", "")).toBeNull();
     expect(parseCompletion("60", "abc", "")).toBeNull();
+  });
+});
+
+describe("comma decimals (es-AR keyboards)", () => {
+  it("keeps 22,5 in the draft patch", () => {
+    expect(parseDraftPatch("22,5", "8", "8,5")).toEqual({
+      weight: 22.5,
+      reps: 8,
+      rpe: 8.5,
+    });
+  });
+
+  it("logs 22,5 and 22.5 as the same weight", () => {
+    expect(parseCompletion("22,5", "8", "")?.weight).toBe(22.5);
+    expect(parseCompletion("22.5", "8", "")?.weight).toBe(22.5);
+  });
+});
+
+describe("range validation (T3)", () => {
+  it("clamps RPE to 0..10 in the draft patch", () => {
+    expect(parseDraftPatch("60", "8", "11").rpe).toBe(10);
+    expect(parseDraftPatch("60", "8", "-2").rpe).toBe(0);
+    expect(parseDraftPatch("60", "8", "9,5").rpe).toBe(9.5);
+  });
+
+  it("clamps negative weights to 0 in the draft patch", () => {
+    expect(parseDraftPatch("-5", "8", "").weight).toBe(0);
+  });
+
+  it("clamps RPE and weight on completion so the set can always be logged", () => {
+    expect(parseCompletion("60", "8", "12")).toEqual({ weight: 60, reps: 8, rpe: 10 });
+    expect(parseCompletion("-5", "8", "")?.weight).toBe(0);
+  });
+
+  it("treats an unparsable RPE as not recorded", () => {
+    expect(parseCompletion("60", "8", "abc")?.rpe).toBeUndefined();
   });
 });

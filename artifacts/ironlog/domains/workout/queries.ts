@@ -11,6 +11,11 @@ import { useMemo } from "react";
 
 import { db } from "@/services/db";
 import { resolveActiveSessionPhase } from "@/domains/workout/activeSessionState";
+import {
+  collapsedKey,
+  resolveCollapsed,
+  type CollapsedByExercise,
+} from "@/domains/workout/collapsedCards";
 import { useKeyedLiveQuery } from "@/hooks/useKeyedLiveQuery";
 import type { CompletedSet, PRRecord, WorkoutSession } from "@/types";
 import { dateKey } from "@/utils/date";
@@ -569,4 +574,32 @@ export function useDraftsBySession(
     if (!loaded) return undefined;
     return draftRowsToMap(data);
   }, [data, loaded, sessionId]);
+}
+
+/**
+ * Collapsed exercise cards of a session (local-only `key_value` row).
+ * `undefined` = still loading (keyed to the session id): screens must not
+ * render the cards from it. A failed query resolves to "none collapsed".
+ */
+export function useCollapsedExercises(
+  sessionId: string | undefined,
+): CollapsedByExercise | undefined {
+  const query = useMemo(
+    () =>
+      db
+        .select()
+        .from(keyValue)
+        .where(eq(keyValue.key, collapsedKey(sessionId ?? "")))
+        .limit(1),
+    [sessionId],
+  );
+  const { data, loaded, error } = useKeyedLiveQuery(
+    query,
+    [keyValue],
+    sessionId ?? "",
+  );
+  return useMemo(
+    () => resolveCollapsed({ loaded, data, error }),
+    [loaded, data, error],
+  );
 }

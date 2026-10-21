@@ -282,3 +282,14 @@ describe("draft lookup helpers", () => {
     });
   });
 });
+
+describe("upsertSessionSetDraft · range validation", () => {
+  it("rejects an RPE outside 0..10", async () => {
+    await expect(upsertSessionSetDraft(slot(), { rpe: 11 })).rejects.toThrow();
+    await expect(upsertSessionSetDraft(slot(), { rpe: -1 })).rejects.toThrow();
+  });
+
+  it("rejects a negative weight", async () => {
+    await expect(upsertSessionSetDraft(slot(), { weight: -1 })).rejects.toThrow();
+  });
+});

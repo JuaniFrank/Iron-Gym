@@ -38,7 +38,6 @@ interface SetRowProps {
    *  "planned"; the prefill itself arrives through `initialInputs`. */
   plannedWeight?: number;
   plannedReps?: number;
-  plannedRpe?: number;
   completed: boolean;
   /** Highlights the row as a PR (lime tinted bg + edge border). */
   isPr?: boolean;
@@ -46,7 +45,11 @@ interface SetRowProps {
   isActive?: boolean;
   /** Si este set ya tiene 1+ notas. Muestra badge "•" en el check. */
   hasNotes?: boolean;
-  onComplete: (weight: number, reps: number, rpe?: number) => void;
+  /**
+   * Resolve to `false` when the set could not be saved: the row then keeps
+   * its pending draft instead of dropping it.
+   */
+  onComplete: (weight: number, reps: number, rpe?: number) => void | Promise<boolean>;
   onUncomplete: () => void;
   onRemove: () => void;
   /** Tap en el ícono edit-2 al lado del check. Abre NoteSheet. */
@@ -69,7 +72,6 @@ export function SetRow({
   previousReps,
   plannedWeight,
   plannedReps,
-  plannedRpe,
   completed,
   isPr,
   isActive,
@@ -150,9 +152,11 @@ export function SetRow({
 
   const isPlanned =
     !completed &&
-    (plannedWeight != null || plannedReps != null || plannedRpe != null);
+    (plannedWeight != null || plannedReps != null);
 
   const setLabel = isWarmup ? "C" : String(index);
+  // Spoken name of this row for screen readers ("set 2" / "set de calentamiento 1").
+  const setName = isWarmup ? `set de calentamiento ${index}` : `set ${index}`;
 
   const handleComplete = () => {
     // A rejected completion keeps its pending draft (still unfinished input).
@@ -161,7 +165,15 @@ export function SetRow({
     // logSet clears the slot's draft; a pending autosave would resurrect it.
     cancelDraft();
     if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    onComplete(parsed.weight, parsed.reps, parsed.rpe);
+    const result = onComplete(parsed.weight, parsed.reps, parsed.rpe);
+    if (result) {
+      void result.then((saved) => {
+        if (saved) return;
+        // The save failed: the inputs are still unfinished, keep their draft.
+        draftPendingRef.current = true;
+        flushDraft();
+      });
+    }
   };
 
   // Set badge fill: warmup → orange-yellow, completed work → lime, otherwise outline.
@@ -241,6 +253,7 @@ export function SetRow({
       <View style={[styles.inputsContainer, { gap: inputsGap }]}>
         <TextInput
           value={weight}
+          accessibilityLabel={`Peso (kg) del ${setName}`}
           onChangeText={(t) => edit("weight", t)}
           keyboardType="decimal-pad"
           placeholder="—"
@@ -260,6 +273,7 @@ export function SetRow({
         />
         <TextInput
           value={reps}
+          accessibilityLabel={`Repeticiones del ${setName}`}
           onChangeText={(t) => edit("reps", t)}
           keyboardType="number-pad"
           placeholder="—"
@@ -280,6 +294,7 @@ export function SetRow({
         {!isWarmup ? (
           <TextInput
             value={rpe}
+            accessibilityLabel={`RPE del ${setName}`}
             onChangeText={(t) => edit("rpe", t)}
             keyboardType="decimal-pad"
             placeholder="—"
@@ -321,6 +336,8 @@ export function SetRow({
       {onNotePress ? (
         <Pressable
           onPress={onNotePress}
+          accessibilityRole="button"
+          accessibilityLabel={`Nota del ${setName}`}
           hitSlop={6}
           style={({ pressed }) => ({
             width: 22,
@@ -341,6 +358,10 @@ export function SetRow({
       <Pressable
         onPress={completed ? onUncomplete : handleComplete}
         onLongPress={onCheckLongPress ?? onRemove}
+        accessibilityRole="button"
+        accessibilityLabel={
+          completed ? `Desmarcar ${setName}` : `Completar ${setName}`
+        }
         style={({ pressed }) => [
           styles.checkBtn,
           {

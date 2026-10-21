@@ -15,6 +15,12 @@ import {
 import { z } from "zod";
 
 import { ACHIEVEMENTS } from "@/constants/achievements";
+import {
+  collapsedKey,
+  parseCollapsed,
+  serializeCollapsed,
+  withCollapsed,
+} from "@/domains/workout/collapsedCards";
 import { db } from "@/services/db";
 import type {
   AchievementUnlock,
@@ -223,6 +229,10 @@ export async function cancelWorkout(sessionId: string): Promise<void> {
     await tx
       .delete(sessionSetDrafts)
       .where(eq(sessionSetDrafts.sessionId, sessionId))
+      .run();
+    await tx
+      .delete(keyValue)
+      .where(eq(keyValue.key, collapsedKey(sessionId)))
       .run();
     await tx.delete(workoutSessions).where(eq(workoutSessions.id, sessionId)).run();
     await setActiveWorkoutId(tx, null);
@@ -866,6 +876,10 @@ export async function finishWorkout(
       .delete(sessionSetDrafts)
       .where(eq(sessionSetDrafts.sessionId, sessionId))
       .run();
+    await tx
+      .delete(keyValue)
+      .where(eq(keyValue.key, collapsedKey(sessionId)))
+      .run();
 
     return {
       session: finalSession,
@@ -888,9 +902,9 @@ const DraftSlotSchema = z.object({
 });
 
 const DraftPatchSchema = z.object({
-  weight: z.number().nullable().optional(),
+  weight: z.number().min(0).nullable().optional(),
   reps: z.number().int().nullable().optional(),
-  rpe: z.number().nullable().optional(),
+  rpe: z.number().min(0).max(10).nullable().optional(),
 });
 
 export interface DraftSlotKey {
@@ -991,4 +1005,45 @@ export async function clearDraftsForSession(sessionId: string): Promise<void> {
     .delete(sessionSetDrafts)
     .where(eq(sessionSetDrafts.sessionId, sessionId))
     .run();
+}
+
+// ---------------------------------------------------------------------------
+// Collapsed exercise cards (local-only UI state, `key_value`)
+// ---------------------------------------------------------------------------
+
+/**
+ * Remember whether an exercise card of the active session is collapsed. The
+ * row lives in `key_value` (a local-only table); it is removed when nothing is
+ * collapsed anymore and when the session is finished or cancelled.
+ */
+export async function setExerciseCollapsed(
+  sessionId: string,
+  exerciseId: string,
+  isCollapsed: boolean,
+): Promise<void> {
+  z.string().min(1).parse(sessionId);
+  z.string().min(1).parse(exerciseId);
+  const key = collapsedKey(sessionId);
+  await db.transaction(async (tx) => {
+    const row = await tx
+      .select({ value: keyValue.value })
+      .from(keyValue)
+      .where(eq(keyValue.key, key))
+      .get();
+    const next = withCollapsed(parseCollapsed(row?.value), exerciseId, isCollapsed);
+    const ids = serializeCollapsed(next);
+    if (ids.length === 0) {
+      await tx.delete(keyValue).where(eq(keyValue.key, key)).run();
+      return;
+    }
+    const now = new Date();
+    await tx
+      .insert(keyValue)
+      .values({ key, value: ids, updatedAt: now })
+      .onConflictDoUpdate({
+        target: keyValue.key,
+        set: { value: ids, updatedAt: now },
+      })
+      .run();
+  });
 }

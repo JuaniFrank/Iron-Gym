@@ -31,6 +31,7 @@ import {
 import { useRoutineById } from "@/domains/routines/queries";
 import { useSessionPlan } from "@/domains/schedule/queries";
 import { isFinished, planRestStart } from "@/domains/workout/restTimer";
+import { saveSetThenRest } from "@/domains/workout/completeSet";
 import { withSessionEnding } from "@/domains/workout/sessionEnd";
 import {
   getLastSetsForExercise,
@@ -43,6 +44,7 @@ import {
   removeSessionExercise,
   removeSet,
   reorderSessionExercises,
+  setExerciseCollapsed,
   setSessionExerciseSkipped,
   startWorkout,
   upsertSessionSetDraft,
@@ -51,6 +53,7 @@ import {
   buildDraftKey,
   useActiveSession,
   useActiveWorkoutId,
+  useCollapsedExercises,
   useDraftsBySession,
   useSessionsWithStatus,
 } from "@/domains/workout/queries";
@@ -194,6 +197,17 @@ export default function ActiveWorkoutScreen() {
     syncRestNotification(plan.endsAt);
   };
 
+  // Slots whose save is in flight: a double tap on the check must log once.
+  const savingSetsRef = useRef(new Set<string>());
+
+  const removeSetOrAlert = (setId: string) => {
+    if (!session) return;
+    removeSet(session.id, setId).catch((e) => {
+      console.warn("[active] removeSet failed:", e);
+      showAlert("No se pudo eliminar el set", errorDetail(e));
+    });
+  };
+
   const closeRest = () => {
     clearRestHideTimeout();
     setRestingEndsAt(null);
@@ -244,22 +258,29 @@ export default function ActiveWorkoutScreen() {
 
   // Accordion: "Finalizar serie" (only offered once every work set is done)
   // collapses the card to a compact header; tapping the header expands it.
-  const [collapsedByExercise, setCollapsedByExercise] = useState<
-    Record<string, boolean>
-  >({});
+  // Persisted per session (local-only) so it survives leaving the screen;
+  // `undefined` while loading, and the screen waits for it.
+  const collapsedByExercise = useCollapsedExercises(session?.id);
+
+  const persistCollapsed = (exId: string, isCollapsed: boolean) => {
+    if (!session) return;
+    setExerciseCollapsed(session.id, exId, isCollapsed).catch((e) => {
+      console.warn("[active] collapsed state save failed:", e);
+    });
+  };
 
   const handleFinishSet = (exId: string) => {
     if (Platform.OS !== "web") {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
-    setCollapsedByExercise((prev) => ({ ...prev, [exId]: true }));
+    persistCollapsed(exId, true);
   };
 
   const expandExercise = (exId: string) => {
     if (Platform.OS !== "web") {
       Haptics.selectionAsync();
     }
-    setCollapsedByExercise((prev) => ({ ...prev, [exId]: false }));
+    persistCollapsed(exId, false);
   };
 
   // Hooks must run unconditionally — keep these before the early return below.
@@ -274,7 +295,7 @@ export default function ActiveWorkoutScreen() {
     session,
     startPending: !!params.routineId && !!params.dayId && !startFailed,
   });
-  if (view === "loading") {
+  if (view === "loading" || (session && collapsedByExercise === undefined)) {
     return (
       <Screen noPadding>
         <Header title="Sesión" back />
@@ -571,7 +592,7 @@ export default function ActiveWorkoutScreen() {
 
             // Collapsed accordion card: same header as the expanded one with a
             // chevron; the whole card is the tap target.
-            if (collapsedByExercise[exId] ?? false) {
+            if (collapsedByExercise?.[exId] ?? false) {
               return (
                 <Card key={exId}>
                   <Pressable
@@ -778,7 +799,6 @@ export default function ActiveWorkoutScreen() {
                         previousReps={previous?.reps}
                         plannedWeight={plannedSet?.weight}
                         plannedReps={plannedSet?.reps}
-                        plannedRpe={plannedSet?.rpe}
                         completed={!!completedSet}
                         isPr={isPr}
                         isActive={!completedSet && i === firstIncomplete}
@@ -804,17 +824,29 @@ export default function ActiveWorkoutScreen() {
                             : undefined
                         }
                         onComplete={(w, r, rpe) => {
-                          logSet(session.id, {
-                            exerciseId: exId,
-                            weight: w,
-                            reps: r,
-                            rpe,
+                          // The rest timer only starts once the set is saved;
+                          // a failed save is reported and the draft is kept.
+                          return saveSetThenRest({
+                            save: () =>
+                              logSet(session.id, {
+                                exerciseId: exId,
+                                weight: w,
+                                reps: r,
+                                rpe,
+                                isWarmup: row.isWarmup,
+                                setIndex: row.index,
+                              }),
                             isWarmup: row.isWarmup,
-                            setIndex: row.index,
+                            startRest: () => startRest(restSeconds),
+                            inFlight: savingSetsRef.current,
+                            key: `${exId}:${row.isWarmup}:${row.index}`,
+                          }).then((res) => {
+                            if (res.ok) return true;
+                            if ("skipped" in res) return true;
+                            console.warn("[active] logSet failed:", res.error);
+                            showAlert("No se pudo guardar el set", errorDetail(res.error));
+                            return false;
                           });
-                          if (!row.isWarmup) {
-                            startRest(restSeconds);
-                          }
                         }}
                         onDraftChange={(patch) => {
                           if (sessionEndedRef.current) return;
@@ -833,7 +865,7 @@ export default function ActiveWorkoutScreen() {
                           });
                         }}
                         onUncomplete={() => {
-                          if (completedSet) removeSet(session.id, completedSet.id);
+                          if (completedSet) removeSetOrAlert(completedSet.id);
                         }}
                         onRemove={() => {
                           if (completedSet) {
@@ -842,7 +874,7 @@ export default function ActiveWorkoutScreen() {
                               {
                                 text: "Eliminar",
                                 style: "destructive",
-                                onPress: () => removeSet(session.id, completedSet.id),
+                                onPress: () => removeSetOrAlert(completedSet.id),
                               },
                             ]);
                           }
