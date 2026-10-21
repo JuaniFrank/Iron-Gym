@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildInitialSets,
   initialPlanExercises,
   isPlanDataLoaded,
   shouldAutoSavePlan,
@@ -65,5 +66,15 @@ describe("shouldAutoSavePlan", () => {
 
   it("saves once the user edited (new array identity)", () => {
     expect(shouldAutoSavePlan([], baseline)).toBe(true);
+  });
+});
+
+describe("buildInitialSets · no planned RPE", () => {
+  it("never copies the previous session's RPE into the plan", () => {
+    const sets = buildInitialSets(day.exercises[0]!, [
+      { id: "c1", exerciseId: "bench", weight: 60, reps: 8, rpe: 9, isWarmup: false, setIndex: 1, completedAt: 1 },
+    ]);
+    expect(sets.filter((s) => !s.isWarmup).map((s) => s.weight)).toEqual([60, 60]);
+    expect(sets.every((s) => s.rpe === undefined)).toBe(true);
   });
 });

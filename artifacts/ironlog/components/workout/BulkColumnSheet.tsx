@@ -16,7 +16,7 @@ import { Col, Row } from "@/components/ui/Stack";
 import { Text } from "@/components/ui/Text";
 import { useThemeColors } from "@/contexts/ThemeContext";
 
-export type BulkField = "weight" | "reps" | "rpe";
+export type BulkField = "weight" | "reps";
 
 const INPUT_ACCESSORY_ID = "bulk-column-sheet-accessory";
 
@@ -38,7 +38,6 @@ const FIELD_CONFIG: Record<
 > = {
   weight: { title: "Pesos", unit: "kg", presetSteps: [-2.5, -5, +2.5, +5] },
   reps: { title: "Reps", unit: "reps", presetSteps: [-1, -2, +1, +2] },
-  rpe: { title: "RPE", unit: "rpe", presetSteps: [-0.5, +0.5] },
 };
 
 function defaultAnchor(field: BulkField): number {
@@ -54,7 +53,6 @@ function roundQuarter(n: number): number {
 function clampForField(n: number, field: BulkField): number {
   if (n < 0) return 0;
   if (field === "reps") return Math.round(n);
-  if (field === "rpe") return Math.min(10, Math.round(n * 2) / 2);
   return roundQuarter(n);
 }
 

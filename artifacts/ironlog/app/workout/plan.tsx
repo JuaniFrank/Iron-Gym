@@ -34,6 +34,13 @@ import {
   deleteSessionPlan,
   upsertSessionPlan,
 } from "@/domains/schedule/mutators";
+import {
+  cellTextForValue,
+  isCellTextStale,
+  normalizeCellText,
+  parsePlanCell,
+  type PlanCellKind,
+} from "@/domains/schedule/planCell";
 import { useSessionPlan } from "@/domains/schedule/queries";
 import {
   initialPlanExercises,
@@ -161,7 +168,7 @@ export default function PlanWorkoutScreen() {
   const handleDeletePlan = () => {
     showAlert(
       "Borrar plan",
-      "Vas a perder los pesos, reps y RPEs predefinidos. La rutina original no cambia.",
+      "Vas a perder los pesos y reps predefinidos. La rutina original no cambia.",
       [
         { text: "Cancelar", style: "cancel" },
         {
@@ -363,8 +370,7 @@ function PlanExerciseCard({
       const w = workSetIndices.indexOf(i);
       const v = values[w];
       if (bulk.field === "weight") return { ...s, weight: v };
-      if (bulk.field === "reps") return { ...s, reps: v };
-      return { ...s, rpe: v };
+      return { ...s, reps: v };
     });
     onChange(next);
   };
@@ -387,7 +393,6 @@ function PlanExerciseCard({
         isWarmup: false,
         weight: lastWork?.weight,
         reps: lastWork?.reps ?? routineExercise?.targetReps,
-        rpe: lastWork?.rpe,
       },
     ]);
   };
@@ -418,7 +423,6 @@ function PlanExerciseCard({
         isWarmup: false,
         weight: s.weight,
         reps: s.reps,
-        rpe: s.rpe,
       }));
       onChange([...warmups, ...newWork]);
       return;
@@ -595,14 +599,6 @@ function PlanExerciseCard({
           >
             REPS
           </Text>
-          <Text
-            variant="tiny"
-            color={bulk?.field === "rpe" ? colors.accentEdge : colors.muted}
-            weight={bulk?.field === "rpe" ? "semibold" : undefined}
-            style={{ flex: 1, textAlign: "center" }}
-          >
-            RPE
-          </Text>
         </View>
         <View style={{ width: 28 }} />
       </Row>
@@ -763,7 +759,7 @@ function PlanSetRow({
         </Text>
       </Pressable>
 
-      <View style={{ flex: 1, flexDirection: "row", gap: 6 }}>
+      <View style={{ flex: 1, minWidth: 0, flexDirection: "row", gap: 6 }}>
         <NumericCell
           value={set.weight}
           placeholder="kg"
@@ -772,7 +768,7 @@ function PlanSetRow({
             set.isWarmup ? undefined : () => cellLongPress("weight", set.weight)
           }
           highlight={!set.isWarmup && highlightField === "weight"}
-          decimal
+          kind="weight"
         />
         <NumericCell
           value={set.reps}
@@ -782,35 +778,8 @@ function PlanSetRow({
             set.isWarmup ? undefined : () => cellLongPress("reps", set.reps)
           }
           highlight={!set.isWarmup && highlightField === "reps"}
+          kind="reps"
         />
-        {set.isWarmup ? (
-          <View
-            style={{
-              flex: 1,
-              height: 36,
-              borderRadius: 8,
-              borderWidth: 1,
-              borderColor: colors.border,
-              backgroundColor: "transparent",
-              alignItems: "center",
-              justifyContent: "center",
-              opacity: 0.4,
-            }}
-          >
-            <Text variant="mono" color={colors.muted}>
-              —
-            </Text>
-          </View>
-        ) : (
-          <NumericCell
-            value={set.rpe}
-            placeholder="rpe"
-            onChange={(n) => onChange({ rpe: n })}
-            onLongPress={() => cellLongPress("rpe", set.rpe)}
-            highlight={highlightField === "rpe"}
-            decimal
-          />
-        )}
       </View>
 
       <Pressable
@@ -835,7 +804,7 @@ interface NumericCellProps {
   value: number | undefined;
   placeholder: string;
   onChange: (n: number | undefined) => void;
-  decimal?: boolean;
+  kind: PlanCellKind;
   onLongPress?: () => void;
   /** Render with accent border + soft fill (used when bulk-editing the column). */
   highlight?: boolean;
@@ -845,77 +814,78 @@ function NumericCell({
   value,
   placeholder,
   onChange,
-  decimal,
+  kind,
   onLongPress,
   highlight,
 }: NumericCellProps) {
   const colors = useThemeColors();
   const inputRef = useRef<TextInput>(null);
-  const [text, setText] = useState<string>(value != null ? String(value) : "");
+  const decimal = kind !== "reps";
+  const [text, setText] = useState<string>(cellTextForValue(value));
 
-  // Keep local text in sync if upstream resets (e.g. autofill applied).
+  // Re-render the text from `value` only when it was changed from outside
+  // (autofill, bulk edit, row removal). While the user types, the text keeps
+  // meaning the stored value ("22." or "22,5" must not be rewritten).
   useEffect(() => {
-    setText(value != null ? String(value) : "");
-  }, [value]);
+    setText((current) =>
+      isCellTextStale(current, value, kind) ? cellTextForValue(value) : current,
+    );
+  }, [value, kind]);
 
   const commit = (next: string) => {
-    setText(next);
-    if (next.trim() === "") {
-      onChange(undefined);
-      return;
-    }
-    const parsed = decimal ? parseFloat(next) : parseInt(next, 10);
-    if (Number.isFinite(parsed)) onChange(parsed);
+    setText(normalizeCellText(next, kind));
+    const parsed = parsePlanCell(next, kind);
+    if (parsed === null) return; // not a number (yet): keep the stored value
+    onChange(parsed);
   };
 
   const borderColor = highlight ? colors.accentEdge : colors.border;
   const borderWidth = highlight ? 1.5 : 1;
   const backgroundColor = highlight ? colors.accentSoft : "transparent";
 
-  const input = (
-    <TextInput
-      ref={inputRef}
-      value={text}
-      onChangeText={commit}
-      placeholder={placeholder}
-      placeholderTextColor={colors.mutedSoft}
-      keyboardType={decimal ? "decimal-pad" : "number-pad"}
-      contextMenuHidden={onLongPress != null}
-      // When wrapped in Pressable for long-press, the parent receives the
-      // initial touch; disable input's own touchable handling so the parent
-      // wins consistently. Taps reach us via the Pressable's onPress.
-      pointerEvents={onLongPress ? "none" : "auto"}
-      style={{
-        flex: 1,
-        height: 36,
-        borderRadius: 8,
-        paddingHorizontal: 6,
-        fontSize: 14,
-        textAlign: "center",
-        fontFamily: Platform.select({
-          ios: "Menlo",
-          android: "monospace",
-          default: "monospace",
-        }),
-        fontWeight: "600",
-        borderWidth,
-        borderColor,
-        color: colors.ink,
-        backgroundColor,
-      }}
-    />
-  );
-
-  if (!onLongPress) return input;
-
+  // Always the same element tree (Pressable > TextInput): toggling a set to
+  // warm-up toggles `onLongPress`, and a different tree would remount the
+  // input and drop focus / typed text.
   return (
     <Pressable
       onPress={() => inputRef.current?.focus()}
       onLongPress={onLongPress}
       delayLongPress={350}
-      style={{ flex: 1 }}
+      // minWidth 0: on react-native-web a raw <input> has an intrinsic width,
+      // so without it `flex: 1` cannot shrink the cell below ~20ch.
+      style={{ flex: 1, minWidth: 0 }}
     >
-      {input}
+      <TextInput
+        ref={inputRef}
+        value={text}
+        onChangeText={commit}
+        placeholder={placeholder}
+        placeholderTextColor={colors.mutedSoft}
+        keyboardType={decimal ? "decimal-pad" : "number-pad"}
+        contextMenuHidden={onLongPress != null}
+        // With a long-press handler the Pressable owns the touch; taps reach
+        // the input through its onPress.
+        pointerEvents={onLongPress ? "none" : "auto"}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          height: 36,
+          borderRadius: 8,
+          paddingHorizontal: 6,
+          fontSize: 14,
+          textAlign: "center",
+          fontFamily: Platform.select({
+            ios: "Menlo",
+            android: "monospace",
+            default: "monospace",
+          }),
+          fontWeight: "600",
+          borderWidth,
+          borderColor,
+          color: colors.ink,
+          backgroundColor,
+        }}
+      />
     </Pressable>
   );
 }

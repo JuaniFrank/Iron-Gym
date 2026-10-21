@@ -62,7 +62,6 @@ export function buildInitialSets(
       isWarmup: false,
       weight: ref?.weight,
       reps: ref?.reps ?? re.targetReps,
-      rpe: ref?.rpe,
     });
   }
   return sets;
